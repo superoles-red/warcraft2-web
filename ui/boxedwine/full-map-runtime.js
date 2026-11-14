@@ -21,7 +21,7 @@
   let cropX=0,cropY=0,cropKey='';
   let minimapDrag=false;
   let sliderDrag=null;
-  let portraitPress=null;
+  let portraitPress=null,objectivesWaitUntil=null;
   let listeners,insetObserver,insetProbes;
   const held=new Set();
   let infoPress=false;
@@ -374,7 +374,13 @@
       const dpr=enhancedHud?Math.max(1,Math.min(3,global.devicePixelRatio||1)):1;
       if(cameraPilot)resizeFrozenWorld(width,height,dpr);
       const framePixels=coherentFrames?nativeFramePainter.paint(lastScene.frame):lastScene.frame;
+      const objectiveEnd=objectivesBodyEnd?.(view?.modal,lastScene.packet);
+      if(objectiveEnd===null){
+        objectivesWaitUntil??=performance.now()+300;
+        if(performance.now()<objectivesWaitUntil){waitForNativeFrame();return;}
+      }else objectivesWaitUntil=null;
       const modal={inGame:true,dialogOpen:true,packet:view?.modal,panelTexture:modalTexture?.(),
+        objectivesBodyEnd:objectiveEnd,
         back,fillBackground:!!onPresented,
         dialogPixelRatio:onPresented?dpr:0,
         leftInset:hudInsets.left>4?hudInsets.left*dpr:0,rightInset:hudInsets.right>4?hudInsets.right*dpr:0};
@@ -402,7 +408,7 @@
     if(!ready){if(buildConfirm)buildConfirm.hidden=true;if(coherentFrames&&state?.inGame)waitForNativeFrame();else setVisible(false);return;}
     try {
       bootstrapInUse=false;bootstrapPaletteKey=null;
-      lastDialogToken=null;
+      lastDialogToken=objectivesWaitUntil=null;
       displayedEndRaster=null;
       const width=Math.max(1,Math.floor(container.clientWidth)),height=Math.max(1,Math.floor(container.clientHeight));
       const dpr=enhancedHud?Math.max(1,Math.min(3,global.devicePixelRatio||1)):1;
@@ -745,7 +751,7 @@
     },{capture:true});
     listen('contextmenu',event=>{if(visible&&inScope(event))stop(event);},{capture:true,passive:false});
   }
-  let cameraPilot,hostPresentation,modalTexture,infoButtons,infoFocus,touchOnly=false;
+  let cameraPilot,hostPresentation,modalTexture,infoButtons,infoFocus,objectivesBodyEnd,touchOnly=false;
   function install(host) {
     if(installed)return;
     listeners=new AbortController();
@@ -753,6 +759,7 @@
     cameraPilot=coherentFrames?host?.independentCamera:null;
     infoButtons=host?.infoButtons;
     infoFocus=host?.infoFocus;
+    objectivesBodyEnd=host?.objectivesBodyEnd;
     touchOnly=global.matchMedia?.('(pointer: coarse)').matches===true;
     source=host?.source || document.getElementById('boxedwine-webgl-canvas-0');
     display=host?.display || source;
@@ -867,9 +874,9 @@
     commandHighlight?.remove();
     buildConfirm?.remove();
     output=context=copier=buildConfirm=commandHighlight=null;
-    lastScene=lastNative=lastRenderedGeometry=lastDialogToken=selectedCommand=lastMapEpoch=displayedEndRaster=null;
+    lastScene=lastNative=lastRenderedGeometry=lastDialogToken=selectedCommand=lastMapEpoch=displayedEndRaster=objectivesWaitUntil=null;
     camera=modalPresenter=cursorPresenter=foregroundPainter=bootstrapPainter=nativeFramePainter=visibleFramePainter=bootstrapCanvas=null;
-    onPresented=onUnavailable=acceptsInput=modalBack=modalSlider=modalTexture=infoButtons=infoFocus=null;
+    onPresented=onUnavailable=acceptsInput=modalBack=modalSlider=modalTexture=infoButtons=infoFocus=objectivesBodyEnd=null;
     bootstrapInUse=false;
     bootstrapPaletteKey=modalBackgroundInsets=null;
     modalBackgroundWidth=modalBackgroundHeight=modalBackgroundDpr=0;

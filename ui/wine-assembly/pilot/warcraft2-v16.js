@@ -77,6 +77,41 @@
     return {unit:active, x:center(tx, size?.getUint16(0, true)), y:center(ty, size?.getUint16(2, true))};
   }
 
+  function objectivesBodyEnd(wine, modal, frame) {
+    const layer = modal?.stack?.find(item => item.root === modal.currentDialog && item.nativeVisible);
+    if (layer?.handlerAddress !== 0x4353a0 ||
+        layer.rect.right-layer.rect.left!==255 || layer.rect.bottom-layer.rect.top!==287) return undefined;
+    if (!frame?.usable || frame.dialogRoot !== layer.root) return null;
+    const read = guestReader(wine);
+    const image = read(layer.root+0xc,8);
+    if (image?.getUint16(0,true)!==256 || image.getUint16(2,true)!==288) return undefined;
+    const native = read(image.getUint32(4,true),256*288);
+    if (!native) return undefined;
+    const plain = new Uint8Array(native.buffer,native.byteOffset,native.byteLength);
+    const {left,top,right,bottom} = layer.rect, {width,height} = frame.screen;
+    if (right>=width || bottom>=height) return null;
+    const row = (y,x) => frame.indices[(top+y)*width+left+x];
+    // The original dialog background already has the palette indices in the
+    // completed frame. Require matching blank strips on both sides of the
+    // text area and native heading / footer pixels before removing any rows.
+    for (const y of [8,56,244,282]) for (let x=8;x<248;x+=9) {
+      if (row(y,x)!==plain[y*256+x]) return null;
+    }
+    const hasInk = (y, first=16, last=240) => {
+      for (let x=first;x<last;x++) if (row(y,x)!==plain[y*256+x]) return true;
+      return false;
+    };
+    let heading=false, footer=false;
+    for (let y=12;y<30&&!heading;y++) heading=hasInk(y);
+    for (let y=252;y<270&&!footer;y++) footer=hasInk(y);
+    if (!heading || !footer) return null;
+    for (let y=239;y>=64;y--) {
+      if (hasInk(y,16,220)) return Math.min(245,Math.max(94,y+13));
+    }
+    // A matching heading/footer can precede the first objective paint.
+    return null;
+  }
+
   function createObjectivesCheckbox(wine, frame, surface) {
     const label = document.createElement('label');
     label.id = 'warcraft-objectives-at-start';
@@ -209,6 +244,7 @@
         ? () => presented === 'map' && !('warcraftTransition' in frame.dataset) : undefined,
       infoButtons: layer => infoButtons(guestReader(wine), layer),
       infoFocus: (...args) => infoFocus(wine, ...args),
+      objectivesBodyEnd: (...args) => objectivesBodyEnd(wine, ...args),
       modalBack: window.WarcraftAssemblyMenuNavigation?.createModalBack?.(wine),
       modalSlider: (layer, x, y) => window.WarcraftAssemblyMenuPolicy?.sliderAt(wine, layer, x, y),
       modalTexture() {

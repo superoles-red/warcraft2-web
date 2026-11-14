@@ -11,8 +11,9 @@
   // Original rez\snd_dlg.bin and rez\filefltr.bin. These are local,
   // inclusive native footer controls decoded to half-open source rectangles.
   const NATIVE_FOOTERS = new Map([
-    [SOUND_OPTIONS, {w:256, h:288, cancel:[12,256], accept:[138,256],
-      body:256, blank:[0,208,256,48], footer:48}],
+    [SOUND_OPTIONS, {w:256, h:288, cancel:[12,256], accept:[138,256], body:256,
+      compactBody:[[0,120],[140,174]], checkbox:[12,144,240,22],
+      blank:[0,208,256,48], compactBlank:[0,174,256,48], footer:48}],
     [SELECT_SCENARIO, {w:352, h:352, cancel:[44,318], accept:[188,318],
       body:314, blank:[44,34,88,72], footer:48, texture:true}],
   ]);
@@ -262,19 +263,30 @@
     if (liveCancel?.type !== 2 || !(liveCancel.flags & 8) || !same(liveCancel.source, cancel) ||
         !liveAccept || ![1, 2].includes(liveAccept.type)) return null;
 
-    const height = spec.body + spec.footer + 4;
+    const speech = spec.checkbox && controls.get(4);
+    const compact = speech?.type === 4 && same(speech.source, area(...spec.checkbox)) &&
+      [...controls.values()].filter(item => item.type === 4).length === 1;
+    const bands = compact ? spec.compactBody : [[0,spec.body]];
+    const bodyHeight = bands.reduce((height,[start,end]) => height + end - start, 0);
+    const height = bodyHeight + spec.footer + 4;
     const scale = Math.min(chart.regions[0].target.w / w, (chart.height - inset * 2) / height);
     if (scale <= 0) return null;
     const left = (chart.width - w * scale) / 2, top = (chart.height - height * scale) / 2;
     const target = (x, y, w, h) => ({x:left + x * scale, y:top + y * scale, w:w * scale, h:h * scale});
-    const body = {source:area(0,0,w,spec.body), target:target(0,0,w,spec.body)};
-    const footer = {source:area(...spec.blank),
-      target:target(0,spec.body,w,spec.footer), texture:spec.texture};
+    let yRow = 0;
+    const body = bands.map(([start,end]) => {
+      const height = end - start;
+      const row = {source:area(0,start,w,height), target:target(0,yRow,w,height)};
+      yRow += height;
+      return row;
+    });
+    const footer = {source:area(...(compact ? spec.compactBlank : spec.blank)),
+      target:target(0,bodyHeight,w,spec.footer), texture:spec.texture};
     const rim = {source:area(0,h-4,w,4), target:target(0,height-4,w,4)};
-    const button = {source:accept, target:target(16,spec.body + (spec.footer-28)/2,106,28)};
+    const button = {source:accept, target:target(16,bodyHeight + (spec.footer-28)/2,106,28)};
     const size = 44;
-    const back = {source:cancel, target:target(w-size-12,spec.body + (spec.footer-size)/2,size,size), decoration:'back'};
-    return {...chart, reflow:true, regions:[body, button, back], paintRegions:[body, footer, rim, button, back],
+    const back = {source:cancel, target:target(w-size-12,bodyHeight + (spec.footer-size)/2,size,size), decoration:'back'};
+    return {...chart, reflow:true, regions:[...body, button, back], paintRegions:[...body, footer, rim, button, back],
       ...(front.handler === SOUND_OPTIONS ? {frame:{source:area(0,0,w,h),target:target(0,0,w,height)}} : {})};
   }
 
@@ -333,7 +345,7 @@
     }
     const footer = NATIVE_FOOTERS.get(front.handler);
     if (footer && backImage?.naturalWidth) {
-      const buttons = readControls(wine, front, new Set([1,2,13]));
+      const buttons = readControls(wine, front, new Set(front.handler === SOUND_OPTIONS ? [1,2,4,13] : [1,2,13]));
       if (buttons) return reflowNativeFooter(chart, front, buttons, footer, inset) || chart;
     }
     return chart;

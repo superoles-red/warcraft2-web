@@ -9,6 +9,12 @@
   const finite=Number.isFinite,positive=n=>finite(n)&&n>0;
   const SLIDER_DIALOGS=new Set([0x441940,0x442050]); // Sound, Speeds
   const OBJECTIVES_ROW=35;
+  // Both original sliders include their MIN/MAX labels through row 115.
+  // The next visible native control is Unit Speech at rows 144–165.
+  const MATCH_SETTINGS_BANDS=[[0,120],[140,166]];
+  const MATCH_SETTINGS_BODY_TOP=146;
+  const MATCH_SETTINGS_NATIVE_BODY_TOP=166;
+  const MATCH_SETTINGS_FOOTER=56;
   function classicDialogScale(width,height,pixelRatio=1){
     const margin=8*pixelRatio;
     // Reserve enough room for the shared 256px panel and its objectives checkbox.
@@ -42,12 +48,12 @@
   }
   const freezeRect=r=>Object.freeze({...r,right:r.left+r.width,bottom:r.top+r.height});
   function inside(r,x,y){return x>=r.left&&y>=r.top&&x<r.right&&y<r.bottom;}
-  // Keep original full-width raster strips, including the frame and controls.
-  // Leave six native pixels between the remaining rows.
-  const MENU_STRIPS={pause:[[0,39],[70,104],[138,206],[205,247],[284,288]],
+  // Keep the complete native labels and controls, with just enough stone
+  // underneath for the shared footer controls and bottom bevel.
+  const MENU_STRIPS={pause:[[0,32],[72,103],[140,205],[205,247],[284,288]],
     'two-actions':[[0,70],[104,141],[190,246],[284,288]],
-    end:[[0,72],[104,140],[190,246],[284,288]],
-    confirmation:[[0,101],[190,246],[284,288]]};
+    end:[[0,70],[105,139],[203,245],[284,288]],
+    confirmation:[[0,89],[190,226],[284,288]]};
   function contain(source,width,height,maxScale=Infinity,margin=0,left=margin,right=margin){
     const scale=Math.min(maxScale,(width-left-right)/source.width,(height-margin*2)/source.height);
     if(!positive(scale))return null;
@@ -129,7 +135,7 @@
       counters.backgroundCaptures++;return true;
     }
     function plan(frame,{inGame=false,dialogOpen=false,packet=null,expectedToken,width,height,back,
-        fillBackground=false,leftInset=0,rightInset=0,dialogPixelRatio=0}={}){
+        fillBackground=false,leftInset=0,rightInset=0,dialogPixelRatio=0,objectivesBodyEnd}={}){
       if(!inGame){reset();return layout;}
       if(!dialogOpen){layout=Object.freeze({active:false,mode:'world'});return layout;}
       if(!base){layout=Object.freeze({active:false,mode:'native-fallback',reason:'no-clean-background'});return layout;}
@@ -148,8 +154,12 @@
       const preferences=native?.layers.length===1&&native.layers[0].handlerAddress===0x441940&&
         native.source.width===256&&native.source.height===288&&!!back?.ok;
       const compactHeight=compact?.reduce((sum,[start,end])=>sum+end-start,0);
-      const bounds=objectives?{width:256,height:288+OBJECTIVES_ROW}:
-        preferences?{width:256,height:312}:compact?{width:native.source.width,height:compactHeight}:native?.union;
+      const objectiveFooter=245;
+      const objectiveBody=Number.isInteger(objectivesBodyEnd)&&objectivesBodyEnd>=94&&
+        objectivesBodyEnd<=objectiveFooter?objectivesBodyEnd:objectiveFooter;
+      const bounds=objectives?{width:256,height:objectiveBody+288-objectiveFooter+OBJECTIVES_ROW}:
+        preferences?{width:256,height:MATCH_SETTINGS_BODY_TOP+90+MATCH_SETTINGS_FOOTER}:
+        compact?{width:native.source.width,height:compactHeight}:native?.union;
       const scaleMargin=8*dialogPixelRatio;
       const classicMax=dialogPixelRatio&&native?.source.width===256&&native.source.height<=288
         ? classicDialogScale(width-Math.max(0,leftInset-scaleMargin)-Math.max(0,rightInset-scaleMargin),height,dialogPixelRatio)
@@ -164,27 +174,28 @@
       let objectivesCheckbox=null,objectivesStone=null,preferencesBody=null;
       if(ready&&preferences){
         const {source}=native,{scale}=unionTarget;
-        const nativeBands=[[0,166]];
-        strips=nativeBands.map(([start,end])=>{
+        let top=unionTarget.top;
+        strips=MATCH_SETTINGS_BANDS.map(([start,end])=>{
           const cut=freezeRect({...source,top:source.top+start,height:end-start});
-          return Object.freeze({source:cut,target:mapRect(cut)});
+          const target=freezeRect({left:unionTarget.left,top,width:unionTarget.width,height:cut.height*scale,scale});
+          top=target.bottom;
+          return Object.freeze({source:cut,target});
         });
-        preferencesBody=freezeRect({left:unionTarget.left+12*scale,top:unionTarget.top+166*scale,
+        preferencesBody=freezeRect({left:unionTarget.left+12*scale,top,
           width:232*scale,height:88*scale});
       }
       if(ready&&objectives){
         // Preserve all original body pixels and native footer click geometry.
         // The inserted checkbox row belongs to the web overlay.
         const {source}=native,{scale}=unionTarget;
-        const split=245;
-        const body=freezeRect({...source,height:split});
-        const footer=freezeRect({...source,top:source.top+split,height:source.height-split});
+        const body=freezeRect({...source,height:objectiveBody});
+        const footer=freezeRect({...source,top:source.top+objectiveFooter,height:source.height-objectiveFooter});
         const bodyTarget=mapRect(body),footerTarget=mapRect(footer);
         strips=[
           Object.freeze({source:body,target:bodyTarget}),
-          Object.freeze({source:footer,target:freezeRect({...footerTarget,top:footerTarget.top+OBJECTIVES_ROW*scale})}),
+          Object.freeze({source:footer,target:freezeRect({...footerTarget,top:bodyTarget.bottom+OBJECTIVES_ROW*scale})}),
         ];
-        objectivesStone={source:freezeRect({...source,top:source.top+240,height:5}),
+        objectivesStone={source:freezeRect({...source,top:source.top+objectiveBody-5,height:5}),
           target:freezeRect({left:unionTarget.left,top:bodyTarget.bottom,width:unionTarget.width,height:OBJECTIVES_ROW*scale})};
         objectivesCheckbox=freezeRect({left:unionTarget.left+16*scale,top:objectivesStone.target.top,
           width:224*scale,height:OBJECTIVES_ROW*scale,scale});
@@ -204,14 +215,14 @@
       if(ready&&compact&&back?.confirmation){
         const t=unionTarget,scale=t.scale;
         const button=(source,left)=>({source:freezeRect(source),
-          target:freezeRect({left:t.left+left*scale,top:t.top+115*scale,width:106*scale,height:28*scale,scale})});
+          target:freezeRect({left:t.left+left*scale,top:t.bottom-36*scale,width:106*scale,height:28*scale,scale})});
         confirmation={ok:button(back.confirmation.ok,16),cancel:button(back.confirmation.cancel,134)};
       }
       if(ready&&back?.image?.naturalWidth&&backSource&&inside(native.source,backSource.left,backSource.top)&&
           inside(native.source,backSource.right-1,backSource.bottom-1)){
         const panel=strips?unionTarget:mapRect(native.source),scale=panel.scale;
         const oldTarget=mapRect(backSource);
-        const size=(back.compact==='pause'?38:48)*scale,inset=8*scale;
+        const size=(back.compact==='pause'||back.compact==='end'?38:48)*scale,inset=8*scale;
         const left=panel.right-size-inset,top=panel.bottom-size-inset;
         const target=freezeRect({left,top,width:size,height:size});
         backControl={source:backSource,oldTarget,replaceButton:!compact&&!preferences,target};
@@ -272,10 +283,12 @@
           }
           if(p.preferencesBody){
             const t=p.unionTarget,s=p.source,scale=t.scale;
-            context.drawImage(frame,s.left,s.top+166,256,90,t.left,t.top+166*scale,t.width,90*scale);
+            context.drawImage(frame,s.left,s.top+MATCH_SETTINGS_NATIVE_BODY_TOP,256,90,
+              t.left,p.preferencesBody.top,t.width,90*scale);
             context.drawImage(frame,s.left+4,s.top+235,248,18,t.left+4*scale,t.top+4*scale,248*scale,18*scale);
             // Fill the footer from verified empty stone directly above it.
-            context.drawImage(frame,s.left,s.top+200,256,56,t.left,t.top+256*scale,t.width,56*scale);
+            context.drawImage(frame,s.left,s.top+200,256,MATCH_SETTINGS_FOOTER,
+              t.left,t.bottom-MATCH_SETTINGS_FOOTER*scale,t.width,MATCH_SETTINGS_FOOTER*scale);
             paintSettingsFrame(context,frame,0x441940,s,t);
           }
           if(p.ok){
@@ -311,7 +324,7 @@
                   t.left,t.top,t.width,t.height);
                 context.globalAlpha=.8;
                 context.drawImage(frame,s.left,s.top,s.width,s.height,t.left,t.top,t.width,seam);
-                context.drawImage(frame,s.left,s.bottom,s.width,3,t.left,t.bottom-seam,t.width,seam);
+                context.drawImage(frame,s.left,p.source.top+245,s.width,3,t.left,t.bottom-seam,t.width,seam);
               }finally{context.restore();}
             }else{
               const step=Math.ceil(t.height/7);
