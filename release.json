@@ -1,5 +1,5 @@
 {
-  "version": "aa3ccb05022906d1cce0bf9a",
+  "version": "2afa8bb04a90fa5068414d46",
   "files": [
     {
       "path": "LICENSE.wine-assembly",
@@ -108,8 +108,8 @@
     },
     {
       "path": "game.html",
-      "bytes": 184260,
-      "sha256": "f5c9dc8b4afb587d9d0d0819b0b20de680a3acd8012908f85e90ba11230d51e8"
+      "bytes": 184358,
+      "sha256": "f4f6dca62cd318ff8b1d3decb4b831f7f31c86b22d6bd94ba8e62292afe042cf"
     },
     {
       "path": "host.js",
@@ -118,8 +118,8 @@
     },
     {
       "path": "icons/apple-touch-icon.png",
-      "bytes": 1545,
-      "sha256": "7c71ed5a06d87a846e68fc9f86ed9c1138da812682de41b0b1a51ab862526cba"
+      "bytes": 38934,
+      "sha256": "6725a8f76de20aabf2d566a79ec3e9a954a6342b8b7754576291343552d03c49"
     },
     {
       "path": "icons/ui/account.png",
@@ -172,9 +172,29 @@
       "sha256": "784216e850ece0e58b0547311da21f9a8c58a9880eb11d7cba4894c34e456c1c"
     },
     {
+      "path": "icons/warcraft2-180.png",
+      "bytes": 38934,
+      "sha256": "6725a8f76de20aabf2d566a79ec3e9a954a6342b8b7754576291343552d03c49"
+    },
+    {
+      "path": "icons/warcraft2-192.png",
+      "bytes": 43526,
+      "sha256": "274fda467a7faccbf19529dc58d854c117d6e0fc745da8875b618a2dd64e9708"
+    },
+    {
+      "path": "icons/warcraft2-48.png",
+      "bytes": 4010,
+      "sha256": "1087ac67e821df11037e0301d3f9582ccacdac3ad2c165116e9b9ea7b616e284"
+    },
+    {
+      "path": "icons/warcraft2-512.png",
+      "bytes": 203728,
+      "sha256": "92085a3df164d95d5cf5c8f68fe2c401779f3a66f28515b23eadbb935d0f9415"
+    },
+    {
       "path": "index.html",
-      "bytes": 1503,
-      "sha256": "6892529b7749e48014760618928e124252d83b5dde56b51829bd6fd93a3d498c"
+      "bytes": 1597,
+      "sha256": "7c54bfe10ac831a7bf5ce985c4bed06672403b2886767c5203d884c5862fc4fc"
     },
     {
       "path": "install.js",
@@ -728,8 +748,8 @@
     },
     {
       "path": "manifest.webmanifest",
-      "bytes": 394,
-      "sha256": "78e8933b8983f55e0e9a8167713fa7b775988198cf843cdf47eabdc0c69af03c"
+      "bytes": 522,
+      "sha256": "8dc94ccd734a3654fa021d10873826755e16642928091c0a96e024603b368cdb"
     },
     {
       "path": "menu-art/human-texture.png",
@@ -937,5 +957,5 @@
       "sha256": "129460b35ffe37800ad7fd15d6afaf21ad7441449ca925623382dbd770d6c4e1"
     }
   ],
-  "workerSha256": "4d89eafe21e7231f1652d9d6376ee6ab7981579291e2f68beb0a98f5d183b2c2"
+  "workerSha256": "8d108473d1ee18c07110409970981c029b9a986ddf5cc26855bedd6c7113d41c"
 }
