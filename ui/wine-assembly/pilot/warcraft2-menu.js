@@ -417,7 +417,13 @@
                 const size = Math.round(w * .9), height = size * .95;
                 context.drawImage(dialogBack, x + (w - size) / 2, y + (h - height) / 2, size, height);
               } else if (region.foreground && backdrop) foreground(image, region);
-              else draw(context, image, region.source, region.target);
+              else {
+                const {source, target} = region;
+                draw(context, image, source, target);
+                if (current.sound) global.WarcraftModalPresentationV15?.paintSettingsFrame(context, image,
+                  next.dialog?.handler, {left: source.x, top: source.y, width: source.w, height: source.h},
+                  {left: target.x, top: target.y, width: target.w, height: target.h});
+              }
             }
           }
         } finally {

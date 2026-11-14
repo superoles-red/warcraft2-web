@@ -20,6 +20,40 @@
   touch-action: manipulation;
 }
 #warcraft-menu-navigation button:focus-visible { outline: 2px solid #f4d343; }
+#warcraft-objectives-at-start {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .22em;
+  color: #f4d343;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+#warcraft-objectives-at-start[hidden] { display: none; }
+#warcraft-objectives-at-start img {
+  display: block;
+  object-fit: contain;
+  height: 1em;
+  max-width: calc(100% - 1.45em);
+  image-rendering: pixelated;
+}
+#warcraft-objectives-at-start input {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 1.2em;
+  height: 1.2em;
+  margin: 0;
+  background: url("./menu-art/language-unselected.png") center / contain no-repeat;
+  image-rendering: pixelated;
+  cursor: pointer;
+}
+#warcraft-objectives-at-start input:checked {
+  background-image: url("./menu-art/language-selected.png");
+}
+#warcraft-objectives-at-start input:focus-visible { outline: 2px solid #f4d343; }
 .warcraft-page #screen-canvas-stack {
   --warcraft-hud-left: 4px;
   --warcraft-hud-right: 4px;
@@ -78,4 +112,62 @@
 /* The full-page Warcraft surface already uses the available viewport. */
 .warcraft-page :is(#scroll-collapse-gutter, #scroll-collapse-spacer) {
   display: none !important;
+}
+
+#warcraft-match-settings {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  align-content: start;
+  gap: clamp(3px, 5%, 8px);
+  pointer-events: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+#warcraft-match-settings[hidden] { display: none; }
+#warcraft-match-settings label {
+  display: flex;
+  align-items: center;
+  width: max-content;
+  min-height: var(--settings-control);
+  gap: 7px;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+#warcraft-match-settings input {
+  appearance: none;
+  width: var(--settings-glyph);
+  height: var(--settings-glyph);
+  margin: 0;
+  background: url("./menu-art/language-unselected.png") center / contain no-repeat;
+  image-rendering: pixelated;
+}
+#warcraft-match-settings input:checked {
+  background-image: url("./menu-art/language-selected.png");
+}
+#warcraft-match-settings img { height: var(--settings-glyph); image-rendering: pixelated; }
+#warcraft-match-settings section { display: grid; gap: 3px; }
+#warcraft-match-settings [role="group"] { display: grid; gap: 4px; }
+#warcraft-match-settings button {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: var(--settings-control);
+  padding: 3px 0;
+  border: 0;
+  background: url("./menu-art/title-button.png") center / 100% 100%;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+#warcraft-match-settings button img { height: var(--settings-choice-glyph); }
+#warcraft-match-settings button[aria-pressed="true"],
+#warcraft-match-settings :focus-visible { outline: 1px solid #f2cf41; }
+#warcraft-match-settings-heading {
+  position: absolute;
+  z-index: 3;
+  transform: translateX(-50%);
+  pointer-events: none;
+  image-rendering: pixelated;
 }

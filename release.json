@@ -1,5 +1,5 @@
 {
-  "version": "87946851b5b267a7d2cf9db7",
+  "version": "572b3a8e3fcbb635fa85fd6c",
   "files": [
     {
       "path": "LICENSE.wine-assembly",
@@ -123,8 +123,8 @@
     },
     {
       "path": "game.html",
-      "bytes": 185271,
-      "sha256": "6c88aa27ab1971c81b3af057dd6b3f63271ba022ab3ed02d371f1e2acc5293dc"
+      "bytes": 185351,
+      "sha256": "ae6283e4580948010da06a6d1371ebb997ad93ee5d666dd121da3435990d280f"
     },
     {
       "path": "host.js",
@@ -773,38 +773,48 @@
     },
     {
       "path": "menu-art/label-cancel.png",
-      "bytes": 446,
-      "sha256": "482b1e70fae6b27d429db897f8cc7bb96d7f8b7d2472b7f1a24a60af2ff3bebd"
+      "bytes": 553,
+      "sha256": "3587f429d1909a4ba29ceea6552aacfc2527448d99a66394af9c6c3e30bc668f"
     },
     {
       "path": "menu-art/label-delete-language.png",
-      "bytes": 844,
-      "sha256": "4039a6f704fc060bcb87bd3cb6b95532a7103fe07d5c1158f2a90f96ea0dca68"
+      "bytes": 986,
+      "sha256": "6033cca65fe4fa36d1443d027a3f7a40adb6f2750974708b1371875b8d5464aa"
     },
     {
       "path": "menu-art/label-delete.png",
-      "bytes": 408,
-      "sha256": "6c1cb5a054fdeda061515067d251705e02c24ccbef8ca57bf423dd446c7c1966"
+      "bytes": 508,
+      "sha256": "96ed53ddbdaaf934b905dd1189d9c3d28c5c1ec58694d9ec99d19017a133b02f"
     },
     {
       "path": "menu-art/label-download-language.png",
-      "bytes": 909,
-      "sha256": "1495bfaaafd44c4bcba7f1420513a2a614239f1fd85e634d125f3c58eba4382c"
+      "bytes": 1149,
+      "sha256": "e2c3f5e299294e078babb2c190b330de16ab35018aa58e3f090a8b11ab09a31d"
     },
     {
       "path": "menu-art/label-download.png",
-      "bytes": 549,
-      "sha256": "4d4fca94bcce881e94a964cf3f980bcf2d96ea8238ea8fbcb74b236354ef4b97"
+      "bytes": 728,
+      "sha256": "cc49fb42f7532997f2e1cbed885bc6cd92970b926da6d3eab185f1d99da3a32d"
     },
     {
       "path": "menu-art/label-english.png",
-      "bytes": 976,
-      "sha256": "77dfccfa01b35da22bb8a430117838d09513fab39242525ce8f0523bcfce3a83"
+      "bytes": 700,
+      "sha256": "122577c623db20b1153086ac16576779bbcafa1c4344ceec53c849d0fe208f2f"
     },
     {
       "path": "menu-art/label-fast-scenario.png",
       "bytes": 1001,
       "sha256": "ac72cee529f0e55457af7850395074c5694ea33cb8c755589ef6d7b9a771dae6"
+    },
+    {
+      "path": "menu-art/label-fog-of-war.png",
+      "bytes": 853,
+      "sha256": "2d959d80f3d44228cca23f138bf740c7096a02f952fa04024ff2542773faf430"
+    },
+    {
+      "path": "menu-art/label-game-speed.png",
+      "bytes": 820,
+      "sha256": "05e439a5deef4f898222541ba6b53d529d031be655eec854b194a1cbaae46b38"
     },
     {
       "path": "menu-art/label-language.png",
@@ -823,28 +833,28 @@
     },
     {
       "path": "menu-art/label-ru-cancel.png",
-      "bytes": 475,
-      "sha256": "c27bebe6183a545cfeec62e288684bf303c5153014f10fc656acd027aec6df78"
+      "bytes": 724,
+      "sha256": "11853309d533b6b0c651a53623fd436df04eb1151f31bf45547c5118492f0b26"
     },
     {
       "path": "menu-art/label-ru-delete-language.png",
-      "bytes": 759,
-      "sha256": "d4c83491449837eb587a1cf6fa758f1155e822735a032d043a2e4cc82494c63f"
+      "bytes": 1023,
+      "sha256": "76fd46ef2beb3376117d9382981e376c7ae94539ba753998d8b402316e6e6c03"
     },
     {
       "path": "menu-art/label-ru-delete.png",
-      "bytes": 509,
-      "sha256": "d36b083cedc17299ed87cb86888de97be951e14e602bd1c57c3fad8a018dd233"
+      "bytes": 661,
+      "sha256": "51ff94769158e3c3098c7d825e0acbf39aa0771876af0d023969d6799bb8c9c0"
     },
     {
       "path": "menu-art/label-ru-download-language.png",
-      "bytes": 696,
-      "sha256": "8a705a59d5e98bc197859456b5a1bb40af9e418e2bd2d8ca6b957ca74d979493"
+      "bytes": 978,
+      "sha256": "6c8389f84563279728c8f4ff4ff0effb20b59fb8a2a375b0ac99c38c64d70aef"
     },
     {
       "path": "menu-art/label-ru-download.png",
-      "bytes": 463,
-      "sha256": "8bf4268ccb4cd16c281560d01749990175917825e3675aad936d2758b101d7fd"
+      "bytes": 661,
+      "sha256": "1389c42a11660b79f8bf2d75c583a1ae00d6307f31fa798532ec1fef27c45dfe"
     },
     {
       "path": "menu-art/label-ru-fast-scenario.png",
@@ -852,9 +862,19 @@
       "sha256": "3fc64737da405dc77fc6b40ae0a0d371619ea4152a5af86667b7ead70f8828ee"
     },
     {
+      "path": "menu-art/label-ru-fog-of-war.png",
+      "bytes": 910,
+      "sha256": "814992ecdb4f93220b37814a72029f655fe2cdaa7b24193dc7e06647152b80bf"
+    },
+    {
+      "path": "menu-art/label-ru-game-speed.png",
+      "bytes": 863,
+      "sha256": "0a2c27b1eabf22cffed25babfe634065eaa98ed6db92fe57afcc40bf97560115"
+    },
+    {
       "path": "menu-art/label-ru-language.png",
-      "bytes": 533,
-      "sha256": "1a82c9470915b24c055e65f7cd4351aee58cc4588cc1aa38925c20363dd6c35a"
+      "bytes": 590,
+      "sha256": "320b88a55e141c8be6c26f260766faeb16bce8558dc35e4d4b28e9e672ffcced"
     },
     {
       "path": "menu-art/label-ru-options.png",
@@ -867,9 +887,34 @@
       "sha256": "c82bd0fc05a7f1e5e667b121fb083db6a1c4b32d09e863ae11d2846317c94267"
     },
     {
+      "path": "menu-art/label-ru-settings.png",
+      "bytes": 784,
+      "sha256": "fc9d1fe1b5c4a2217706a82bae219c86a9d33179a2ef7885b82df7f4196b5c06"
+    },
+    {
+      "path": "menu-art/label-ru-show-objectives.png",
+      "bytes": 1200,
+      "sha256": "c9f6ab4efeeb20441458d6208180924cd6e89af8795491eef3261aa44736e386"
+    },
+    {
       "path": "menu-art/label-ru-sound.png",
       "bytes": 525,
       "sha256": "7a23f7d37eac07b2f15d14be0979981f9e01fd1ca84171a8ee418cb30bed51a9"
+    },
+    {
+      "path": "menu-art/label-ru-speed-faster.png",
+      "bytes": 997,
+      "sha256": "291c40b3f802b7c9d749e02abc165021f7d981a90845763a7405c2212db80dc9"
+    },
+    {
+      "path": "menu-art/label-ru-speed-max.png",
+      "bytes": 968,
+      "sha256": "9f36f0bfa79bb19e99ffc0356b2f5c54fe2032011c9699db0d5736105f47bdfb"
+    },
+    {
+      "path": "menu-art/label-ru-speed-normal.png",
+      "bytes": 676,
+      "sha256": "0b9f5c3cf3aca2722b34c69c45a2294ad857e801f323acc1cc92c466f0028b96"
     },
     {
       "path": "menu-art/label-ru-story.png",
@@ -878,23 +923,48 @@
     },
     {
       "path": "menu-art/label-ru-use.png",
-      "bytes": 685,
-      "sha256": "12db9b322b95246f5a455c4a142f61d5103d6b7959f9227ed1a9bd3d0c2fd1d0"
+      "bytes": 1019,
+      "sha256": "ab80f1bbb9beac63542be3ec324ef2efebf57ad9f325f454379f237d49eab3c6"
     },
     {
       "path": "menu-art/label-russian-text.png",
-      "bytes": 842,
-      "sha256": "00e103f65127e15a18c7079e7b1955d3433a9c05813f7b1375ef746d989dff2f"
+      "bytes": 925,
+      "sha256": "c4932ad577cbbfd411c3f9d7ca3933ff3ddea7bf9943750eabe034c21c08699a"
     },
     {
       "path": "menu-art/label-russian.png",
-      "bytes": 556,
-      "sha256": "843b67d7acf91182b011a867d17fced39d2bcd198ad630c2a6120993dd4b36b7"
+      "bytes": 614,
+      "sha256": "ccbdba800406d429777b641a030a699ffe241d597614478a121f71dabdc1278d"
+    },
+    {
+      "path": "menu-art/label-settings.png",
+      "bytes": 749,
+      "sha256": "9943a09ad8e5fd1b9dc80c0872448f32628645b7fcba39d22f052d6e62a204f6"
+    },
+    {
+      "path": "menu-art/label-show-objectives.png",
+      "bytes": 845,
+      "sha256": "18219ecae69e9b919c75cc25923401bb7d92ab3332444a9a28f1bfaa3aa83710"
     },
     {
       "path": "menu-art/label-sound.png",
       "bytes": 812,
       "sha256": "a0b620519ba7cc0a75102d71b1b5d6256c7121948ef6512516eb6a5227cbafcb"
+    },
+    {
+      "path": "menu-art/label-speed-faster.png",
+      "bytes": 919,
+      "sha256": "9f6f402fb8d84cb3428066224675189fdd968845076d25cc12677f63acf5e305"
+    },
+    {
+      "path": "menu-art/label-speed-max.png",
+      "bytes": 656,
+      "sha256": "51a205ef96927cb8351d45cde0c995fe56a456e7253e50c72f17ef3d33df1581"
+    },
+    {
+      "path": "menu-art/label-speed-normal.png",
+      "bytes": 694,
+      "sha256": "fb3d197753d6cd65ea3232f41a79e639cbedf7fffe039133628b61a694ec434c"
     },
     {
       "path": "menu-art/label-story.png",
@@ -903,8 +973,8 @@
     },
     {
       "path": "menu-art/label-use.png",
-      "bytes": 685,
-      "sha256": "40211cd39a058ac31eb7c116f3370f3d228bb181affadf7e3efec04c985c4755"
+      "bytes": 911,
+      "sha256": "0e90a9f4268683867c70730cb180bd4d62a520639950e65ccf083517e15440de"
     },
     {
       "path": "menu-art/language-disabled.png",
@@ -968,8 +1038,8 @@
     },
     {
       "path": "ui/boxedwine/full-map-runtime.js",
-      "bytes": 43164,
-      "sha256": "7e43cbab53863956732fe785e16edfa47e4c11de4b838712bb6160bc2c5046a6"
+      "bytes": 45372,
+      "sha256": "e46b7c8e3b11a575ba62cff8252d495fa03d0fe21facaaf0f7a838c33cd9eee2"
     },
     {
       "path": "ui/boxedwine/input-fence.js",
@@ -1003,8 +1073,8 @@
     },
     {
       "path": "ui/viewport/hud-layout.js",
-      "bytes": 18765,
-      "sha256": "274518a86cc43a5006f156faf521f5581433069075e0ba4388d32ee1a4920b75"
+      "bytes": 19162,
+      "sha256": "fd468e2e7f4015c0c6ee440eb5db9a29a2773eda0e9db1657890ebc8bece5b54"
     },
     {
       "path": "ui/viewport/independent-camera-pilot.js",
@@ -1013,8 +1083,8 @@
     },
     {
       "path": "ui/viewport/modal-presentation-v15.js",
-      "bytes": 14001,
-      "sha256": "7d858e5c36cf40273d8dafb15688c1158bdede73d5b00d9a49c797a781e9f68b"
+      "bytes": 21154,
+      "sha256": "52df0fa1daf7d5e8a1a83abef62ed1f0f23e865550feb7134ccdec5400ff665f"
     },
     {
       "path": "ui/viewport/native-frame-v16.js",
@@ -1043,8 +1113,8 @@
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-briefing-layout.js",
-      "bytes": 11010,
-      "sha256": "335e564eeda40f01631543c6408642c654d6a52ef0411d28ba381a937c8324a3"
+      "bytes": 12961,
+      "sha256": "4a5d67c6ebe37d36d21ecad5d6ff7c91060b542e3bcb3a2a899602c093e885b6"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-controls.js",
@@ -1053,38 +1123,43 @@
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-dialog-layout.js",
-      "bytes": 15060,
-      "sha256": "2b8371a37389ef943527f5524f2b195400e2d1f62c6527a3c6c379ad2ff9a9c4"
+      "bytes": 15227,
+      "sha256": "8557441251251a90d905ba02d37ec5ca1f74dd195f5deecb12b98ae846867692"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-menu-navigation.js",
-      "bytes": 20456,
-      "sha256": "999da22aa6fb2a1c1470e037b378123e5280f12d7dbb4bcf455c001335c35717"
+      "bytes": 22522,
+      "sha256": "1ceeb3e8934a34263de95d91f18d903d9a728b8a4096e78e100fc82b303694e7"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-menu.js",
-      "bytes": 25046,
-      "sha256": "44d0049ad2d9108ee970894994ff1bace44ca00e57642988a48210cb896f57d2"
+      "bytes": 25417,
+      "sha256": "158eeca3fd36871ba7ed4d6d07bb0c1d08abdfc635a176f78cffdc34ee7a3bc8"
+    },
+    {
+      "path": "ui/wine-assembly/pilot/warcraft2-preferences.js",
+      "bytes": 12340,
+      "sha256": "2fc0fbe1b286e82410cdea975dced937c50f2621c057e9320a4b8f36682f8cf5"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-v16.js",
-      "bytes": 9815,
-      "sha256": "0aea9d6d29cbe0ea93bdf8bd5a209dbea4f68d4c5b18eee532e0905f992bbbb7"
+      "bytes": 12054,
+      "sha256": "16a7d29f3bfc538751a77b322c3a1a33863e1f3a65696507b6d21a52efa07643"
     },
     {
       "path": "v16-bridge.dll",
-      "bytes": 58368,
-      "sha256": "a5b8876870d08125c0de31ec2f176d01f9a54ad276b9b044f75787587421ea64"
+      "bytes": 59392,
+      "sha256": "6b64a5b3612c5eefc77be67d39c86462356b131b67c09f16dcfc68a27cf6d7f5"
     },
     {
       "path": "v16-bridge.js",
-      "bytes": 4905,
-      "sha256": "9bfd7d16dec7ab0aa5f5c2702ad905ecdabd0dd1b561be7784a1da0c13207f7a"
+      "bytes": 5027,
+      "sha256": "2c130068c259b068b8c97b72cc6875c971b294982d0b6340cc9545d495f5a170"
     },
     {
       "path": "v16-movie-pilot.dll",
-      "bytes": 61440,
-      "sha256": "87ce70fd657993563a5ecd91c8aa74a0b9268163b73480d033e1baecf05a964f"
+      "bytes": 61952,
+      "sha256": "cc97ad8180d81dc92f488d21adaf0a14e74111cccac2a4f8fcd7fd10d65b00a8"
     },
     {
       "path": "warcraft2-compact-audio.js",
@@ -1093,19 +1168,19 @@
     },
     {
       "path": "warcraft2-menu-policy.js",
-      "bytes": 16691,
-      "sha256": "596f0d1df4749bbdb2f9acd618b183f59a0abdbb0e76f07a360fb81bd4ea06dd"
+      "bytes": 21935,
+      "sha256": "40c00553e708c38f5db0650a309246c4546aea543b81da6e8b9e3945e4cc27dd"
     },
     {
       "path": "warcraft2-v16.css",
-      "bytes": 3544,
-      "sha256": "e8c8fa4706f73ba282a72f2c486a45091d845b708466f7d242c6d48caca33d63"
+      "bytes": 6172,
+      "sha256": "9274cf8af600b948514fd8134c499b7ba29ab98042310ff5af82494238c8eac1"
     },
     {
       "path": "warcraft2.js",
-      "bytes": 9457,
-      "sha256": "7307d823607aa594d65992ef2411d7b016fc0c6f8b3a8d45ef36549fb455ba76"
+      "bytes": 9506,
+      "sha256": "1ab0c1ef65b4894df9645dd5484323cc541a2034acbfe8ad4d58c1598daf695d"
     }
   ],
-  "workerSha256": "c3559c98e5e37fc94e3f2ea150c669bd0efd0272e081a338c614af7c5c45f7f4"
+  "workerSha256": "1216552642116963d6510300f122bfb1b82cf0a777d48072bec61fff78c6502e"
 }

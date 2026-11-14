@@ -12,13 +12,14 @@
   const cleanHud=['v13','v14','v15','v16'].includes(foregroundVersion),balancedHud=['v14','v15','v16'].includes(foregroundVersion);
   let camera,modalPresenter,cursorPresenter,lastScene=null,selectedCommand=null,animation=null,lastDialogToken=null;
   let bootstrapPainter,nativeFramePainter,visibleFramePainter,lastMapEpoch=null,lastRenderedGeometry=null;
-  let bootstrapCanvas,onPresented,onUnavailable,acceptsInput,modalBack;
+  let bootstrapCanvas,onPresented,onUnavailable,acceptsInput,modalBack,modalSlider;
   let bootstrapInUse=false,bootstrapPaletteKey=null;
   let cleanWorldReady=false,commandHighlight,lastWorldPaint=null,frozenWorld=null;
   let modalBackgroundWidth=0,modalBackgroundHeight=0,modalBackgroundDpr=0,modalBackgroundInsets=null;
   const performanceStats={reusedWorldFrames:0};
   let cropX=0,cropY=0,cropKey='';
   let minimapDrag=false;
+  let sliderDrag=null;
   const held=new Set();
   let infoPress=false;
   const telemetry={frames:0,mode:'native',errors:[],geometry:null};
@@ -100,11 +101,11 @@
     const hudWidth=rightEdge-left,lowerEdge=height-bottom;
     const scale=Math.min(1.25,Math.max(1,Math.min((hudWidth+8)/720,height/600)));
     const fields=foreground.fields.map(field=>({id:field.id,
-      compact:{source:global.WarcraftHudForeground.contentRect(field)||field.source}}));
+      compact:{source:global.WarcraftHudForeground.contentRect(field)}}));
     const compact=cameraPilot&&hudWidth<480;
     const header=global.WarcraftHudLayout.createCompactHeaderLayout(fields,
-      {width:hudWidth,left,top:2,menuScale:cameraPilot?1.9:1.8,resourceScale:cameraPilot?1.65:1.5,
-        gap:compact?3:6,reserveWidth:compact?40:42});
+      {width:hudWidth,left,top:2,menuScale:cameraPilot&&!compact?1.9:1.8,resourceScale:cameraPilot?1.65:1.5,
+        gap:compact?3:6,reserveWidth:cameraPilot?46:42});
     const sideTop=header.height+8;
     const info=foreground.layers.find(layer=>layer.id===100);
     const board=cameraPilot&&global.WarcraftHudLayout.createAdaptiveBoardLayout(
@@ -332,6 +333,7 @@
       const framePixels=coherentFrames?nativeFramePainter.paint(lastScene.frame):lastScene.frame;
       const modal={inGame:true,dialogOpen:true,packet:view?.modal,panelTexture:modalTexture?.(),
         back:modalBack?.(view?.modal),fillBackground:!!onPresented,
+        dialogPixelRatio:onPresented?dpr:0,
         leftInset:hudInsets.left>4?hudInsets.left*dpr:0,rightInset:hudInsets.right>4?hudInsets.right*dpr:0};
       if(onPresented&&modalPresenter.plan(framePixels,{...modal,width:Math.round(width*dpr),
         height:Math.round(height*dpr)}).mode!=='modal'){waitForNativeFrame();return;}
@@ -510,6 +512,7 @@
   }
   function cancelButtons() {
     minimapDrag=false;
+    sliderDrag=null;
     infoPress=false;
     if(!held.size)return;
     const g=nativeGeometry(),point=g?{x:g.width-1,y:g.height-1}:lastNative;
@@ -519,6 +522,49 @@
     // Earlier gesture listeners may already have cancelled the shared fence.
     // Drop the raw HUD release just queued above as well; release actual holds.
     global.WarcraftUiBridge.cancelPendingInput?.();
+  }
+  function installModalSliderInput() {
+    const stop=event=>{event.preventDefault();event.stopImmediatePropagation();};
+    function finish(event) {
+      const drag=sliderDrag;
+      if(event.pointerId!==drag?.id)return;
+      sliderDrag=null;
+      if(event.type==='pointerup')moveSlider(event,drag);
+      if(held.delete(0))global.WarcraftUiBridge.nativeButton(0,0,lastNative.x,lastNative.y);
+      stop(event);
+    }
+    function moveSlider(event,drag) {
+      if(telemetry.mode!=='dialog'||drag.token!==lastDialogToken)return;
+      const rect=input.getBoundingClientRect(),layout=modalPresenter.layout,t=layout.target,s=layout.source;
+      if(!t||!s||!rect.width)return;
+      const x=s.left+((event.clientX-rect.left)*layout.width/rect.width-t.left)/t.scale;
+      moveNative({x:clamp(x,drag.slider.left,drag.slider.right),y:drag.slider.y});
+    }
+    const capture={capture:true,passive:false};
+    global.addEventListener('pointerdown',event=>{
+      if(event.target!==input||event.button!==0||event.isPrimary===false||
+        sliderDrag||telemetry.mode!=='dialog')return;
+      const point=pick(event,input.getBoundingClientRect());
+      if(point?.regionId!=='native-modal')return;
+      const layout=modalPresenter.layout;
+      const layer=layout.layers.find(item=>item.root===layout.token);
+      const slider=modalSlider(layer,point.x,point.y);
+      if(!slider)return;
+      stop(event);
+      input.focus({preventScroll:true});
+      sliderDrag={id:event.pointerId,token:lastDialogToken,slider};
+      try{input.setPointerCapture(event.pointerId);}catch(_){}
+      moveSlider(event,sliderDrag);
+      held.add(0);
+      global.WarcraftUiBridge.nativeButton(1,0,lastNative.x,lastNative.y);
+    },capture);
+    global.addEventListener('pointermove',event=>{
+      if(event.pointerId!==sliderDrag?.id)return;
+      moveSlider(event,sliderDrag);
+      stop(event);
+    },capture);
+    for(const type of ['pointerup','pointercancel','lostpointercapture'])
+      global.addEventListener(type,finish,capture);
   }
   function installInputRouter() {
     if(routerInstalled)return;routerInstalled=true;
@@ -608,6 +654,8 @@
     onUnavailable=host?.onUnavailable;
     acceptsInput=host?.acceptsInput;
     modalBack=host?.modalBack;
+    modalSlider=host?.modalSlider;
+    if(modalSlider)installModalSliderInput();
     container=host?.container || document.getElementById('dropzone');
     output=document.createElement('canvas');output.id='warcraft-map-canvas';output.hidden=true;
     output.style.cssText='z-index:2;pointer-events:none;';frame.append(output);

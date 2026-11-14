@@ -26,6 +26,15 @@
   });
   const volumeKey = 'HKCU\\Software\\Blizzard Entertainment\\Warcraft II BNE';
   const soundDialogEntry = 0x441b90;
+  const settingsSliders = new Map([[0x441940, 2], [0x442050, 3]]);
+  const horizontalArrowPaint = [0x406d94, 0x406ea9];
+  const scrollbarPress = 0x409367;
+  const scrollbarPressCode = 0x48f4a0;
+  const startupTips = 0x420d5b;
+  const startupObjectivesSetting = 0x48f4d0;
+  const objectivesButtonSetup = 0x43548c;
+  const objectivesButtonCode = 0x48f4e0;
+  const objectivesPreferenceKey = 'warcraft-show-objectives-at-start';
   const deferredDialog = 0x4ab8e4;
   const soundSwitches = Object.freeze({unitspeech:1, unitnoise:2, bldgnoise:4, dispmsgs:0x40000});
   const installed = new WeakMap();
@@ -95,6 +104,15 @@
     [soundDialogEntry, `68 40 19 44 00 6a 02 68 14 03 00 00 68 94 1b 4a 00 68 80 2e 46 00
       68 10 2c 46 00 68 84 1b 4a 00 c7 05 e4 b8 4a 00 00 00 00 00 c7 05 94 db 4b 00 01 00 00 00
       e8 07 31 fc ff 83 c4 14 50 e8 4e 3b fc ff 83 c4 0c c3`],
+    [horizontalArrowPaint[0], 'e8 07 1e 08 00 8b 4f 04 66 8b 15 bc b8 4a 00'],
+    [horizontalArrowPaint[1], 'e8 f2 1c 08 00 8b 46 18 83 c4 28'],
+    [scrollbarPress, 'e8 f4 01 00 00 83 c4 08 83 f8 06 74 51'],
+    [0x409560, '8b 4c 24 08 83 ec 18 8d 44 24 00 53 56 8b 74 24 24'],
+    // Automatic end-of-load Tips test and the original Objectives constructor.
+    [startupTips, 'a1 50 6b 4d 00 f6 c4 01 74 05 e8 36 e3 02 00'],
+    [0x435380, '68 a0 53 43 00 68 50 10 4a 00 e8 a1 98 ff ff 83 c4 08 c3'],
+    [objectivesButtonSetup, 'e8 1f 82 ff ff 6a 68 68 2c 10 4a 00'],
+    [0x42d6b0, '8b 44 24 04 6a fd 50 e8 14 54 fd ff'],
   ].map(([address, bytes]) => ({address, bytes: hex(bytes)}));
 
   // Entry: return false from the idle timer. The remaining now-unreachable
@@ -175,6 +193,26 @@
     [0x44f4ec, titleCall, 'e8 e9 fe 03 00'],
   ];
 
+  // Keep the horizontal (type 6) track and thumb geometry and its existing
+  // drag/value callback. Suppress only the two arrow sprite draws. Vertical
+  // (type 7) list scrollbars retain their arrows and original hit results.
+  // At press only, treat any horizontal track hit (native results 1–5) as
+  // result 3, the thumb. The native drag path then moves to the actual pointer
+  // position on press and throughout the hold, with native limits and callbacks.
+  const scrollbarPressWrapper = hex(`
+    ff 74 24 08 ff 74 24 08 e8 b3 a0 f7 ff 83 c4 08
+    8b 4c 24 04 66 83 79 22 06 75 0c
+    83 f8 01 72 07 83 f8 05 77 02 b0 03 c3`);
+
+  // After native Previous-button initialization, replace only its caption.
+  // The original control, faction art, return code and dialog cleanup remain.
+  // The two letters also exist in the installed Russian game's bitmap font.
+  const objectivesButtonWrapper = hex(`
+    ff 74 24 08 ff 74 24 08 e8 c3 e1 f9 ff 83 c4 08
+    6a fd ff 74 24 08 e8 d5 35 f7 ff 83 c4 08 85 c0 74 07
+    c7 40 14 10 f5 48 00 c3
+    00 00 00 00 00 00 10 4f 4b 00`);
+
   function isMapped(start, end, length, size) {
     return start > 0xf0 && end === start + length - 1 && end < size;
   }
@@ -195,6 +233,9 @@
     }
     const returnCodeOffset = await mapRange(wine, fastReturnCode, fastReturnCodeLength);
     const audioCodeOffset = await mapRange(wine, audioCode, audioWrapper.length);
+    const scrollbarCodeOffset = await mapRange(wine, scrollbarPressCode, scrollbarPressWrapper.length);
+    const objectivesSettingOffset = await mapRange(wine, startupObjectivesSetting, 1);
+    const objectivesButtonOffset = await mapRange(wine, objectivesButtonCode, objectivesButtonWrapper.length);
     const requestOffset = await mapRange(wine, idleCounter, 2);
     const memory = new Uint8Array(wine.memory.buffer);
     for (const {address, bytes} of originals) {
@@ -205,6 +246,9 @@
     }
     for (const [address, start, length] of [
       [fastReturnCode, returnCodeOffset, fastReturnCodeLength], [audioCode, audioCodeOffset, audioWrapper.length],
+      [scrollbarPressCode, scrollbarCodeOffset, scrollbarPressWrapper.length],
+      [startupObjectivesSetting, objectivesSettingOffset, 1],
+      [objectivesButtonCode, objectivesButtonOffset, objectivesButtonWrapper.length],
     ]) {
       if (memory.subarray(start, start + length).some(byte => byte !== 0)) {
         throw new Error('Исходный код главного меню BNE не совпал по адресу 0x' + address.toString(16));
@@ -222,6 +266,18 @@
     // The authored menu holds its last complete frame during this exit.
     // Shorten only the hidden fade. A positive duration keeps its divisor valid.
     memory[mapped.get(0x44f807) + fastStartFade - 0x44f807 + 1] = 1;
+    for (const address of horizontalArrowPaint) memory.fill(0x90, mapped.get(address), mapped.get(address) + 5);
+    memory.set(scrollbarPressWrapper, scrollbarCodeOffset);
+    memory.set(hex('e8 34 61 08 00'), mapped.get(scrollbarPress));
+    // Test a host-owned preference in an otherwise unused byte and call
+    // the same native Objectives constructor as the original menu action.
+    // The earlier replay and multiplayer guard branches stay in place.
+    memory.set(hex('80 3d d0 f4 48 00 00 90 74 05 e8 16 46 01 00'), mapped.get(startupTips));
+    memory.set(objectivesButtonWrapper, objectivesButtonOffset);
+    memory.set(hex('e8 4f a0 05 00'), mapped.get(objectivesButtonSetup));
+    memory[objectivesSettingOffset] = 1;
+    try { memory[objectivesSettingOffset] = Number(global.localStorage?.getItem(objectivesPreferenceKey) !== '0'); }
+    catch (_) {}
     installed.set(wine, requestOffset);
   }
 
@@ -232,6 +288,43 @@
     const start = map(address) >>> 0;
     const end = map(address + length - 1) >>> 0;
     return isMapped(start, end, length, memory.byteLength) ? new DataView(memory, start, length) : null;
+  }
+
+  function showObjectivesAtStart(wine, checked) {
+    if (!installed.has(wine) || wine.guestWorker) return null;
+    const setting = nativeView(wine, startupObjectivesSetting, 1);
+    if (!setting) return null;
+    if (typeof checked === 'boolean') {
+      setting.setUint8(0, Number(checked));
+      try { global.localStorage?.setItem(objectivesPreferenceKey, checked ? '1' : '0'); }
+      catch (_) {}
+    }
+    return setting.getUint8(0) === 1;
+  }
+
+  function sliderAt(wine, layer, x, y) {
+    if (!installed.has(wine) || !layer?.root) return null;
+    const root = nativeView(wine, layer.root, 0x4a);
+    if (!root || root.getUint16(0x20, true) !== layer.scene ||
+        root.getUint16(0x22, true) !== 0) return null;
+    const count = settingsSliders.get(root.getUint32(0x2a, true));
+    if (!count) return null;
+    let node = root.getUint32(0x46, true);
+    for (let checked = 0; node && checked < 24; checked++) {
+      const child = nativeView(wine, node, 0x36);
+      if (child?.getUint32(0x32, true) !== layer.root) return null;
+      const id = child.getUint16(0x20, true);
+      if (child.getUint16(0x22, true) === 6 && id > 0 && id <= count &&
+          (child.getUint32(0x18, true) & 10) === 8) {
+        const left = layer.source.left + child.getInt16(4, true);
+        const top = layer.source.top + child.getInt16(6, true);
+        const right = layer.source.left + child.getInt16(8, true);
+        const bottom = layer.source.top + child.getInt16(10, true);
+        if (x >= left && x < right + 1 && y >= top && y < bottom + 1) return {left, right, y:(top + bottom) >> 1};
+      }
+      node = child.getUint32(0, true);
+    }
+    return null;
   }
 
   function titleCounter(wine) {
@@ -317,7 +410,8 @@
     return true;
   }
 
-  const api = Object.freeze({install, requestDemo, requestSoundOptions, persistSoundOptions, controls, volume, setVolume});
+  const api = Object.freeze({install, requestDemo, requestSoundOptions, persistSoundOptions,
+    controls, volume, setVolume, sliderAt, showObjectivesAtStart});
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WarcraftAssemblyMenuPolicy = api;
 })(globalThis);

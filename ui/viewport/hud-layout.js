@@ -138,24 +138,28 @@
           width:region.target.width,height:region.target.height}:region.target};
     });
   }
-  const infoHeights = new WeakMap();
+  const infoBounds = new WeakMap();
   function createInfoRegion(layer, {left, top, scale, right, bottom}) {
     placement(left, top, scale);
     if (!layer?.captured || !layer.nativeVisible || right <= left || bottom <= top) return null;
     const {left: nativeLeft, top: nativeTop, width} = sourceRect(layer.source);
-    let visibleHeight = infoHeights.get(layer);
-    if (visibleHeight === undefined) {
-      // The native foreground mask identifies padding below the last drawn icon or line.
+    let bounds = infoBounds.get(layer);
+    if (!bounds) {
+      // The transparent capture includes padding around the native content.
+      let first = 0;
       let last = layer.alpha.length - 1;
-      while (last >= 0 && !layer.alpha[last]) last--;
-      visibleHeight = Math.ceil((last + 1) / width);
-      infoHeights.set(layer, visibleHeight);
+      while (first <= last && !layer.alpha[first]) first++;
+      if (first <= last) while (!layer.alpha[last]) last--;
+      bounds = {top:Math.floor(first / width), bottom:Math.ceil((last + 1) / width)};
+      infoBounds.set(layer, bounds);
     }
-    if (!visibleHeight) return null;
-    const fitted = Math.min(scale, (right - left) / width, (bottom - top) / visibleHeight);
-    return {id: 'info', source: {left: nativeLeft, top: nativeTop, width, height: visibleHeight},
-      layer: 'native-hud-100', visualSource: {left: 0, top: 0, width, height: visibleHeight},
-      target: {left, top, width: width * fitted, height: visibleHeight * fitted}};
+    if (bounds.top >= bounds.bottom) return null;
+    const height = bounds.bottom;
+    const fitted = Math.min(scale, (right - left) / width, (bottom - top) / height);
+    return {id: 'info', source: {left: nativeLeft, top: nativeTop, width, height},
+      layer: 'native-hud-100', visualSource: {left: 0, top: 0, width, height},
+      contentTop: top + bounds.top * fitted,
+      target: {left, top, width: width * fitted, height: height * fitted}};
   }
   function createAdaptiveBoardLayout(layer, {left, right, top, bottom, scale, portrait}) {
     placement(left, top, scale);
@@ -164,8 +168,7 @@
     const gap = Math.min(8, (right - left) / 8, (bottom - top) / 8);
     const width = right - left - gap;
     const height = bottom - top - gap;
-    // Reserve the full native info panel so selection changes never move
-    // the minimap or the commands. Tall displays can spend more on buttons.
+    // Keep the command bank clear of the largest information panel.
     const panelWidth = Math.min(width / 2, INFO_SIZE * scale * 1.15);
     const preferred = scale * (portrait ? 1.42 : 1.2);
     const panelShare = Math.min(panelWidth, height * .42);
@@ -174,9 +177,13 @@
       (height - panelShare) / COMMAND_BANK_HEIGHT);
     const gridTop = bottom - COMMAND_BANK_HEIGHT * commandScale;
     const size = Math.min(panelWidth, gridTop - top - gap);
-    const minimap = createMinimapRegion({left:right - size, top, size});
     const info = createInfoRegion(layer, {left, top, scale:size / INFO_SIZE,
       right:left + size, bottom:top + size});
+    const miniSize = info
+      ? Math.min(size, Math.max(44, info.target.top + info.target.height - info.contentTop))
+      : size * MINIMAP.width / INFO_SIZE;
+    const miniTop = Math.min(info?.contentTop ?? top, top + size - miniSize);
+    const minimap = createMinimapRegion({left:right - miniSize, top:miniTop, size:miniSize});
     return {info, minimap, commandScale, gridTop};
   }
   /** V14: exactly one header row. Caller supplies native alpha bounds through
@@ -194,24 +201,27 @@
     const parts=fields.map(field=>{
       const id=Number.isInteger(field?.id)?'resource-'+field.id:field?.id;
       if(typeof id!=='string'||!id||ids.has(id))throw new TypeError('Unique compact resource IDs required');
-      ids.add(id);const source=sourceRect(field?.compact?.source);
-      return{id,source,reserved:Math.max(source.width,reserveWidth)};
+      ids.add(id);
+      const source=field?.compact?.source ? sourceRect(field.compact.source) : null;
+      return{id,source,reserved:Math.max(source?.width ?? 0,reserveWidth)};
     });
     const sum=parts.reduce((n,p)=>n+p.reserved,0),gaps=gap*4,minResources=Math.min(1,resourceScale);
     let actualMenuScale=menuScale;
     if((width-MENU_BUTTON.width*actualMenuScale-gaps)/sum<minResources)
       actualMenuScale=Math.max(minMenuScale,Math.min(menuScale,(width-gaps-sum*minResources)/MENU_BUTTON.width));
     const menuW=MENU_BUTTON.width*actualMenuScale,menuH=MENU_BUTTON.height*actualMenuScale;
-    const actualResourceScale=Math.min(resourceScale,(width-menuW-gaps)/sum);
+    const actualResourceScale=Math.min(resourceScale,(width-menuW-gaps)/Math.max(1,sum));
     if(!positive(actualResourceScale))throw new RangeError('Compact header too narrow');
-    const resourceH=Math.max(...parts.map(p=>p.source.height))*actualResourceScale;
+    const resourceH=Math.max(0,...parts.map(p=>p.source?.height ?? 0))*actualResourceScale;
     const height=Math.max(menuH,resourceH),regions=[{id:'menu',source:{...MENU_BUTTON},
       target:{left,top:top+(height-menuH)/2,width:menuW,height:menuH}}];
     let x=left+menuW+gap;
     for(const part of parts) {
-      const w=part.source.width*actualResourceScale,h=part.source.height*actualResourceScale;
-      regions.push({id:part.id,source:part.source,
-        target:{left:x,top:top+(height-h)/2,width:w,height:h}});
+      if(part.source) {
+        const w=part.source.width*actualResourceScale,h=part.source.height*actualResourceScale;
+        regions.push({id:part.id,source:part.source,
+          target:{left:x,top:top+(height-h)/2,width:w,height:h}});
+      }
       x+=part.reserved*actualResourceScale+gap;
     }
     return{regions,height,menuOwnLine:false,menuScale:actualMenuScale,resourceScale:actualResourceScale,

@@ -125,7 +125,7 @@
     const movieMedia = window.WarcraftCompactPlan ? await moviePilot.prepareMedia() : undefined;
     const installBridge = window.WarcraftAssemblyV16 && await window.WarcraftAssemblyV16.prepare({
       ...viewport,
-      sha256: 'a5b8876870d08125c0de31ec2f176d01f9a54ad276b9b044f75787587421ea64',
+      hideKeyboardHints: window.matchMedia('(pointer: coarse)').matches,
       ...moviePilot?.bridge,
     });
 
@@ -141,6 +141,7 @@
         if (installBridge) {
           await installBridge(wine);
           await window.WarcraftAssemblyMenuPolicy?.install(wine);
+          window.WarcraftMatchPreferences?.install(wine);
           window.attachWarcraftAssemblyV16(wine, shell.renderer, {onTitlePrepared: titlePrepared});
           moviePilot?.attach(wine, movieMedia);
         }

@@ -37,12 +37,55 @@
     return node ? [] : rects;
   }
 
+  function createObjectivesCheckbox(wine, frame, surface) {
+    const label = document.createElement('label');
+    label.id = 'warcraft-objectives-at-start';
+    label.hidden = true;
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.dataset.winePageDialog = '';
+    const russian = window.WarcraftLanguage?.current?.() === 'ru';
+    const caption = document.createElement('img');
+    caption.alt = russian ? 'Показывать в начале' : 'Show at Start';
+    caption.src = `./menu-art/label-${russian ? 'ru-' : ''}show-objectives.png`;
+    label.append(checkbox, caption);
+    frame.append(label);
+    const policy = window.WarcraftAssemblyMenuPolicy;
+    checkbox.addEventListener('change', () => {
+      policy?.showObjectivesAtStart(wine, checkbox.checked);
+    });
+
+    return layout => {
+      const row = layout?.objectivesCheckbox;
+      if (!row) {
+        label.hidden = true;
+        return;
+      }
+      const checked = policy?.showObjectivesAtStart(wine);
+      if (typeof checked !== 'boolean') return;
+      const sx = surface.clientWidth / layout.width;
+      const sy = surface.clientHeight / layout.height;
+      const geometry = [row.left * sx, row.top * sy, row.width * sx, row.height * sy];
+      const nextStyle = geometry.join(':');
+      if (label.dataset.geometry !== nextStyle) {
+        const [left, top, width, height] = geometry;
+        Object.assign(label.style, {left:left + 'px', top:top + 'px', width:width + 'px', height:height + 'px',
+          fontSize:19 * row.scale * sy + 'px'});
+        label.dataset.geometry = nextStyle;
+      }
+      checkbox.checked = checked;
+      label.hidden = false;
+    };
+  }
+
   function attach(wine, renderer, {onTitlePrepared} = {}) {
     const vfs = wine._helpCtx.vfs;
     const surface = document.getElementById('screen');
     const display = document.getElementById('screen-present');
     const frame = document.getElementById('screen-canvas-stack');
     const input = window.WarcraftAssemblyInput.create(wine, renderer);
+    const objectivesCheckbox = onTitlePrepared && createObjectivesCheckbox(wine, frame, surface);
+    const matchSettings = onTitlePrepared && window.WarcraftMatchPreferences?.create(wine, frame);
     let presented = null;
     function show(owner, mode) {
       if (presented !== owner) {
@@ -101,12 +144,21 @@
     window.WarcraftFullMap.install({
       source: surface, input: surface, display, frame, container: frame,
       independentCamera: window.WarcraftIndependentCameraPilot,
-      onPresented: onTitlePrepared ? mode => show('map', mode) : undefined,
-      onUnavailable: onTitlePrepared ? () => hold('map') : undefined,
+      onPresented: onTitlePrepared ? (mode, layout) => {
+        show('map', mode);
+        objectivesCheckbox(mode === 'dialog' ? layout : null);
+        matchSettings?.(mode === 'dialog' ? layout : null);
+      } : undefined,
+      onUnavailable: onTitlePrepared ? () => {
+        objectivesCheckbox(null);
+        matchSettings?.(null);
+        hold('map');
+      } : undefined,
       acceptsInput: onTitlePrepared
         ? () => presented === 'map' && !('warcraftTransition' in frame.dataset) : undefined,
       infoButtons: layer => infoButtons(wine, layer),
       modalBack: window.WarcraftAssemblyMenuNavigation?.createModalBack?.(wine),
+      modalSlider: (layer, x, y) => window.WarcraftAssemblyMenuPolicy?.sliderAt(wine, layer, x, y),
       modalTexture() {
         if (!textures || !window.WarcraftUiBridge.state().inGame) return null;
         const offset = wine.instance?.exports?.guest_to_wasm?.(0x4abb7c) >>> 0;

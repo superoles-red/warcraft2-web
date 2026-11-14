@@ -273,7 +273,9 @@
     }
 
     const inset = Math.min(12, width * 0.04, height * 0.04);
-    const scale = Math.min(2, (width - inset * 2) / source.w, (height - inset * 2) / source.h);
+    const sharedScale = source.w === 256 && source.h <= 288
+      ? global.WarcraftModalPresentationV15?.classicDialogScale(width, height) : undefined;
+    const scale = sharedScale ?? Math.min(2, (width - inset * 2) / source.w, (height - inset * 2) / source.h);
     const targetW = source.w * scale;
     const targetH = source.h * scale;
     const heldControls = (HELD_CONTROLS.get(front.handler) || [])

@@ -1,7 +1,7 @@
 /* Opt-in native V16 bootstrap for the pinned local Wine-Assembly pilot. */
 (() => {
   'use strict';
-  const artifactHash = '0fca0bea87fd9991f17617ce77ddf1044151f5072656b785e7ff44cb8d5b94f7';
+  const artifactHash = '6b64a5b3612c5eefc77be67d39c86462356b131b67c09f16dcfc68a27cf6d7f5';
   const gameDll = 'c:\\warcraft2\\wc2ui.dll';
   const stockDll = 'c:\\windows\\system\\ddraw.dll';
   const forwardDll = 'c:\\windows\\system32\\ddraw.dll';
@@ -14,7 +14,7 @@
   const originalName = new TextEncoder().encode('ddraw.dll\0');
   const aliasName = new TextEncoder().encode('wc2ui.dll\0');
 
-  function encodeViewport(width, height) {
+  function encodeViewport(width, height, hideKeyboardHints) {
     if (!Number.isInteger(width) || !Number.isInteger(height) ||
         width < 640 || width > 1920 || height < 480 || height > 1536 ||
         width % 32 !== 0 || height % 32 !== 0) {
@@ -27,6 +27,7 @@
     view.setUint16(6, 1, true);
     view.setUint16(8, width, true);
     view.setUint16(10, height, true);
+    view.setUint32(12, hideKeyboardHints ? 1 : 0, true);
     return bytes;
   }
 
@@ -72,9 +73,9 @@
   }
 
   async function prepare({
-    width = 640, height = 480, artifactURL = './v16-bridge.dll', sha256 = artifactHash,
+    width = 640, height = 480, hideKeyboardHints = false, artifactURL = './v16-bridge.dll', sha256 = artifactHash,
   } = {}) {
-    const request = encodeViewport(width, height);
+    const request = encodeViewport(width, height, hideKeyboardHints);
     const directory = new URL('./', location.href);
     const url = new URL(artifactURL, directory);
     if (url.origin !== directory.origin || !url.pathname.startsWith(directory.pathname) ||

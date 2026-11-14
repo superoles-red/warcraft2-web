@@ -74,9 +74,20 @@
     return image;
   }
 
+  // Stock End Scenario uses Restart in a campaign and Load Custom in a
+  // skirmish. Keep the original action in the first slot in both variants.
+  const PAUSE_BUTTONS = [[1, 16, 40, 106], [2, 134, 40, 106], [3, 16, 74, 224],
+    [4, 16, 108, 224], [5, 16, 142, 224], [6, 16, 176, 224], [-3, 16, 248, 224]];
+  const OPTION_BUTTONS = [[1, 16, 40, 224], [2, 16, 74, 224], [3, 16, 108, 224], [-3, 16, 248, 224]];
+  const END_BUTTONS = [[2, 16, 40, 224], [1, 16, 74, 224], [3, 16, 108, 224],
+    [4, 16, 142, 224], [-3, 16, 248, 224]];
+
   function createModalBack(wine) {
     const arrow = load('orc-back');
-    const prefix = [0x10, 0x50, 0x72, 0x65, 0x76, 0x69, 0x6f, 0x75, 0x73, 0x20, 0x28]; // Previous (
+    const previousPrefixes = [
+      [0x10, 0x50, 0x72, 0x65, 0x76, 0x69, 0x6f, 0x75, 0x73, 0x20, 0x28], // Previous (
+      [0x10, 0xcf, 0xf0, 0xe5, 0xe4, 0xfb, 0xe4, 0xf3, 0xf9, 0xe5, 0xe5, 0x20, 0x28], // Предыдущее (
+    ];
     function view(address, size) {
       const wasm = wine.instance?.exports, memory = wine.memory?.buffer;
       if (!wasm?.guest_to_wasm || !memory || address < 0x10000 || address + size > 0x100000000) return null;
@@ -87,27 +98,51 @@
     return packet => {
       if (!arrow.naturalWidth) return null;
       const dialog = packet?.stack?.find(scene => scene.root === packet.currentDialog && scene.nativeVisible);
-      if (!dialog || ![0x435b70, 0x4353a0].includes(dialog.handlerAddress)) return null;
+      if (!dialog || dialog.handlerAddress !== 0x435b70) return null;
       const root = view(dialog.root, 0x4a);
       if (root?.getUint32(0x2a, true) !== dialog.handlerAddress ||
           root.getUint16(0x20, true) !== dialog.scene) return null;
+      // The generic handler is shared. The active native continuation and
+      // button geometry distinguish Pause and End Scenario from confirmation dialogs.
+      const continuation = dialog.handlerAddress === 0x435b70 && view(0x4b4a14, 4)?.getUint32(0, true);
+      const pause = continuation === 0x435560;
+      const options = continuation === 0x4356d0;
+      const endScenario = continuation === 0x435780;
+      const compact = pause || options || endScenario;
+      const buttons = new Map();
+      let previous = null;
       let node = root.getUint32(0x46, true);
       for (let count = 0; node && count < 32; count++) {
         const child = view(node, 0x36);
         if (!child || child.getUint32(0x32, true) !== dialog.root) return null;
-        if (child.getInt16(0x20, true) === -3) {
-          const kind = child.getUint16(0x22, true);
-          if ((kind !== 1 && kind !== 2) || (child.getUint32(0x18, true) & 10) !== 8 ||
-              child.getInt16(4, true) !== 16 || child.getInt16(6, true) !== 248 ||
-              child.getInt16(8, true) !== 239 || child.getInt16(10, true) !== 275) return null;
-          const label = view(child.getUint32(0x14, true), prefix.length);
-          if (!label || !prefix.every((value, index) => label.getUint8(index) === value)) return null;
-          return {source: {left: dialog.rect.left + 16, top: dialog.rect.top + 248, width: 224, height: 28},
+        const id = child.getInt16(0x20, true), kind = child.getUint16(0x22, true);
+        const [left, top, right, bottom] = [4, 6, 8, 10].map(offset => child.getInt16(offset, true));
+        const flags = child.getUint32(0x18, true);
+        if (id === -3 && !pause) {
+          if ((kind !== 1 && kind !== 2) || (flags & 10) !== 8 || left !== 16 || top !== 248 ||
+              right !== 239 || bottom !== 275) return null;
+          if (!compact && !previousPrefixes.some(prefix => {
+            const label = view(child.getUint32(0x14, true), prefix.length);
+            return label && prefix.every((value, index) => label.getUint8(index) === value);
+          })) return null;
+          previous = {source: {left: dialog.rect.left + 16, top: dialog.rect.top + 248, width: 224, height: 28},
             image: arrow, marginScale: Math.max(1, Math.min(3, window.devicePixelRatio || 1))};
+          if (!compact) return previous;
+        }
+        if (compact && (flags & 8) && (kind === 1 || kind === 2)) {
+          if (bottom !== top + 27 || buttons.has(id)) return null;
+          buttons.set(id, {left, top, width: right - left + 1});
         }
         node = child.getUint32(0, true);
       }
-      return null;
+      if (node || !compact || (!pause && !previous)) return null;
+      const expected = pause ? PAUSE_BUTTONS : options ? OPTION_BUTTONS : END_BUTTONS;
+      const firstId = buttons.has(2) ? 2 : 6;
+      if (buttons.size !== expected.length || expected.some(([id, left, top, width], index) => {
+        const button = buttons.get(endScenario && index === 0 ? firstId : id);
+        return !button || button.left !== left || button.top !== top || button.width !== width;
+      })) return null;
+      return {...previous, compact: pause ? 'pause' : 'two-actions'};
     };
   }
 
@@ -279,10 +314,9 @@
       return translated?.naturalWidth ? translated : images[`label-${glyph}`];
     }
 
-    function drawLabel(context, item, box) {
+    function drawLabel(context, item, box, scale) {
       const glyph = labelImage(item);
       if (!glyph?.naturalWidth) return false;
-      const scale = Math.min(box.h / 23, box.w / glyph.naturalWidth);
       const w = glyph.naturalWidth * scale, h = glyph.naturalHeight * scale;
       return drawImage(context, glyph, {x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h});
     }
@@ -390,7 +424,7 @@
           page === 'language-download' ? 'download-language' : page === 'language-delete' ? 'delete-language' : null;
         if (heading) {
           const h = Math.max(22, first.h), y = Math.max(4, first.y - h - 6);
-          drawLabel(context, {glyph: heading}, {...first, y, h});
+          drawLabel(context, {glyph: heading}, {...first, y, h}, scale);
         }
       }
       items.forEach((item, i) => drawButton(context, image, item, boxes[i]));

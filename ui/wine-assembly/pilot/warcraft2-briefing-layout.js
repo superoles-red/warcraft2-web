@@ -6,8 +6,9 @@
   const DIALOG_PAINTER = 0x405400;
   const CONTINUE = {x: 456, y: 448, w: 106, h: 28};
   const OBJECTIVES = {x: 372, y: 306, w: 252, h: 132};
-  // Both original briefing images have a shaded panel on the right. Keep it
-  // in the complete illustration and sample only the left side for the cover.
+  // The original PCXs include a baked 50% darkening and two-pixel bevel
+  // behind the goals. Sample outside this area for the dimmed backdrop.
+  const BAKED_PANEL = {left: 366, top: 300, right: 627, bottom: 442, edge: 2};
   const BACKDROP = {x: 0, y: 0, w: 352, h: 480};
   const states = new WeakMap();
 
@@ -150,9 +151,48 @@
       picture.data[at + 2] = colors[index + 2];
       picture.data[at + 3] = 255;
     }
+    // Text extraction must compare against the exact native raster. Repair a
+    // separate illustration so the original panel never enters that comparison.
     background.putImageData(picture, 0, 0);
+    const artwork = restoreIllustration(background, picture);
     return state.background = {address, root: chart.dialog.root, colors: new Uint8Array(colors),
-      canvas: background.canvas, rgba: picture.data};
+      canvas: background.canvas, artwork, rgba: picture.data};
+  }
+
+  function restoreIllustration(original, picture) {
+    const {left, top, right, bottom, edge} = BAKED_PANEL;
+    function intensity(y) {
+      let sum = 0;
+      for (let x = left + edge; x < right - edge; x++) {
+        const i = (y * 640 + x) * 4;
+        sum += picture.data[i] + picture.data[i + 1] + picture.data[i + 2];
+      }
+      return sum;
+    }
+    const outside = intensity(top - 1);
+    const inside = intensity(top + edge);
+    // Other artwork may have been supplied by a language pack or mod.
+    if (!outside || inside < outside * .37 || inside > outside * .63 ||
+        intensity(top) < outside * 1.06) return original.canvas;
+    const artwork = makeCanvas(640, 480);
+    artwork.drawImage(original.canvas, 0, 0);
+    const patch = artwork.getImageData(left, top, right - left, bottom - top);
+    for (let y = top; y < bottom; y++) {
+      for (let x = left; x < right; x++) {
+        // The bevel overwrote these pixels. Extend the adjacent original
+        // artwork by at most two pixels to join the corrected interior.
+        const sourceX = x < left + edge ? left - 1 : x >= right - edge ? right : x;
+        const sourceY = y < top + edge ? top - 1 : y >= bottom - edge ? bottom : y;
+        const gain = sourceX === x && sourceY === y ? 2 : 1;
+        const sourceIndex = (sourceY * 640 + sourceX) * 4;
+        const destination = ((y - top) * patch.width + x - left) * 4;
+        for (let channel = 0; channel < 3; channel++) {
+          patch.data[destination + channel] = picture.data[sourceIndex + channel] * gain;
+        }
+      }
+    }
+    artwork.putImageData(patch, left, top);
+    return artwork.canvas;
   }
 
   function paintText(context, image, scratch, background, source, target, headingScale) {
@@ -199,7 +239,7 @@
       area(backgroundLeft + (backgroundWidth - coverW) / 2, (height - coverH) / 2, coverW, coverH));
     context.fillStyle = 'rgba(0,0,0,.8)';
     context.fillRect(backgroundLeft, 0, backgroundWidth, height);
-    draw(context, background.canvas, art, artwork);
+    draw(context, background.artwork, art, artwork);
     const scratch = state.scratch.getContext('2d');
     paintText(context, image, scratch, background, source.heading, targets.heading, textScale);
     paintText(context, image, scratch, background, source.narrative, targets.narrative);
