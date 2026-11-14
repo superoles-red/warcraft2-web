@@ -13,10 +13,14 @@
   const NATIVE_FOOTERS = new Map([
     [SOUND_OPTIONS, {w:256, h:288, cancel:[12,256], accept:[138,256], body:256,
       compactBody:[[0,120],[140,174]], checkbox:[12,144,240,22],
-      blank:[0,208,256,48], compactBlank:[0,174,256,48], footer:48}],
-    [SELECT_SCENARIO, {w:352, h:352, cancel:[44,318], accept:[188,318],
-      body:314, blank:[44,34,88,72], footer:48, texture:true}],
+      blank:[0,208,256,48], compactBlank:[0,174,256,48], footer:64}],
   ]);
+  const SCENARIO_FILTERS = [
+    {id:2, label:[8,38,120,20], control:[138,36,204,22]},
+    {id:3, label:[8,86,120,20], control:[138,84,204,22]},
+    {id:16, control:[22,110,240,22]},
+  ];
+  const SCENARIO_TYPES = new Set([1,2,7,9,10,11,12,13]);
 
   // Both native dialogs register a 640x480 root with a transparent upper
   // area. These crops include the complete lower native content, borders,
@@ -94,7 +98,7 @@
         const w = item.getInt16(8, true) - x + 1, h = item.getInt16(10, true) - y + 1;
         const source = {x: x + front.x, y: y + front.y, w, h};
         if (!contains(front, source)) return null;
-        controls.set(id, {type, flags, source});
+        controls.set(id, {type, flags, source, address:node});
       }
       node = item.getUint32(0, true);
     }
@@ -215,7 +219,9 @@
 
     if (!popup) {
       if (backTarget) {
-        const back = {source: CUSTOM_BUTTONS[2].source, target: backTarget, decoration: 'back'};
+        const size = Math.min(56 * actionScale,backTarget.y+backTarget.h-inset);
+        const back = {source: CUSTOM_BUTTONS[2].source, target: {x:backTarget.x+backTarget.w-size,
+          y:backTarget.y+backTarget.h-size,w:size,h:size}, decoration:'back'};
         regions.push(back);
         paintRegions.push(back);
       }
@@ -284,10 +290,93 @@
       target:target(0,bodyHeight,w,spec.footer), texture:spec.texture};
     const rim = {source:area(0,h-4,w,4), target:target(0,height-4,w,4)};
     const button = {source:accept, target:target(16,bodyHeight + (spec.footer-28)/2,106,28)};
-    const size = 44;
+    const size = 56;
     const back = {source:cancel, target:target(w-size-12,bodyHeight + (spec.footer-size)/2,size,size), decoration:'back'};
     return {...chart, reflow:true, regions:[...body, button, back], paintRegions:[...body, footer, rim, button, back],
       ...(front.handler === SOUND_OPTIONS ? {frame:{source:area(0,0,w,h),target:target(0,0,w,height)}} : {})};
+  }
+
+  function reflowScenario(chart, front, controls, inset, wine) {
+    if (front.w !== 352 || front.h !== 352) return null;
+    const area = (x, y, w, h) => ({x:front.x+x, y:front.y+y, w, h});
+    const list = area(22,136,300,112), track = area(322,136,20,112);
+    const ok = area(188,318,106,28), cancel = area(44,318,106,28);
+    const nativeBar = controls.get(-32767);
+    for (const [id, type, source] of [[1,12,list], [-32767,7,track], [13,1,ok], [-3,2,cancel]]) {
+      const item = controls.get(id);
+      if (item?.type !== type || !same(item.source, source)) return null;
+    }
+    const {width,height} = chart;
+    const landscape = width >= height && width >= 510;
+    const available = width - 2 * inset;
+    const labelWidth = landscape ? Math.min(290, available * .39) : available;
+    const gap = landscape ? Math.min(24,available*.04) : 0;
+    const listWidth = landscape ? available - labelWidth - gap : available;
+    const scale = Math.min(1.65,labelWidth/334,listWidth/330,
+      (height-2*inset)/(landscape?247:367));
+    if (scale <= 0) return null;
+    const regions = [], paintRegions = [];
+    function add(source, target, decoration, interactive = false) {
+      const region = {source, target, decoration};
+      paintRegions.push(region);
+      if (interactive) regions.push(region);
+      return region;
+    }
+    const fitted = (source,x,y) => ({x,y,w:source.w*scale,h:source.h*scale});
+    const center = (source,y) => fitted(source,(width-source.w*scale)/2,y);
+    const title = area(6,8,340,16);
+    const footerY = height-inset-42*scale;
+    const filterTop = inset + (landscape?35:Math.min(70,(height-320*scale)*.22));
+    const listX = landscape ? inset+labelWidth+gap : inset;
+    const listTop = landscape ? filterTop : filterTop+110*scale;
+    const footerGap = (footerY-listTop)-64*scale;
+    const listHeight = Math.max(112*scale,footerGap);
+    const barWidth = Math.min(listWidth*.18,Math.max(23,Math.min(44,28*scale)));
+    const listBox = {x:listX,y:listTop,w:listWidth-barWidth-3,h:listHeight};
+    const scrollTarget = {x:listBox.x+listBox.w+3,y:listBox.y,w:barWidth,h:listBox.h};
+    const result = area(8,254,334,60);
+    const resultY = landscape ? listTop+listHeight+4*scale :
+      Math.min(footerY-64*scale,listTop+listHeight+10*scale);
+
+    add(title,center(title,inset+4*scale),'scenario-caption');
+    let popup = null;
+    for (const [index,field] of SCENARIO_FILTERS.entries()) {
+      const source = area(...field.control);
+      const item = controls.get(field.id);
+      const drawY = filterTop+index*34*scale;
+      const drawX = inset+(field.label?128*scale:0);
+      if (item?.type !== 13) return null;
+      if ((item.flags & 0x2000) !== 0) {
+        if (popup || !contains(item.source,source) || item.source.x !== source.x || item.source.w !== source.w) return null;
+        popup = {...item, target:fitted(item.source,drawX,Math.max(inset,Math.min(height-inset-item.source.h*scale,
+          drawY+(item.source.y-source.y)*scale)))};
+      } else if (!same(item.source, source)) return null;
+      if (field.label) {
+        const label = area(...field.label);
+        add(label,fitted(label,inset,drawY+2*scale),'scenario-caption');
+      }
+      add(source,fitted(source,drawX,drawY),undefined,true);
+    }
+    add(list,listBox,'scenario-list',true);
+    add(result,{...fitted(result,landscape?listX:inset,resultY),w:Math.min(listWidth,result.w*scale)},'scenario-caption');
+    add(ok,fitted(ok,inset,footerY),undefined,true);
+    const buttonSize = 56*scale;
+    add(cancel,{x:width-inset-buttonSize,y:height-inset-buttonSize,w:buttonSize,h:buttonSize},'back',true);
+    const frame = {source:area(0,0,352,352),target:{x:0,y:0,w:width,h:height},scale};
+    const bar = guestView(wine,nativeBar.address,0x4a);
+    const value = bar?.getUint16(0x3a,true), max = bar?.getUint16(0x46,true);
+    if (value === undefined || max === undefined || value > max) return null;
+    const scrollbar = {source:track,target:scrollTarget,value,max,nativeFirst:track.y+28,nativeLast:track.y+81,scale};
+    add(track,scrollTarget,'scenario-scroll');
+    // Last: open native dropdowns occlude any controls underneath them.
+    if (popup) {
+      const {source,target} = popup;
+      const expanded = {source,target,decoration:'scenario-popup'};
+      const body = paintRegions.map(region => overlaps(region.source,source) ? {...region,previous:true} : region);
+      return {...chart,reflow:true,scenarioFrame:frame,scenarioPopup:true,scrollbar,
+        regions:[expanded],paintRegions:[...body,expanded]};
+    }
+    return {...chart,reflow:true,scenarioFrame:frame,scrollbar,regions,paintRegions};
   }
 
   function wantsImmediatePress(chart, nativeX, nativeY) {
@@ -342,6 +431,10 @@
     if (fullFrame && width < height && front.handler === LOAD_GAME) {
       const controls = readControls(wine, front, LOAD_CONTROL_TYPES);
       if (controls) return reflowLoad(chart, controls, inset) || chart;
+    }
+    if (front.handler === SELECT_SCENARIO && backImage?.naturalWidth) {
+      const controls = readControls(wine,front,SCENARIO_TYPES);
+      return controls && reflowScenario(chart,front,controls,inset,wine);
     }
     const footer = NATIVE_FOOTERS.get(front.handler);
     if (footer && backImage?.naturalWidth) {

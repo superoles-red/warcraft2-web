@@ -14,7 +14,7 @@
   const MATCH_SETTINGS_BANDS=[[0,120],[140,166]];
   const MATCH_SETTINGS_BODY_TOP=146;
   const MATCH_SETTINGS_NATIVE_BODY_TOP=166;
-  const MATCH_SETTINGS_FOOTER=56;
+  const MATCH_SETTINGS_FOOTER=72;
   function classicDialogScale(width,height,pixelRatio=1){
     const margin=8*pixelRatio;
     // Reserve enough room for the shared 256px panel and its objectives checkbox.
@@ -50,10 +50,10 @@
   function inside(r,x,y){return x>=r.left&&y>=r.top&&x<r.right&&y<r.bottom;}
   // Keep the complete native labels and controls, with just enough stone
   // underneath for the shared footer controls and bottom bevel.
-  const MENU_STRIPS={pause:[[0,32],[72,103],[140,205],[205,247],[284,288]],
-    'two-actions':[[0,70],[104,141],[190,246],[284,288]],
-    end:[[0,70],[105,139],[203,245],[284,288]],
-    confirmation:[[0,89],[190,226],[284,288]]};
+  const MENU_STRIPS={pause:[[0,32],[72,103],[140,205],[205,247],[216,235],[278,288]],
+    'two-actions':[[0,70],[104,141],[182,246],[278,288]],
+    end:[[0,70],[105,139],[178,244],[278,288]],
+    confirmation:[[0,89],[190,248],[278,288]]};
   function contain(source,width,height,maxScale=Infinity,margin=0,left=margin,right=margin){
     const scale=Math.min(maxScale,(width-left-right)/source.width,(height-margin*2)/source.height);
     if(!positive(scale))return null;
@@ -214,16 +214,17 @@
       let backControl=null,okControl=null,restart=null,confirmation=null;
       if(ready&&compact&&back?.confirmation){
         const t=unionTarget,scale=t.scale;
-        const button=(source,left)=>({source:freezeRect(source),
-          target:freezeRect({left:t.left+left*scale,top:t.bottom-36*scale,width:106*scale,height:28*scale,scale})});
-        confirmation={ok:button(back.confirmation.ok,16),cancel:button(back.confirmation.cancel,134)};
+        confirmation={ok:{source:freezeRect(back.confirmation.ok),
+          target:freezeRect({left:t.left+16*scale,top:t.bottom-50*scale,
+            width:106*scale,height:28*scale,scale})}};
       }
       if(ready&&back?.image?.naturalWidth&&backSource&&inside(native.source,backSource.left,backSource.top)&&
           inside(native.source,backSource.right-1,backSource.bottom-1)){
         const panel=strips?unionTarget:mapRect(native.source),scale=panel.scale;
         const oldTarget=mapRect(backSource);
-        const size=(back.compact==='pause'||back.compact==='end'?38:48)*scale,inset=8*scale;
-        const left=panel.right-size-inset,top=panel.bottom-size-inset;
+        const size=2*backSource.height*scale;
+        const left=panel.right-size-16*scale;
+        const top=panel.bottom-(preferences ? (MATCH_SETTINGS_FOOTER+2*backSource.height)/2 : 64)*scale;
         const target=freezeRect({left,top,width:size,height:size});
         backControl={source:backSource,oldTarget,replaceButton:!compact&&!preferences,target};
         if(preferences&&back.ok){
@@ -287,7 +288,7 @@
               t.left,p.preferencesBody.top,t.width,90*scale);
             context.drawImage(frame,s.left+4,s.top+235,248,18,t.left+4*scale,t.top+4*scale,248*scale,18*scale);
             // Fill the footer from verified empty stone directly above it.
-            context.drawImage(frame,s.left,s.top+200,256,MATCH_SETTINGS_FOOTER,
+            context.drawImage(frame,s.left,s.top+200,256,56,
               t.left,t.bottom-MATCH_SETTINGS_FOOTER*scale,t.width,MATCH_SETTINGS_FOOTER*scale);
             paintSettingsFrame(context,frame,0x441940,s,t);
           }
@@ -302,13 +303,10 @@
             context.drawImage(label,t.left+(t.width-w)/2,t.top+(t.height-h)/2,w,h);
           }
           if(p.confirmation){
-            const {button,labels}=options.back.confirmation;
-            for(const key of ['ok','cancel']){
-              const t=p.confirmation[key].target,label=labels[key];
-              context.drawImage(button,t.left,t.top,t.width,t.height);
-              const w=label.width*t.scale,h=label.height*t.scale;
-              context.drawImage(label,t.left+(t.width-w)/2,t.top+(t.height-h)/2,w,h);
-            }
+            const {button,label}=options.back.confirmation,t=p.confirmation.ok.target;
+            context.drawImage(button,t.left,t.top,t.width,t.height);
+            const w=label.width*t.scale,h=label.height*t.scale;
+            context.drawImage(label,t.left+(t.width-w)/2,t.top+(t.height-h)/2,w,h);
           }
           if(p.objectivesStone){
             const {source:s,target:t}=p.objectivesStone;
@@ -343,9 +341,7 @@
                 old.left-2,old.top-2,old.width+4,old.height+4);
             }
             const arrow=p.back.target;
-            const size=arrow.width*.9;
-            context.drawImage(options.back.image,arrow.left+(arrow.width-size)/2,
-              arrow.top+(arrow.height-size)/2,size,size);
+            context.drawImage(options.back.image,arrow.left,arrow.top,arrow.width,arrow.height);
           }
           counters.modalFrames++;
         }else counters.waitingFrames++;
@@ -368,10 +364,9 @@
         if(back.replaceButton&&inside(back.oldTarget,x,y))return {regionId:'modal-blocker',kind:'blocked'};
       }
       if(layout.mode==='modal'&&layout.confirmation){
-        for(const {source:s,target:t} of Object.values(layout.confirmation)){
-          if(inside(t,x,y))return {regionId:'native-modal',kind:'native-ui',
-            x:s.left+(x-t.left)*s.width/t.width,y:s.top+(y-t.top)*s.height/t.height,token:layout.token};
-        }
+        const {source:s,target:t}=layout.confirmation.ok;
+        if(inside(t,x,y))return {regionId:'native-modal',kind:'native-ui',
+          x:s.left+(x-t.left)*s.width/t.width,y:s.top+(y-t.top)*s.height/t.height,token:layout.token};
       }
       if(layout.mode==='modal'&&layout.ok&&inside(layout.ok.target,x,y)){
         const {source:s,target:t}=layout.ok;
@@ -398,10 +393,9 @@
       if(ok&&inside(ok.source,x,y))return {x:(ok.target.left+(x-ok.source.left)*ok.target.scale)*c.scale+c.left,
         y:(ok.target.top+(y-ok.source.top)*ok.target.scale)*c.scale+c.top,visible:true,token:layout.token};
       if(layout.confirmation){
-        for(const {source:s,target:t} of Object.values(layout.confirmation)){
-          if(inside(s,x,y))return {x:(t.left+(x-s.left)*t.width/s.width)*c.scale+c.left,
-            y:(t.top+(y-s.top)*t.height/s.height)*c.scale+c.top,visible:true,token:layout.token};
-        }
+        const {source:s,target:t}=layout.confirmation.ok;
+        if(inside(s,x,y))return {x:(t.left+(x-s.left)*t.width/s.width)*c.scale+c.left,
+          y:(t.top+(y-s.top)*t.height/s.height)*c.scale+c.top,visible:true,token:layout.token};
       }
       const strip=layout.strips?.find(region=>inside(region.source,x,y));
       if(layout.strips&&!strip)return null;

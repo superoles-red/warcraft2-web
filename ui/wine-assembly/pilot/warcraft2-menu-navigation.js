@@ -82,7 +82,7 @@
   }
 
   function backBox(width, height) {
-    const size = Math.min(80, width * .23, height * .25);
+    const size = Math.min(90, width * .26, height * .27);
     const inset = Math.min(12, size / 6);
     return {x: width - size - inset, y: height - size - inset, w: size, h: size};
   }
@@ -107,7 +107,7 @@
   };
 
   function createModalBack(wine) {
-    const arrow = load('orc-back');
+    const arrows = {human:load('menu-back-human'), orc:load('menu-back-orc')};
     const russian = language()?.current?.() === 'ru';
     let confirmationLabels;
     const font = window.WarcraftSessionText;
@@ -123,7 +123,7 @@
         return label;
       }
       confirmationLabels = Object.fromEntries(Object.entries(factionInk).map(([faction, palette]) =>
-        [faction,{ok:factionCaption('OK', palette), cancel:factionCaption(russian ? 'Отмена' : 'Cancel', palette)}]));
+        [faction,factionCaption('OK', palette)]));
     }).catch(console.error);
     const restartArt = Object.fromEntries(['human', 'orc'].map(faction => [faction, {
       button: load(faction + '-wide-button'),
@@ -145,6 +145,8 @@
     return packet => {
       const dialog = packet?.stack?.find(scene => scene.root === packet.currentDialog && scene.nativeVisible);
       if (!dialog || ![0x435b70, 0x441940].includes(dialog.handlerAddress)) return null;
+      const faction = view(0x4abb7c, 1)?.getUint8(0) === 0 ? 'human' : 'orc';
+      const arrow = arrows[faction];
       const settings = dialog.handlerAddress === 0x441940;
       // The generic handler is shared. The active native continuation and
       // button geometry distinguish Pause and End Scenario from confirmation dialogs.
@@ -199,12 +201,11 @@
       if (!compact || (!pause && !previous)) return required;
       if (confirmation) {
         const accept = buttons.get(-2);
-        const faction = view(0x4abb7c, 1)?.getUint8(0) === 0 ? 'human' : 'orc';
         const {shortButton:button} = restartArt[faction];
-        if (!confirmationLabels || !button.naturalWidth || buttons.size !== 2 || accept?.left !== 16 ||
-            accept.top !== 108 || accept.width !== 224) return waiting;
-        return {compact:'confirmation', confirmation:{ok:sourceOf(accept), cancel:previous.source,
-          labels:confirmationLabels[faction], button}};
+        if (!confirmationLabels || !button.naturalWidth || !arrow.naturalWidth || buttons.size !== 2 ||
+            accept?.left !== 16 || accept.top !== 108 || accept.width !== 224) return waiting;
+        return {...previous, compact:'confirmation', confirmation:{ok:sourceOf(accept),
+          label:confirmationLabels[faction], button}};
       }
       const expected = pause ? PAUSE_BUTTONS : options ? OPTION_BUTTONS : END_BUTTONS;
       const firstId = buttons.has(2) ? 2 : 6;
@@ -242,7 +243,7 @@
         repaint();
       }).catch(console.error);
     }
-    const images = Object.fromEntries(['orc-texture', 'title-version-clean', 'title-button', 'title-button-pressed', 'orc-back', 'orc-back-pressed',
+    const images = Object.fromEntries(['orc-texture', 'title-version-clean', 'title-button', 'title-button-pressed', 'menu-back-orc', 'menu-back-orc-pressed',
       'label-options', 'label-fast-scenario', 'label-replay-demo',
       'label-story', 'label-sound', 'label-language', 'label-english',
       'label-russian', 'label-russian-text', 'language-selected', 'language-unselected',
@@ -253,6 +254,7 @@
     let page = 'title', owner = null, buttons = [], pending = false, active = false, pressed = null;
     let languageBusy = false, languagePack = null;
     let soundOptions = null;
+    let returningFromDemo = false;
     let pendingTimer = 0;
     const message = document.createElement('p');
     message.className = 'warcraft-language-status';
@@ -502,16 +504,18 @@
       const artScale = Math.min((width - 16) / art.w, height * (portrait ? .43 : .94) / art.h);
       const picture = {x: (width - art.w * artScale) / 2, y: artTop,
         w: art.w * artScale, h: art.h * artScale};
-      const back = backBox(width, height);
+      const corner = backBox(width, height);
       const positions = campaign ? [0,36,96,132] : Array.from({length:count},(_,i)=>i*36);
       const span = positions.at(-1) + 28;
       const panelTop = portrait ? picture.y + picture.h + Math.min(36,height*.06) : height*.41;
-      const panelBottom = portrait ? (home ? height - 14 : back.y - 8) : height*.90;
+      const panelBottom = portrait ? (home ? height - 14 : corner.y - 8) : height*.90;
       const scale = Math.max(.1, Math.min(1.6,
         (width - (portrait ? 28 : 44))/224,
         (panelBottom - panelTop) / (portrait ? span : Math.max(172,span))));
       const w = 224*scale, h = 28*scale;
-      const centered = home ? height*5/6 : (panelTop+panelBottom)/2;
+      const size = 2*h;
+      const back = {x:corner.x+corner.w-size,y:corner.y+corner.h-size,w:size,h:size};
+      const centered = home ? (picture.y + picture.h + height)/2 : (panelTop+panelBottom)/2;
       const top = portrait ? Math.max(panelTop,Math.min(panelBottom-span*scale,centered-span*scale/2)) : panelTop;
       const boxes = positions.map(y => ({x:(width-w)/2,y:top+y*scale,w,h}));
       return {picture, boxes, back, scale};
@@ -595,6 +599,10 @@
         page = scene.mode === 'title' && initialPage ? initialPage : 'title';
         initialPage = null;
       }
+      if (returningFromDemo && scene.mode === 'title' && !window.WarcraftAssemblyMenuPolicy?.demoPlaying(wine)) {
+        returningFromDemo = false;
+        page = 'story';
+      }
       if (soundOptions?.opened && scene.mode === 'title') {
         window.WarcraftAssemblyMenuPolicy.persistSoundOptions(wine, soundOptions.before);
         soundOptions = null;
@@ -625,7 +633,7 @@
           items.some(item => item.glyph && !labelImage(item)?.naturalWidth) ||
           ((feedback || items.some(item => item.caption)) && !sessionAtlases.has(sessionArt.locale())) ||
           (heading && !labelImage({glyph: heading})?.naturalWidth) ||
-          (hasBack && (!images['orc-back'].naturalWidth || !images['orc-back-pressed'].naturalWidth))) {
+          (hasBack && (!images['menu-back-orc'].naturalWidth || !images['menu-back-orc-pressed'].naturalWidth))) {
         layer.hidden = true;
         return null;
       }
@@ -674,10 +682,8 @@
         controls.push({label: 'Back', source: parentPage[page] ? null :
           campaign ? originals[4] : nativeButton(348, 'Back').source});
         boxes.push(back);
-        const arrow = images[pressed === 'Back' ? 'orc-back-pressed' : 'orc-back'];
-        const size = Math.round(back.w * .9);
-        drawImage(context, arrow, {x: back.x + (back.w - size) / 2,
-          y: back.y + (back.h - size) / 2, w:size, h:size});
+        const arrow = images[pressed === 'Back' ? 'menu-back-orc-pressed' : 'menu-back-orc'];
+        drawImage(context, arrow, back);
       }
       presented = {picture, controls, boxes, page};
       setButtons(controls, boxes);
@@ -685,6 +691,7 @@
     }
 
     function hide() {
+      if (window.WarcraftAssemblyMenuPolicy?.demoPlaying(wine)) returningFromDemo = true;
       active = false;owner = null;clearPending();page = 'title';pressed = null;
       presented = null;layer.hidden = true;
     }

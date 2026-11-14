@@ -18,8 +18,32 @@
   background: transparent;
   cursor: pointer;
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 #warcraft-menu-navigation button:focus-visible { outline: 2px solid #f4d343; }
+#warcraft-demo-controls {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  touch-action: none;
+}
+#warcraft-demo-controls[hidden] { display: none; }
+#warcraft-demo-controls button {
+  position: absolute;
+  right: max(8px, var(--warcraft-hud-right, 0px), env(safe-area-inset-right, 0px));
+  bottom: max(8px, var(--warcraft-hud-bottom, 0px), env(safe-area-inset-bottom, 0px));
+  width: min(89.6px, 30vw, 30vh);
+  height: min(89.6px, 30vw, 30vh);
+  padding: 0;
+  border: 0;
+  background: url("./menu-art/menu-back-orc.png") center / contain no-repeat;
+  image-rendering: pixelated;
+  cursor: pointer;
+}
+#warcraft-demo-controls button:active {
+  background-image: url("./menu-art/menu-back-orc-pressed.png");
+}
+#warcraft-demo-controls button:focus-visible { outline: 2px solid #f4d343; }
 #warcraft-objectives-at-start {
   position: absolute;
   z-index: 3;
@@ -254,19 +278,21 @@
 .warcraft-session-choice[data-completed] { box-shadow: inset 0 0 0 1px #d1b455; }
 .warcraft-session-panel button:focus-visible { outline: 2px solid #f4d343; outline-offset: -2px; }
 .warcraft-session-footer {
+  --session-button-height: 44px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
+  gap: clamp(5px, 2vmin, 10px);
 }
+.warcraft-session-footer .warcraft-session-choice { min-height: var(--session-button-height); }
 .warcraft-session-back {
-  grid-column: 2;
+  justify-self: end;
   border: 0;
-  width: clamp(44px, 13vmin, 60px);
+  width: calc(2 * var(--session-button-height));
   aspect-ratio: 1;
-  background: url("./menu-art/orc-back.png") center / contain no-repeat;
+  background: url("./menu-art/menu-back-orc.png") center / contain no-repeat;
   touch-action: manipulation;
   image-rendering: pixelated;
   cursor: pointer;
 }
-.warcraft-session-back:active { background-image: url("./menu-art/orc-back-pressed.png"); }
+.warcraft-session-back:active { background-image: url("./menu-art/menu-back-orc-pressed.png"); }

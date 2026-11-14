@@ -6,6 +6,8 @@
   const menuLoadCall = 0x42aa97;
   const menuTickCall = 0x42b16c;
   const demoTick = 0x418610;
+  const demoTimeout = 0x4581c1;
+  const stopDemo = 0x418590;
   const fastCancelCall = 0x41579e;
   const fastCancelWrapper = 0x41863b;
   const fastReturnCode = 0x48f350;
@@ -15,6 +17,7 @@
   const fastStartFade = 0x44f819;
   const idleCounter = 0x4958e4;
   const demoRequest = 0xfffe;
+  const replay = 0x4ae0f9;
   const gameState = 0x4ae480;
   const inGame = 0x4ae86c;
   const titleScene = 0x4d495c;
@@ -63,6 +66,8 @@
       d0 a2 e6 58 49 00 8b 0c 95 e8 58 49 00 85 c9 75
       07 32 c0 a2 e6 58 49 00 33 c9 8a`],
     [0x418660, 'a0 e6 58 49 00 c6 05 f9 e0 4a 00 01 fe c0 33 c9'],
+    [demoTimeout, 'c7 05 88 0d 4c 00 80 99 45 00'],
+    [stopDemo, 'a0 f9 e0 4a 00 66 c7 05 e4 58 49 00 58 02 84 c0 74 0f 6a 04 c6 05 f9 e0 4a 00 00 e8 e0 7e 00 00 59 c3'],
     [0x420480, '66 a1 80 e4 4a 00 c3'],
     // Original MainMenu/MainSpawn loader and main menu result dispatch.
     [0x42aa6f, `e8 6c 7e 04 00 85 c0 b8 dc de 49 00 75 05 b8 c8
@@ -264,6 +269,9 @@
     // No writes until all guards agree. The caller installs before first run.
     memory.set(entryAndWrapper, mapped.get(idle));
     memory.set(demoWrapper, mapped.get(demoTick));
+    // The demo's timer normally returns to title without clearing replay.
+    // Give it the same original shutdown routine as the manual exit.
+    new DataView(memory.buffer).setUint32(mapped.get(demoTimeout) + 6, stopDemo, true);
     memory.set(audioWrapper, audioCodeOffset);
     memory.set(callTitleTick, mapped.get(menuTickCall));
     memory.set(callWrapper, mapped.get(0x42aa6f) + menuLoadCall - 0x42aa6f);
@@ -358,6 +366,11 @@
     return true;
   }
 
+  function demoPlaying(wine) {
+    return installed.has(wine) && wine.running && !wine.guestWorker &&
+      nativeView(wine, replay, 1)?.getUint8(0) === 1;
+  }
+
   function requestSoundOptions(wine) {
     const counter = titleCounter(wine);
     if (!counter || ![0, 600].includes(counter.getUint16(0, true))) return null;
@@ -420,7 +433,7 @@
     return true;
   }
 
-  const api = Object.freeze({install, requestDemo, requestSoundOptions, persistSoundOptions,
+  const api = Object.freeze({install, requestDemo, demoPlaying, requestSoundOptions, persistSoundOptions,
     controls, volume, setVolume, sliderAt, showObjectivesAtStart});
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WarcraftAssemblyMenuPolicy = api;

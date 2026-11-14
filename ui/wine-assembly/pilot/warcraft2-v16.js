@@ -3,6 +3,21 @@
   'use strict';
   const nativePath = name => 'c:\\' + name.replaceAll('/', '\\');
 
+  function createDemoBack(frame, stop) {
+    const layer = document.createElement('div');
+    layer.id = 'warcraft-demo-controls';
+    layer.dataset.winePageDialog = '';
+    layer.hidden = true;
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.setAttribute('aria-label', window.WarcraftLanguage?.current?.() === 'ru' ? 'Назад' : 'Back');
+    back.addEventListener('click', stop);
+    layer.addEventListener('contextmenu', event => event.preventDefault());
+    layer.append(back);
+    frame.append(layer);
+    return layer;
+  }
+
   function modalFaction(wine) {
     const offset = wine.instance?.exports?.guest_to_wasm?.(0x4abb7c) >>> 0;
     const memory = wine.memory?.buffer;
@@ -162,6 +177,17 @@
     const input = window.WarcraftAssemblyInput.create(wine, renderer);
     const objectivesCheckbox = onTitlePrepared && createObjectivesCheckbox(wine, frame, surface);
     const matchSettings = onTitlePrepared && window.WarcraftMatchPreferences?.create(wine, frame);
+    const demoPlaying = () => window.WarcraftAssemblyMenuPolicy?.demoPlaying(wine) === true;
+    const originalKeyDown = renderer.handleKeyDown, originalKeyUp = renderer.handleKeyUp;
+    let demoExitPending = false;
+    const demoBack = onTitlePrepared && createDemoBack(frame, () => {
+      if (demoExitPending || !demoPlaying()) return;
+      demoExitPending = true;
+      // Escape already calls the original demo shutdown in Warcraft.
+      const key = {code:'Escape',location:0,repeat:false};
+      originalKeyDown.call(renderer, 27, key);
+      originalKeyUp.call(renderer, 27, key);
+    });
     const restore = [];
     function wrap(owner, name, handler) {
       const original = owner[name];
@@ -176,6 +202,10 @@
         frame.dataset.warcraftPresentation = owner;
       }
       if (frame.dataset.warcraftMode !== mode) frame.dataset.warcraftMode = mode;
+      if (demoBack) {
+        demoBack.hidden = owner !== 'map' || mode !== 'world' || !demoPlaying();
+        if (demoBack.hidden) demoExitPending = false;
+      }
       delete frame.dataset.warcraftTransition;
     }
     function hold(owner) {
@@ -188,7 +218,13 @@
       for (const name of ['handleKeyDown', 'handleKeyPress']) {
         if (typeof renderer[name] !== 'function') continue;
         wrap(renderer, name, handle => function(...args) {
-          if (!('warcraftTransition' in frame.dataset)) return handle.apply(this, args);
+          if (!demoPlaying() && !('warcraftTransition' in frame.dataset)) return handle.apply(this, args);
+        });
+      }
+      for (const name of ['handleMouseDown', 'handleMouseMove', 'handleMouseUp', 'handleKeyUp']) {
+        if (typeof renderer[name] !== 'function') continue;
+        wrap(renderer, name, handle => function(...args) {
+          if (!demoPlaying()) return handle.apply(this, args);
         });
       }
     }
@@ -241,7 +277,7 @@
         hold('map');
       } : undefined,
       acceptsInput: onTitlePrepared
-        ? () => presented === 'map' && !('warcraftTransition' in frame.dataset) : undefined,
+        ? () => presented === 'map' && !demoPlaying() && !('warcraftTransition' in frame.dataset) : undefined,
       infoButtons: layer => infoButtons(guestReader(wine), layer),
       infoFocus: (...args) => infoFocus(wine, ...args),
       objectivesBodyEnd: (...args) => objectivesBodyEnd(wine, ...args),
@@ -342,6 +378,7 @@
       detachTransport();
       menu?.destroy();
       for (const release of restore.reverse()) release();
+      demoBack?.remove();
       if (window.WarcraftAssemblyMenuDebug === menu?.debug) delete window.WarcraftAssemblyMenuDebug;
       for (const id of ['warcraft-objectives-at-start', 'warcraft-match-settings', 'warcraft-match-settings-heading']) {
         frame.querySelector('#' + id)?.remove();

@@ -286,12 +286,23 @@
     let scene = null, chart = null, last = null, raf = 0, originX = 0, originY = 0;
     let backdrop = null, borderColor = '#000';
     let activating = false, transitioning = false;
+    let scenarioDrag = null;
     const authored = !!global.WarcraftAssemblyMenuNavigation;
     if (authored) frame.classList.add('warcraft-owns-presentation');
     const dialogTexture = authored ? new Image() : null;
     if (dialogTexture) { dialogTexture.src = './menu-art/orc-texture.png'; dialogTexture.onload = repaint; }
     const dialogBack = authored ? new Image() : null;
-    if (dialogBack) { dialogBack.onload = repaint; dialogBack.src = './menu-art/orc-back.png'; }
+    if (dialogBack) { dialogBack.onload = repaint; dialogBack.src = './menu-art/menu-back-orc.png'; }
+    const scenarioArt = authored ? ['track','thumb'].map(name => {
+      const image = new Image();
+      image.onload = repaint;
+      image.src = `./menu-art/volume-${name}.png`;
+      return image;
+    }) : [];
+    const closedScenario = document.createElement('canvas');
+    closedScenario.width = ART.w;
+    closedScenario.height = ART.h;
+    let closedScenarioRoot = null;
     const navigation = global.WarcraftAssemblyMenuNavigation?.create({wine, renderer, frame, activate, repaint, initialPage});
 
     function dialogStillActive() {
@@ -334,6 +345,78 @@
       onUnavailable?.();
     }
 
+    function drawScenarioFrame(image, frame) {
+      const {source:s,target:t,scale} = frame;
+      const rim = 3;
+      draw(context,image,area(s.x,s.y,s.w,rim),area(0,0,t.w,rim*scale));
+      draw(context,image,area(s.x,s.y+s.h-rim,s.w,rim),area(0,t.h-rim*scale,t.w,rim*scale));
+      draw(context,image,area(s.x,s.y+rim,rim,s.h-rim*2),area(0,rim*scale,rim*scale,t.h-rim*scale*2));
+      draw(context,image,area(s.x+s.w-rim,s.y+rim,rim,s.h-rim*2),
+        area(t.w-rim*scale,rim*scale,rim*scale,t.h-rim*scale*2));
+    }
+
+    function drawScenarioList(image, {source:s,target:t}, scale) {
+      const factor = Math.min(scale,t.w/s.w,t.h/s.h);
+      const stretch = t.h/s.h;
+      const edge = 2;
+      const [track] = scenarioArt;
+      // The same native red stone as the slider is free of drawn text.
+      // Use it for the larger hit rows, then paint just the original labels.
+      for (let line=0;line<6;line++) {
+        const rowY = 2+18*line, boxY = t.y+rowY*stretch;
+        const innerX = t.x+edge*factor, innerW = t.w-edge*factor*2;
+        context.drawImage(track,1,1,track.naturalWidth-2,track.naturalHeight-2,innerX,boxY,innerW,18*stretch);
+        drawScenarioCaption(image,{source:area(s.x+edge,s.y+rowY,s.w-edge*2,16),
+          target:area(innerX,boxY+(18*stretch-16*factor)/2,Math.min(innerW,(s.w-edge*2)*scale),16*factor)},true);
+        draw(context,image,area(s.x+edge,s.y+rowY+16,s.w-edge*2,2),
+          area(innerX,boxY+18*stretch-2*factor,innerW,2*factor));
+      }
+      for (const from of [0,s.w-edge]) draw(context,image,area(s.x+from,s.y,edge,s.h),
+        area(t.x+(from?t.w-edge*factor:0),t.y,edge*factor,t.h));
+      for (const from of [0,s.h-edge]) draw(context,image,area(s.x,s.y+from,s.w,edge),
+        area(t.x,t.y+(from?t.h-edge*factor:0),t.w,edge*factor));
+    }
+
+    function drawScenarioCaption(image,{source:s,target:t},list=false) {
+      scratch.clearRect(0,0,s.w,s.h);
+      draw(scratch,image,s,area(0,0,s.w,s.h));
+      const caption = scratch.getImageData(0,0,s.w,s.h);
+      const {data} = caption;
+      // The scenario caption uses the native yellow/white text palette.
+      // Keep its neighboring one-pixel shadow, with no box of old stone.
+      const ink = new Uint8Array(s.w*s.h);
+      for(let i=0;i<ink.length;i++){
+        const p=i*4,r=data[p],g=data[p+1],b=data[p+2];
+        if((r>=170&&g>=140&&b<=41)||(r>=215&&g>=215&&b>=215)||
+           (list&&((r===95&&g===51&&b===0)||(r===111&&g===111&&b===111))))ink[i]=1;
+      }
+      for(let y=0;y<s.h;y++)for(let x=0;x<s.w;x++){
+        const i=y*s.w+x,p=i*4;
+        if(!ink[i]&&!(x&&y&&ink[i-s.w-1]&&Math.max(data[p],data[p+1],data[p+2])<=45))data[p+3]=0;
+      }
+      scratch.putImageData(caption,0,0);
+      draw(context,scratch.canvas,area(0,0,s.w,s.h),t);
+    }
+
+    function scrollbarThumb(bar) {
+      const {target:t,scale} = bar;
+      return Math.min(t.w,Math.max(17,22*scale),t.h);
+    }
+
+    function drawScenarioScrollbar(bar) {
+      const {target:t,value,max,scale} = bar;
+      const [track,thumb] = scenarioArt;
+      const size = scrollbarThumb(bar);
+      const barWidth = Math.min(t.w,Math.max(18,20*scale));
+      const centerX = t.x+t.w/2;
+      context.save();
+      context.translate(centerX,t.y);
+      context.rotate(Math.PI/2);
+      context.drawImage(track,0,-barWidth/2,t.h,barWidth);
+      context.restore();
+      if (max > 0) context.drawImage(thumb,centerX-size/2,t.y+(t.h-size)*value/max,size,size);
+    }
+
     function paint(image) {
       const current = nativeScene(wine, authored);
       const transform = renderer._exclusiveTransform;
@@ -367,6 +450,10 @@
       const briefingLayout = global.WarcraftAssemblyBriefingLayout;
       const briefing = current.mode === 'briefing' && briefingLayout?.layout(params);
       const preparedBriefing = briefing && briefingLayout.prepare(wine,image,briefing);
+      if (nativeDialog?.scrollbar && scenarioArt.some(art=>!art.naturalWidth)) {
+        waitForScene();
+        return;
+      }
       if (authored && current.mode === 'briefing' && !preparedBriefing) {
         // The briefing can be registered before the original bitmap and its
         // palette agree. Keep the last authored frame until they do.
@@ -408,6 +495,11 @@
         return;
       }
       if (!authoredPaint) {
+        if (next.scenarioFrame && !next.scenarioPopup) {
+          const s = next.scenarioFrame.source;
+          closedScenario.getContext('2d').drawImage(image,s.x,s.y,s.w,s.h,s.x,s.y,s.w,s.h);
+          closedScenarioRoot = next.dialog.root;
+        } else if (!next.scenarioFrame) closedScenarioRoot = null;
         if (current.mode === 'video') {
           context.fillStyle = '#000';
         } else {
@@ -431,22 +523,31 @@
             briefingLayout.paint({context,image,chart:briefing,prepared:preparedBriefing,
               backgroundLeft:-left,backgroundWidth:rect.width});
           } else {
+            if (next.scenarioFrame) drawScenarioFrame(image,next.scenarioFrame);
             if (backdrop && next.artwork) drawTitle(context, image, next, backdrop, scratch);
             else for (const region of next.paintRegions || next.regions) {
+              const regionImage = region.previous ? (closedScenarioRoot === next.dialog.root ? closedScenario : null) : image;
+              if (!regionImage) continue;
               if (region.decoration === 'back') {
                 const {x, y, w, h} = region.target;
-                const size = Math.round(w*.9);
+                const size = Math.min(w,h);
                 context.drawImage(dialogBack,x+(w-size)/2,y+(h-size)/2,size,size);
+              } else if (region.decoration === 'scenario-list') {
+                drawScenarioList(regionImage,region,next.scenarioFrame.scale);
+              } else if (region.decoration === 'scenario-caption') {
+                drawScenarioCaption(regionImage,region);
+              } else if (region.decoration === 'scenario-scroll') {
+                drawScenarioScrollbar(next.scrollbar);
               } else if (region.texture && dialogTexture?.naturalWidth) {
                 const {x,y,w,h} = region.target;
                 context.save();
                 context.translate(x,y);
                 global.WarcraftAssemblyMenuNavigation.paintTexture(context,dialogTexture,w,h);
                 context.restore();
-              } else if (region.foreground && backdrop) foreground(image, region);
+              } else if (region.foreground && backdrop) foreground(regionImage, region);
               else {
                 const {source, target} = region;
-                draw(context, image, source, target);
+                draw(context, regionImage, source, target);
                 if (current.sound) global.WarcraftModalPresentationV15?.paintSettingsFrame(context, image,
                   next.dialog?.handler, {left: source.x, top: source.y, width: source.w, height: source.h},
                   {left: target.x, top: target.y, width: target.w, height: target.h});
@@ -464,7 +565,8 @@
         }
       }
       chart = left || right ? {...next, width:rect.width,
-        regions:next.regions.map(region=>({...region,target:{...region.target,x:region.target.x+left}}))} : next;
+        regions:next.regions.map(region=>({...region,target:{...region.target,x:region.target.x+left}})),
+        ...(next.scrollbar ? {scrollbar:{...next.scrollbar,target:{...next.scrollbar.target,x:next.scrollbar.target.x+left}}} : {})} : next;
       scene = current;
       last = image;
       originX = transform.srcX;
@@ -489,13 +591,31 @@
       if (!chart) return originalMap.call(this, x, y);
       if (!dialogStillActive()) return this._mouseButtonsMask
         ? {x: originX + 640, y: originY + 480} : {outside: true};
-      const menu = translate(chart.regions, x * chart.width / Math.max(1, source.width),
-        y * chart.height / Math.max(1, source.height));
+      const point = menuPoint(x,y);
+      const bar = !chart.scenarioPopup && chart.scrollbar;
+      if (bar?.max > 0 && (scenarioDrag?.root === chart.dialog.root || inScrollbar(point,bar))) {
+        // Begin each drag on the native thumb, then use its original track.
+        const size = scrollbarThumb(bar);
+        const value = scenarioDrag && !scenarioDrag.start ? Math.max(0,Math.min(1,
+          (point.y-bar.target.y-scenarioDrag.grab)/Math.max(1,bar.target.h-size))) : bar.value/bar.max;
+        return {x:originX+bar.source.x+Math.floor(bar.source.w/2),
+          y:originY+Math.round(bar.nativeFirst+(bar.nativeLast-bar.nativeFirst)*value)};
+      }
+      const menu = translate(chart.regions, point.x,point.y);
       if (menu) return {x: originX + Math.floor(menu.x), y: originY + Math.floor(menu.y)};
       // A held native button must be released even if the pointer leaves the
       // art. The native client outside its 640x480 menu has no menu control.
       if (this._mouseButtonsMask) return {x: originX + chart.art.w, y: originY + chart.art.h};
       return {outside: true};
+    }
+
+    function menuPoint(x,y) {
+      return {x:x*chart.width/Math.max(1,source.width),y:y*chart.height/Math.max(1,source.height)};
+    }
+
+    function inScrollbar(point,bar) {
+      const t = bar.target;
+      return point.x>=t.x&&point.x<t.x+t.w&&point.y>=t.y&&point.y<t.y+t.h;
     }
 
     function unmap(x, y) {
@@ -507,6 +627,7 @@
 
     function immediatePress(x, y) {
       if (chart?.mode === 'dialog') {
+        if (!chart.scenarioPopup && chart.scrollbar?.max && inScrollbar(menuPoint(x,y),chart.scrollbar)) return true;
         const point = map.call(this, x, y);
         if (!point.outside && global.WarcraftAssemblyDialogLayout.wantsImmediatePress(
           chart, point.x - originX, point.y - originY)) return true;
@@ -515,11 +636,23 @@
     }
 
     const originalDown = renderer.handleMouseDown;
+    const originalUp = renderer.handleMouseUp;
     const originalKeyDown = renderer.handleKeyDown;
     function fastScene() {
       return chart?.dialog?.handler === fastSetup && dialogStillActive();
     }
     function mouseDown(x,y,button,...args) {
+      if (!activating && button === 0 && !chart?.scenarioPopup && chart?.scrollbar?.max && dialogStillActive() &&
+          inScrollbar(menuPoint(x,y),chart.scrollbar)) {
+        const bar = chart.scrollbar, size = scrollbarThumb(bar);
+        const thumbTop = bar.target.y+(bar.target.h-size)*bar.value/bar.max;
+        const offset = menuPoint(x,y).y-thumbTop;
+        scenarioDrag = {root:chart.dialog.root,start:true,grab:offset>=0&&offset<=size?offset:size/2};
+        const result = originalDown.call(this,x,y,button,...args);
+        scenarioDrag.start = false;
+        this.handleMouseMove(x,y);
+        return result;
+      }
       if (!activating && button === 0 && fastScene()) {
         const hit = map.call(this,x,y);
         const nx = hit.x - originX, ny = hit.y - originY;
@@ -527,6 +660,10 @@
             navigation?.confirmFast(() => activate(510,418))) return;
       }
       return originalDown.call(this,x,y,button,...args);
+    }
+    function mouseUp(x,y,button,...args) {
+      try { return originalUp.call(this,x,y,button,...args); }
+      finally { if (button === 0) scenarioDrag = null; }
     }
     function keyDown(key,...args) {
       if (key === 13 && fastScene() && !navigation?.blocking &&
@@ -540,8 +677,11 @@
     renderer._mapExclusiveInputPoint = map;
     renderer._unmapExclusiveInputPoint = unmap;
     if (authored) renderer.touchWantsImmediatePress = immediatePress;
-    if (wine.warcraftSession) {
+    if (authored) {
       renderer.handleMouseDown = mouseDown;
+      renderer.handleMouseUp = mouseUp;
+    }
+    if (wine.warcraftSession) {
       renderer.handleKeyDown = keyDown;
     }
 
@@ -575,6 +715,7 @@
         if (renderer._unmapExclusiveInputPoint === unmap) renderer._unmapExclusiveInputPoint = originalUnmap;
         if (renderer.touchWantsImmediatePress === immediatePress) renderer.touchWantsImmediatePress = originalImmediate;
         if (renderer.handleMouseDown === mouseDown) renderer.handleMouseDown = originalDown;
+        if (renderer.handleMouseUp === mouseUp) renderer.handleMouseUp = originalUp;
         if (renderer.handleKeyDown === keyDown) renderer.handleKeyDown = originalKeyDown;
         hide();
         navigation?.destroy();

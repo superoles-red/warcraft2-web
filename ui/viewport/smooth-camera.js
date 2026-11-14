@@ -16,6 +16,10 @@
   const MAX_COAST_FRAME_MS = 80;
   const PAN_SUPERSEDED_MS = 160;
   const PAN_TIMEOUT_MS = 600;
+  const JUMP_RETRY_MS = 45;
+  const JUMP_TIMEOUT_MS = 1500;
+  const JUMP_MAX_ATTEMPTS = 3;
+  const PAN_DENIED = 2, PAN_STALE_CAMERA = 4;
   const FLICK_WINDOW_MS = 90;
   const FLICK_MAX_PAUSE_MS = 120;
   const FLICK_RELEASE_GRACE_MS = 25;
@@ -233,11 +237,16 @@
       const resized = viewWidth > 0 && (width !== viewWidth || height !== viewHeight);
       viewWidth = width;
       viewHeight = height;
+      if (jump && time > (jump.deadline ??= time + JUMP_TIMEOUT_MS)) jump = null;
       if (latest && (latest.x !== native.x || latest.y !== native.y)) {
         const own = pending && between(native.x, pending.from.x, pending.to.x) &&
           between(native.y, pending.from.y, pending.to.y);
         if (!own) {
+          const destination = jump;
           stop();
+          // A native camera movement between the press and raster publication
+          // changes the request origin, not the world point the player tapped.
+          jump = destination;
           pending = null;
           telemetry.externalResets++;
           desired = center();
@@ -266,7 +275,13 @@
         const superseded = status === 1 && age > PAN_SUPERSEDED_MS &&
           receipt?.sequence !== pending.ackSequence;
         if (status > 1) {
-          if (jump === pending.jump) jump = null;
+          if (jump && jump === pending.jump) {
+            if ((status === PAN_DENIED || status === PAN_STALE_CAMERA) && jump.attempts < JUMP_MAX_ATTEMPTS) {
+              // Selection/focus briefly disables native panning. A stale
+              // origin may also reach the native callback one frame later.
+              jump.retryAt = time + JUMP_RETRY_MS;
+            } else jump = null;
+          }
           pending = null;
         }
         else if (stable && (age > PAN_TIMEOUT_MS || superseded)) {
@@ -281,14 +296,16 @@
         visible = fit(visible, pending ? pending.bounds : liveBounds);
         desired = { ...visible };
       }
-      if(jump&&!pending){
+      if(jump&&!pending&&time>=jump.retryAt){
         const x=clamp(Math.round((jump.x-d.extraX/2)/TILE),0,g.maxX);
         const y=clamp(Math.round((jump.y-d.extraY/2)/TILE),0,g.maxY);
         if(x===native.x&&y===native.y){
           visible=fit(jump,liveBounds);desired={...visible};jump=null;
-        }else{
+        }else if(jump.attempts>=JUMP_MAX_ATTEMPTS)jump=null;
+        else{
           const serial=panTiles(x-native.x,y-native.y,native);
           if(serial!==false){
+            jump.attempts++;
             pending={from:native,to:{x,y},bounds:liveBounds,at:time,timedOut:false,serial,frameSequence:receipt?.sequence,jump};
           }
         }
@@ -507,7 +524,7 @@
       stop();
       const d=dimensionsNow;
       jump={x:clamp(x-d.w/2,useEdgeRoom ? d.minX : 0,useEdgeRoom ? d.maxX : d.realMaxX),
-        y:clamp(y-d.h/2,useEdgeRoom ? d.minY : 0,useEdgeRoom ? d.maxY : d.realMaxY)};
+        y:clamp(y-d.h/2,useEdgeRoom ? d.minY : 0,useEdgeRoom ? d.maxY : d.realMaxY), attempts:0, retryAt:0};
       return true;
     }
 
