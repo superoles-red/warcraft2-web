@@ -60,6 +60,35 @@
       title.append(print(heading, accept ? 272 : 235));
       const content = document.createElement('div');
       content.className = 'warcraft-session-content';
+      let touch = null, dragged = false;
+      content.addEventListener('pointerdown', event => {
+        if (event.pointerType !== 'touch' || !event.isPrimary) return;
+        dragged = false;
+        if (content.scrollHeight > content.clientHeight) {
+          touch = {id:event.pointerId,y:event.clientY,top:content.scrollTop};
+        }
+      });
+      content.addEventListener('pointermove', event => {
+        if (event.pointerId !== touch?.id) return;
+        const delta = event.clientY-touch.y;
+        if (!dragged && Math.abs(delta)<6) return;
+        if (!dragged) content.setPointerCapture(event.pointerId);
+        dragged = true;
+        content.scrollTop = touch.top-delta;
+      });
+      for (const type of ['pointerup','pointercancel','lostpointercapture']) {
+        content.addEventListener(type, event => {
+          if (type==='lostpointercapture' && event.target!==content) return;
+          if (event.pointerId === touch?.id) touch = null;
+        });
+      }
+      content.addEventListener('click', event => {
+        if (dragged && event.detail) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        dragged = false;
+      }, true);
       const controls = document.createElement('div');
       controls.className = 'warcraft-session-footer';
       function printed(message,parent) {
@@ -95,6 +124,7 @@
       controls.append(arrow);
       panel.replaceChildren(title,content,controls);
       panel.classList.toggle('mission-list',list);
+      panel.classList.toggle('session-actions',!list&&rows.length>1);
       panel.classList.toggle('session-confirmation',!!accept);
       panel.classList.toggle('session-prose',prose);
       layer.hidden = false;

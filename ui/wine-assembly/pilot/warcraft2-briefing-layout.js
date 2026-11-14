@@ -73,9 +73,10 @@
     const availableH = height - inset * 2;
     const artRatio = art.h / art.w;
     const split = width >= height * 1.2;
-    const buttonH = Math.min(48, availableH * 0.15);
     const textUnits = source.heading.h + source.narrative.h + source.objectives.h;
     const columnW = split ? Math.min(490, (availableW - gap) * 0.45) : availableW;
+    const buttonScale = Math.min(1.6,columnW/CONTINUE.w,availableH*.15/28);
+    const buttonH = global.WarcraftAssemblyDialogLayout?.menuButtonHeight(width,height) ?? 56*buttonScale;
     const artLimitH = split ? 0 : Math.min(availableW * artRatio, availableH * 0.37);
     const textScale = Math.min(1.55, columnW / source.narrative.w,
       (availableH - artLimitH - buttonH - gap * (split ? 3 : 4)) / textUnits);
@@ -98,7 +99,7 @@
     y += targets.narrative.h + gap;
     targets.objectives = centered(source.objectives.w * textScale, source.objectives.h * textScale);
     y += targets.objectives.h + gap;
-    targets.continue = centered(buttonH * CONTINUE.w / CONTINUE.h, buttonH);
+    targets.continue = centered(CONTINUE.w*buttonScale,buttonH);
 
     return {width, height, mode: 'briefing', art, artwork, textScale, source, targets,
       dialog: {slot: scene.slot, handler: scene.handler, root: scene.root},
@@ -234,7 +235,7 @@
     return background ? {background,scratch:state.scratch.getContext('2d')} : null;
   }
 
-  function paint({context,image,chart,prepared,backgroundLeft=0,backgroundWidth=chart.width}) {
+  function paint({context,image,chart,prepared,backgroundLeft=0,backgroundWidth=chart.width,paintContinue}) {
     const {background,scratch} = prepared;
     const {height, art, artwork, textScale, source, targets} = chart;
     const cover = Math.max(backgroundWidth / BACKDROP.w, height / BACKDROP.h);
@@ -247,7 +248,8 @@
     paintText(context, image, scratch, background, source.heading, targets.heading, textScale);
     paintText(context, image, scratch, background, source.narrative, targets.narrative);
     paintText(context, image, scratch, background, source.objectives, targets.objectives);
-    draw(context, image, source.continue, targets.continue);
+    if(paintContinue)paintContinue(source.continue,targets.continue);
+    else draw(context,image,source.continue,targets.continue);
     return true;
   }
 

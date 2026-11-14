@@ -32,8 +32,8 @@
   position: absolute;
   right: max(8px, var(--warcraft-hud-right, 0px), env(safe-area-inset-right, 0px));
   bottom: max(8px, var(--warcraft-hud-bottom, 0px), env(safe-area-inset-bottom, 0px));
-  width: min(89.6px, 30vw, 30vh);
-  height: min(89.6px, 30vw, 30vh);
+  width: var(--warcraft-menu-row-height);
+  height: var(--warcraft-menu-row-height);
   padding: 0;
   border: 0;
   background: url("./menu-art/menu-back-orc.png") center / contain no-repeat;
@@ -88,9 +88,15 @@
 }
 .warcraft-native-checkbox:focus-visible { outline: 2px solid #f4d343; }
 .warcraft-page #screen-canvas-stack {
+  --warcraft-menu-row-height: min(88px, 23vw, 10.7vh);
   --warcraft-hud-left: 4px;
   --warcraft-hud-right: 4px;
   --warcraft-hud-bottom: 4px;
+}
+@media (orientation: landscape) {
+  .warcraft-page #screen-canvas-stack {
+    --warcraft-menu-row-height: min(88px, 15vh);
+  }
 }
 @media (pointer: coarse), (hover: none) and (any-pointer: coarse) {
   .warcraft-page #screen-canvas-stack {
@@ -162,7 +168,7 @@
   display: flex;
   align-items: center;
   width: max-content;
-  min-height: var(--settings-control);
+  min-height: var(--settings-check-height);
   gap: calc(var(--settings-glyph) * 7 / 19);
   cursor: pointer;
   pointer-events: auto;
@@ -249,7 +255,7 @@
 .warcraft-session-content {
   overflow-y: auto;
   overscroll-behavior: contain;
-  touch-action: pan-y;
+  touch-action: none;
   display: grid;
   align-content: start;
   gap: 6px;
@@ -259,7 +265,8 @@
   border: 0;
   display: grid;
   align-items: center;
-  min-height: 41px;
+  box-sizing: border-box;
+  height: var(--warcraft-menu-row-height);
   padding: 4px 10px;
   background: url("./menu-art/title-button.png") center / 100% 100% no-repeat;
   touch-action: manipulation;
@@ -271,24 +278,26 @@
   cursor: default;
 }
 .mission-list .warcraft-session-choice {
-  height: clamp(46px, 12.5vmin, 56px);
   image-rendering: pixelated;
 }
 .mission-list .warcraft-session-choice img { max-height: 100%; object-fit: contain; }
 .warcraft-session-choice[data-completed] { box-shadow: inset 0 0 0 1px #d1b455; }
 .warcraft-session-panel button:focus-visible { outline: 2px solid #f4d343; outline-offset: -2px; }
 .warcraft-session-footer {
-  --session-button-height: 44px;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: clamp(5px, 2vmin, 10px);
 }
-.warcraft-session-footer .warcraft-session-choice { min-height: var(--session-button-height); }
+@media (orientation: landscape) {
+  .warcraft-session-panel.session-actions { width: min(100%, 620px); }
+  .session-actions .warcraft-session-content { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .session-actions .warcraft-session-content p { grid-column: 1 / -1; }
+}
 .warcraft-session-back {
   justify-self: end;
   border: 0;
-  width: calc(2 * var(--session-button-height));
+  width: var(--warcraft-menu-row-height);
   aspect-ratio: 1;
   background: url("./menu-art/menu-back-orc.png") center / contain no-repeat;
   touch-action: manipulation;

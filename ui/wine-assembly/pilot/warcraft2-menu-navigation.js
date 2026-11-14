@@ -100,7 +100,7 @@
   const OPTION_BUTTONS = [[1, 16, 40, 224], [2, 16, 74, 224], [3, 16, 108, 224], [-3, 16, 248, 224]];
   const END_BUTTONS = [[2, 16, 40, 224], [1, 16, 74, 224], [3, 16, 108, 224],
     [4, 16, 142, 224], [-3, 16, 248, 224]];
-  const titleInk = [247, 211, 171, 95];
+  const modalAtlasInk = [247, 211, 171, 95];
   const factionInk = {
     human:[[252,248,240],[252,248,240],[156,156,156],[108,108,108]],
     orc:[[244,224,32],[208,192,28],[168,140,16],[92,48,0]],
@@ -116,7 +116,7 @@
         const label = font.ink(caption, atlas);
         const context = label.getContext('2d'), image = context.getImageData(0,0,label.width,label.height);
         for (let i=0; i<image.data.length; i+=4) {
-          const shade=titleInk.indexOf(image.data[i]);
+          const shade=modalAtlasInk.indexOf(image.data[i]);
           if (shade>=0) image.data.set(palette[shade],i);
         }
         context.putImageData(image,0,0);
@@ -144,7 +144,7 @@
     }
     return packet => {
       const dialog = packet?.stack?.find(scene => scene.root === packet.currentDialog && scene.nativeVisible);
-      if (!dialog || ![0x435b70, 0x441940].includes(dialog.handlerAddress)) return null;
+      if (!dialog) return null;
       const faction = view(0x4abb7c, 1)?.getUint8(0) === 0 ? 'human' : 'orc';
       const arrow = arrows[faction];
       const settings = dialog.handlerAddress === 0x441940;
@@ -158,7 +158,7 @@
       const compact = pause || options || endScenario || confirmation;
       // The common native painter can briefly keep the old root while its
       // continuation is being replaced. No menu has a valid zero return path.
-      if (!settings && !continuation) return waiting;
+      if (dialog.handlerAddress === 0x435b70 && !continuation) return waiting;
       const required = compact || settings ? waiting : null;
       const root = view(dialog.root, 0x4a);
       if (root?.getUint32(0x2a, true) !== dialog.handlerAddress ||
@@ -172,39 +172,49 @@
         const id = child.getInt16(0x20, true), kind = child.getUint16(0x22, true);
         const [left, top, right, bottom] = [4, 6, 8, 10].map(offset => child.getInt16(offset, true));
         const flags = child.getUint32(0x18, true);
-        if (id === -3 && !pause && !settings) {
-          if ((kind !== 1 && kind !== 2) || (flags & 10) !== 8 || left !== 16 || top !== 248 ||
-              right !== 239 || bottom !== 275) return required;
-          if (!compact && !previousPrefixes.some(prefix => {
+        if (id === -3 && !pause && !settings && (compact || dialog.handlerAddress===0x435b70) &&
+            (kind===1||kind===2) && (flags&10)===8 && left===16 && top===248 && right===239 && bottom===275) {
+          if (compact || previousPrefixes.some(prefix => {
             const label = view(child.getUint32(0x14, true), prefix.length);
             return label && prefix.every((value, index) => label.getUint8(index) === value);
-          })) return null;
-          previous = {source: {left: dialog.rect.left + 16, top: dialog.rect.top + 248, width: 224, height: 28},
-            image: arrow};
-          if (!compact) return arrow.naturalWidth ? previous : waiting;
+          })) previous = {source: {left: dialog.rect.left + 16, top: dialog.rect.top + 248, width: 224, height: 28},
+              image: arrow};
         }
-        if ((compact || (settings && (id === -3 || id === -2))) && (flags & 8) && (kind === 1 || kind === 2)) {
-          if (bottom !== top + 27 || buttons.has(id)) return required;
-          buttons.set(id, {left, top, width: right - left + 1});
+        if ((flags & 8) && (kind === 1 || kind === 2) && (id > 0 || id === -3 || id === -2)) {
+          const width=right-left+1,height=bottom-top+1;
+          if (width<32||height!==28||buttons.has(id)) return required;
+          buttons.set(id, {id,left,top,width,height});
         }
         node = child.getUint32(0, true);
       }
       if (node) return required;
+      const art = restartArt[faction];
       const sourceOf = item => ({left: dialog.rect.left + item.left, top: dialog.rect.top + item.top,
         width:item.width, height:28});
+      const controls = (items, {skip, replace} = {}) => items
+        .filter(item => item.id!==skip)
+        .map(item => ({id:item.id,source:sourceOf(item),
+          blank:item.width===224?art.button:item.width===106?art.shortButton:null,
+          ...(item.id===replace?{button:art.button,label:art.label}:null)}));
+
       if (settings) {
         const cancel = buttons.get(-3), ok = buttons.get(-2);
         if (!arrow.naturalWidth || cancel?.left !== 12 || cancel.top !== 256 || cancel.width !== 106 ||
             ok?.left !== 138 || ok.top !== 256 || ok.width !== 106) return waiting;
-        return {source:sourceOf(cancel), ok:sourceOf(ok), image:arrow};
+        return {source:sourceOf(cancel), ok:sourceOf(ok), image:arrow, controls:controls([ok])};
       }
-      if (!compact || (!pause && !previous)) return required;
+      if (!compact) {
+        if (previous && !arrow.naturalWidth) return waiting;
+        const actions=controls([...buttons.values()],{skip:previous?-3:undefined});
+        return actions.length || previous ? {...previous, controls:actions} : null;
+      }
+      if (!pause && !previous) return required;
       if (confirmation) {
         const accept = buttons.get(-2);
         const {shortButton:button} = restartArt[faction];
         if (!confirmationLabels || !button.naturalWidth || !arrow.naturalWidth || buttons.size !== 2 ||
             accept?.left !== 16 || accept.top !== 108 || accept.width !== 224) return waiting;
-        return {...previous, compact:'confirmation', confirmation:{ok:sourceOf(accept),
+        return {...previous, compact:'confirmation', controls:[], confirmation:{ok:sourceOf(accept),
           label:confirmationLabels[faction], button}};
       }
       const expected = pause ? PAUSE_BUTTONS : options ? OPTION_BUTTONS : END_BUTTONS;
@@ -213,15 +223,15 @@
         const button = buttons.get(endScenario && index === 0 ? firstId : id);
         return !button || button.left !== left || button.top !== top || button.width !== width;
       })) return waiting;
-      if (endScenario) {
-        const faction = view(0x4abb7c, 1)?.getUint8(0) === 0 ? 'human' : 'orc';
-        const art = restartArt[faction];
-        if (!arrow.naturalWidth || !art.button.naturalWidth || !art.label.naturalWidth) return waiting;
-        return {...previous, compact:'end', restart:{...art, source:sourceOf(buttons.get(firstId))}};
-      }
       if (!arrow.naturalWidth) return waiting;
-      if (pause) return {compact:'pause', source:sourceOf(buttons.get(-3)), image:arrow};
-      return {...previous, compact:'two-actions'};
+      if (endScenario) {
+        if (!art.button.naturalWidth || !art.label.naturalWidth) return waiting;
+        const items=[buttons.get(firstId),buttons.get(3)];
+        return {...previous, compact:'end', controls:controls(items,{replace:firstId}), restartId:firstId};
+      }
+      if (pause) return {compact:'pause', source:sourceOf(buttons.get(-3)), image:arrow,
+        controls:controls([3,5,6].map(id=>buttons.get(id)))};
+      return {...previous, compact:'two-actions', controls:controls([1,2,3].map(id=>buttons.get(id)))};
     };
   }
 
@@ -500,25 +510,32 @@
 
     function place(width, height, count, campaign, home) {
       const portrait = width < height;
-      const artTop = Math.min(16, height * .025);
-      const artScale = Math.min((width - 16) / art.w, height * (portrait ? .43 : .94) / art.h);
-      const picture = {x: (width - art.w * artScale) / 2, y: artTop,
-        w: art.w * artScale, h: art.h * artScale};
+      const h = window.WarcraftAssemblyDialogLayout.menuButtonHeight(width,height);
+      const gap = Math.min(8,h*.16);
+      const headingRoom = campaign ? h*.42 : 0;
+      const span = count*h+(count-1)*gap+2*headingRoom;
       const corner = backBox(width, height);
-      const positions = campaign ? [0,36,96,132] : Array.from({length:count},(_,i)=>i*36);
-      const span = positions.at(-1) + 28;
-      const panelTop = portrait ? picture.y + picture.h + Math.min(36,height*.06) : height*.41;
-      const panelBottom = portrait ? (home ? height - 14 : corner.y - 8) : height*.90;
+      const back = {x:corner.x+corner.w-h,y:corner.y+corner.h-h,w:h,h};
+      const artTop = Math.min(16, height * .025);
+      const rail = portrait ? 0 : Math.max(h+gap,Math.min(124,width*.18));
+      const pictureSpace = portrait ? width : (width-rail)*.51;
+      const controlSpace = portrait ? width : width-pictureSpace-rail;
+      const controlCenter = portrait ? width/2 : pictureSpace+controlSpace/2;
+      // Leave room for the five Options rows and a separate corner button on every title page.
+      const artLimit = portrait ? Math.min(height*.43,back.y-5*h-6*gap-artTop) : height*.94;
+      const pictureScale = Math.min((pictureSpace-16) / art.w,artLimit/art.h);
+      const picture = {x: (pictureSpace-art.w*pictureScale)/2, y: portrait ? artTop : (height-art.h*pictureScale)/2,
+        w: art.w * pictureScale, h: art.h * pictureScale};
+      const panelTop = portrait ? picture.y+picture.h+gap : gap;
+      const panelBottom = portrait && !home ? back.y-gap : height-gap;
       const scale = Math.max(.1, Math.min(1.6,
-        (width - (portrait ? 28 : 44))/224,
-        (panelBottom - panelTop) / (portrait ? span : Math.max(172,span))));
-      const w = 224*scale, h = 28*scale;
-      const size = 2*h;
-      const back = {x:corner.x+corner.w-size,y:corner.y+corner.h-size,w:size,h:size};
-      const centered = home ? (picture.y + picture.h + height)/2 : (panelTop+panelBottom)/2;
-      const top = portrait ? Math.max(panelTop,Math.min(panelBottom-span*scale,centered-span*scale/2)) : panelTop;
-      const boxes = positions.map(y => ({x:(width-w)/2,y:top+y*scale,w,h}));
-      return {picture, boxes, back, scale};
+        (controlSpace-(portrait ? 28 : 18))/224,portrait ? Infinity : height*.49/172));
+      const w = 224*scale;
+      const centered = portrait && home ? (picture.y+picture.h+height)/2 : (panelTop+panelBottom)/2;
+      const top = headingRoom+Math.max(panelTop,Math.min(panelBottom-span,centered-span/2));
+      const boxes = Array.from({length:count},(_,i)=>({x:controlCenter-w/2,
+        y:top+i*(h+gap)+(i>=2 ? headingRoom : 0),w,h}));
+      return {picture, boxes, back, scale, rail};
     }
 
     function drawImage(context, image, box, source) {
@@ -555,8 +572,11 @@
       return [action, {label: 'Delete', glyph: 'delete', page: 'language-delete'}];
     }
 
-    function drawButton(context, image, item, box) {
-      if (item.source && !item.glyph && !item.caption) return drawImage(context, image, box, item.source);
+    function drawButton(context, image, item, box, captionScale) {
+      if (item.source && !item.glyph && !item.caption) {
+        const blank = images[pressed === item.label ? 'title-button-pressed' : 'title-button'];
+        return window.WarcraftAssemblyDialogLayout.paintTallButton(context,image,item.source,box,blank,captionScale);
+      }
       const base = images[pressed === item.label ? 'title-button-pressed' : 'title-button'];
       drawImage(context, base, box);
       if (item.caption) {
@@ -564,19 +584,19 @@
         if (!sessionCaptions.has(id)) sessionCaptions.set(id,
           window.WarcraftSessionText.ink(sessionArt.text(item.caption), sessionAtlases.get(locale)));
         const glyph = sessionCaptions.get(id);
-        const scale = Math.min(box.h / 28, box.w / (glyph.width + 40));
+        const scale = Math.min(captionScale, box.w / (glyph.width + 40));
         const w = glyph.width * scale, h = glyph.height * scale;
         drawImage(context, glyph, {x:box.x + (box.w-w)/2,y:box.y + (box.h-h)/2,w,h});
       } else {
         const glyph = labelImage(item);
-        drawLabel(context, item, box, Math.min(box.h / 28, box.w / (glyph.naturalWidth + 40)));
+        drawLabel(context, item, box, Math.min(captionScale, box.w / (glyph.naturalWidth + 40)));
       }
       if (item.language) {
         const state = item.language === (language()?.current?.() || 'en') ? 'selected' :
           (item.language === 'ru' && !language()?.available?.('ru')) ? 'disabled' : 'unselected';
-        const size = box.h * 19 / 28;
+        const size = 19 * captionScale;
         drawImage(context, images[`language-${state}`],
-          {x: box.x + box.h / 4, y: box.y + (box.h - size) / 2, w: size, h: size});
+          {x: box.x + 7*captionScale, y: box.y + (box.h - size) / 2, w: size, h: size});
       }
     }
 
@@ -628,8 +648,7 @@
         page === 'language-download' ? 'download-language' : page === 'language-delete' ? 'delete-language' : null;
       const hasBack = parentPage[page] || scene.mode === 'single' || campaign;
       if (!images['orc-texture'].naturalWidth || !images['title-version-clean'].naturalWidth ||
-          ((feedback || items.some(item => item.glyph || item.caption)) && (!images['title-button'].naturalWidth ||
-            !images['title-button-pressed'].naturalWidth)) ||
+          !images['title-button'].naturalWidth || !images['title-button-pressed'].naturalWidth ||
           items.some(item => item.glyph && !labelImage(item)?.naturalWidth) ||
           ((feedback || items.some(item => item.caption)) && !sessionAtlases.has(sessionArt.locale())) ||
           (heading && !labelImage({glyph: heading})?.naturalWidth) ||
@@ -638,7 +657,16 @@
         return null;
       }
       const contentWidth = width - leftInset - rightInset;
-      const {picture, boxes, back, scale} = place(contentWidth,height,items.length,campaign,home);
+      const {picture, boxes, back, scale, rail} = place(contentWidth,height,items.length,campaign,home);
+      let feedbackBox;
+      if (feedback) {
+        const first = boxes[0];
+        const w = Math.min(124, rail ? rail-14 : first.w*.28);
+        feedbackBox = rail ? {x:contentWidth-w-12,y:12,w,h:first.h} :
+          {x:first.x+first.w-w,y:first.y,w,h:first.h};
+        if (!rail) first.w -= w+8;
+        feedbackBox.x += leftInset;
+      }
       picture.x += leftInset;
       back.x += leftInset;
       for (const box of boxes) box.x += leftInset;
@@ -656,7 +684,7 @@
           const trimmed = {...source, h: Math.min(source.h, nextButton.y - source.y - 2)};
           const w = trimmed.w * scale, h = trimmed.h * scale;
           if (h > 0) foreground(image, {source: trimmed,
-            target: {x: leftInset + (contentWidth - w) / 2, y: slot.y - h - 5, w, h}});
+            target: {x: slot.x+(slot.w-w)/2, y: slot.y - h - 5, w, h}});
         });
       }
       if (languageMenu) {
@@ -665,18 +693,16 @@
           `top:${last.y + last.h + 8}px;margin:0;text-align:center;color:#f4d343;font:14px/1.2 system-ui`;
         const first = boxes[0];
         if (heading) {
-          const h = Math.max(22, first.h), y = Math.max(4, first.y - h - 6);
+          const h = Math.max(22, 28*scale), y = Math.max(4, first.y - h - 6);
           drawLabel(context, {glyph: heading}, {...first, y, h}, scale);
         }
       }
-      items.forEach((item, i) => drawButton(context, image, item, boxes[i]));
+      items.forEach((item, i) => drawButton(context, image, item, boxes[i], scale));
       const controls = [...items];
       if (feedback) {
-        const w = Math.min(124,contentWidth*.32), h = Math.min(42,height*.14);
-        const box = {x:leftInset + contentWidth-w-12,y:12,w,h};
         controls.push(feedbackItem);
-        boxes.push(box);
-        drawButton(context,image,feedbackItem,box);
+        boxes.push(feedbackBox);
+        drawButton(context,image,feedbackItem,feedbackBox,scale);
       }
       if (hasBack) {
         controls.push({label: 'Back', source: parentPage[page] ? null :

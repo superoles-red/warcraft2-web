@@ -70,11 +70,14 @@
         [4, 6, 8, 10].some((offset, i) => button.getInt16(offset, true) !== [x, 448, x + 105, 475][i])) return null;
     // Preserve the whole table/illustration up to the separate action.
     const art = area(0, 0, ART.w, 446);
-    const scale = Math.min((width - 16) / art.w, (height - 76) / art.h);
+    const buttonHeight = global.WarcraftAssemblyDialogLayout.menuButtonHeight(width,height);
+    const captionScale = Math.min(1.6,(width-16)/source.w,height*.15/28);
+    const buttonWidth = source.w*captionScale;
+    const scale = Math.min((width - 16) / art.w, (height - buttonHeight - 28) / art.h);
     const w = art.w * scale, h = art.h * scale;
-    const buttonHeight = 44, buttonWidth = buttonHeight * source.w / source.h;
     const top = (height - h - buttonHeight - 12) / 2;
-    const control = {source, target: area((width - buttonWidth) / 2, top + h + 12, buttonWidth, buttonHeight)};
+    const control = {source, target: area((width - buttonWidth) / 2, top + h + 12, buttonWidth, buttonHeight),
+      decoration:'tall-button'};
     return {width, height, mode: 'dialog', art: current.art, dialog, heldControls: [], regions: [control],
       paintRegions: [{source: art, target: area((width - w) / 2, top, w, h)}, control]};
   }
@@ -299,6 +302,12 @@
       image.src = `./menu-art/volume-${name}.png`;
       return image;
     }) : [];
+    const buttonArt = authored ? Object.fromEntries(['human','orc'].flatMap(faction => ['short','wide'].map(size => {
+      const image = new Image();
+      image.onload = repaint;
+      image.src = `./menu-art/${faction}-${size}-button.png`;
+      return [faction+'-'+size,image];
+    }))) : {};
     const closedScenario = document.createElement('canvas');
     closedScenario.width = ART.w;
     closedScenario.height = ART.h;
@@ -343,6 +352,15 @@
       transitioning = !global.WarcraftUiBridge?.state()?.inGame;
       navigation?.hide();
       onUnavailable?.();
+    }
+
+    function drawTallButton(image, source, target, current) {
+      const faction = nativeView(wine,0x4abb7c,1)?.getUint8(0) === 0 ? 'human' : 'orc';
+      const paper = current.mode === 'briefing' || current.cinematic === 'credits';
+      // Title dialogs are Orc-themed, while stats keep the match faction.
+      const style = current.cinematic === 'stats' ? faction : 'orc';
+      const art = buttonArt[style+'-'+(source.w>106?'wide':'short')];
+      global.WarcraftAssemblyDialogLayout.paintTallButton(context,image,source,target,paper?null:art,undefined,paper);
     }
 
     function drawScenarioFrame(image, frame) {
@@ -521,7 +539,8 @@
           context.translate(left, 0);
           if (preparedBriefing) {
             briefingLayout.paint({context,image,chart:briefing,prepared:preparedBriefing,
-              backgroundLeft:-left,backgroundWidth:rect.width});
+              backgroundLeft:-left,backgroundWidth:rect.width,
+              paintContinue:(source,target)=>drawTallButton(image,source,target,current)});
           } else {
             if (next.scenarioFrame) drawScenarioFrame(image,next.scenarioFrame);
             if (backdrop && next.artwork) drawTitle(context, image, next, backdrop, scratch);
@@ -538,6 +557,8 @@
                 drawScenarioCaption(regionImage,region);
               } else if (region.decoration === 'scenario-scroll') {
                 drawScenarioScrollbar(next.scrollbar);
+              } else if (region.decoration === 'tall-button') {
+                drawTallButton(regionImage,region.source,region.target,current);
               } else if (region.texture && dialogTexture?.naturalWidth) {
                 const {x,y,w,h} = region.target;
                 context.save();

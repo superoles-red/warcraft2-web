@@ -68,6 +68,11 @@
   const CUSTOM_HEADING = {x: 160, y: 220, w: 320, h: 20};
   const CUSTOM_SCENARIO_TEXT = {x: 8, y: 402, w: 380, h: 74};
 
+  function menuButtonHeight(width,height) {
+    const portrait=width<height;
+    return Math.min(88,portrait?width*.23:Infinity,height*(portrait?.107:.15));
+  }
+
   function guestView(wine, address, length) {
     const translate = wine?.instance?.exports?.guest_to_wasm;
     const memory = wine?.memory?.buffer;
@@ -111,6 +116,60 @@
 
   function overlaps(a, b) {
     return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  }
+
+  // Live BNE button rasters use these two original palette ramps. The second
+  // row is the DirectDraw 16-bit quantization of the first during a match.
+  const BUTTON_INK = new Set([
+    0xf7e323,0xd3c31f,0xab8f13,0x5f3300,0xfffbf3,0x9f9f9f,0x6f6f6f,
+    0xf4e020,0xd0c01c,0xa88c10,0x5c3000,0xfcf8f0,0x9c9c9c,0x6c6c6c,
+  ]);
+  // Credits and briefing use neutral grayscale UI art; stone there never
+  // exceeds gray 135. Keep the original light grayscale lettering ramp.
+  const PAPER_BUTTON_INK = new Set([0xffffff,0xdbdbdb,0xbbbbbb,0x9b9b9b]);
+  let inkCanvas;
+  function paintTallButton(context,image,source,target,blank,captionScale,paper=false) {
+    const {x:sx,y:sy,w:sw,h:sh}=source, {x,y,w,h}=target;
+    const scale = Math.min(w/sw,h/sh);
+    const rim = Math.min(4,sh/4), edge = rim*scale;
+    const body = blank?.width === sw && blank.height === sh ? blank : null;
+    if (!inkCanvas) {
+      inkCanvas = global.document.createElement('canvas');
+    }
+    if(inkCanvas.width<sw)inkCanvas.width=sw;
+    if(inkCanvas.height<sh)inkCanvas.height=sh;
+    const scratch = inkCanvas.getContext('2d',{willReadFrequently:true});
+    scratch.clearRect(0,0,sw,sh);
+    scratch.drawImage(image,sx,sy,sw,sh,0,0,sw,sh);
+    const pixels = scratch.getImageData(0,0,sw,sh), {data}=pixels;
+    const asRgb = i => data[i*4]<<16|data[i*4+1]<<8|data[i*4+2];
+    const text = new Uint8Array(sw*sh);
+    // The outer frame may also contain yellow/gray pixels. Only the inward
+    // caption box uses this masking; preserve the live edges separately.
+    for (let row=4;row<sh-4;row++) for(let col=6;col<sw-6;col++) {
+      const i=row*sw+col,rgb=asRgb(i);
+      text[i]=(paper?PAPER_BUTTON_INK:BUTTON_INK).has(rgb)?1:0;
+    }
+    for (let row=1;row<sh;row++) for(let col=1;col<sw;col++) {
+      const i=row*sw+col;
+      if (!text[i] && asRgb(i)===0 && (text[i-sw-1]===1||text[i-sw]===1||text[i-1]===1)) text[i]=2;
+    }
+    // Keep every actual frame pixel, including current focused/default outline.
+    context.drawImage(image,sx,sy,sw,rim,x,y,w,edge);
+    context.drawImage(image,sx,sy+sh-rim,sw,rim,x,y+h-edge,w,edge);
+    context.drawImage(image,sx,sy+rim,rim,sh-rim*2,x,y+edge,edge,h-edge*2);
+    context.drawImage(image,sx+sw-rim,sy+rim,rim,sh-rim*2,x+w-edge,y+edge,edge,h-edge*2);
+    if (body) context.drawImage(body,rim,rim,sw-rim*2,sh-rim*2,x+edge,y+edge,w-edge*2,h-edge*2);
+    else {
+      // A blank region to the right of the drawn caption preserves the
+      // selected guest's current texture when no exact art was supplied.
+      context.drawImage(image,sx+sw-15,sy+rim,11,sh-rim*2,x+edge,y+edge,w-edge*2,h-edge*2);
+    }
+    for (let i=0;i<text.length;i++) if(!text[i])data[i*4+3]=0;
+    scratch.putImageData(pixels,0,0);
+    const captionFit=Math.min(scale,captionScale ?? scale);
+    const captionWidth=sw*captionFit,captionHeight=sh*captionFit;
+    context.drawImage(inkCanvas,0,0,sw,sh,x+(w-captionWidth)/2,y+(h-captionHeight)/2,captionWidth,captionHeight);
   }
 
   function reflowCustom(chart, controls, inset, backTarget) {
@@ -157,17 +216,18 @@
     const rows = Math.ceil(fields.length / columns);
     const rowHeight = 40 * formScale;
     const lastRowHeight = inlineDetail ? Math.max(rowHeight, detailHeight) : rowHeight;
+    const desiredButtonH=menuButtonHeight(width,height);
     const total = 20 * titleScale + (rows - 1) * rowHeight + lastRowHeight +
       (inlineDetail ? 0 : detailHeight + gap) +
-      buttonRows * 28 * buttonScale + (rows + buttonRows + 1) * gap;
+      buttonRows * desiredButtonH + (rows + buttonRows + 1) * gap;
     const formHeight = !landscape && backTarget ? backTarget.y - gap : height;
     const fit = Math.min(1, (formHeight - 2 * inset) / total);
     if (fit <= 0) return null;
     let top = (formHeight - total * fit) / 2;
     const paintRegions = [], regions = [];
-    function crop(source, x, y, scale, interactive) {
-      const target = {x, y, w: source.w * scale, h: source.h * scale};
-      const region = {source, target, interactive, foreground: !interactive};
+    function crop(source, x, y, scale, interactive, decoration) {
+      const target = {x, y, w: source.w * scale, h: decoration==='tall-button'?desiredButtonH*fit:source.h*scale};
+      const region = {source, target, interactive, foreground: !interactive, decoration};
       if (interactive) regions.push(region);
       paintRegions.push(region);
       return region;
@@ -213,13 +273,13 @@
     for (let index = 0; index < actions.length; index++) {
       const col = index % buttonColumns;
       crop(actions[index].source, actionLeft + col * (actionW + actionGap), top,
-        actionScale, true);
-      if (col === buttonColumns - 1) top += 28 * actionScale + actionGap;
+        actionScale, true, 'tall-button');
+      if (col === buttonColumns - 1) top += desiredButtonH*fit + actionGap;
     }
 
     if (!popup) {
       if (backTarget) {
-        const size = Math.min(56 * actionScale,backTarget.y+backTarget.h-inset);
+        const size = desiredButtonH*fit;
         const back = {source: CUSTOM_BUTTONS[2].source, target: {x:backTarget.x+backTarget.w-size,
           y:backTarget.y+backTarget.h-size,w:size,h:size}, decoration:'back'};
         regions.push(back);
@@ -246,7 +306,8 @@
     const listScale = Math.min(1.8, available / list.w);
     const textScale = Math.min(1.4, available / heading.w);
     const buttonScale = Math.min(1.65, available / buttons[0].w);
-    const total = heading.h * textScale + list.h * listScale + 56 * buttonScale + 36;
+    const combined = width >= height;
+    const total = heading.h * textScale + list.h * listScale + (combined?56:112) * buttonScale + (combined?24:36);
     const fit = Math.min(1, (height - 2 * inset) / total);
     let y = (height - total * fit) / 2;
     function center(source, scale, interactive) {
@@ -256,7 +317,16 @@
       return region;
     }
     const title = center(heading, textScale, false);
-    const regions = [center(list, listScale, true), ...buttons.map(source => center(source, buttonScale, true))];
+    const regions = [center(list, listScale, true)];
+    const scale = buttonScale*fit, buttonH=56*scale, gap=12*fit;
+    const actionWidths = buttons.map(source=>source.w*scale);
+    let x = (width-actionWidths[0]-actionWidths[1]-gap)/2;
+    for(let i=0;i<buttons.length;i++) {
+      const w=actionWidths[i];
+      regions.push({source:buttons[i],target:{x:combined?x:(width-w)/2,y,w,h:buttonH},decoration:'tall-button'});
+      if(combined)x+=w+gap;
+      else y+=buttonH+gap;
+    }
     return {...chart, reflow: true, regions, paintRegions: [title, ...regions]};
   }
 
@@ -274,8 +344,11 @@
       [...controls.values()].filter(item => item.type === 4).length === 1;
     const bands = compact ? spec.compactBody : [[0,spec.body]];
     const bodyHeight = bands.reduce((height,[start,end]) => height + end - start, 0);
-    const height = bodyHeight + spec.footer + 4;
-    const scale = Math.min(chart.regions[0].target.w / w, (chart.height - inset * 2) / height);
+    const buttonSize=menuButtonHeight(chart.width,chart.height);
+    const scale = Math.min(chart.regions[0].target.w / w,(chart.height-inset*2)/(bodyHeight+spec.footer+4),
+      (chart.height-inset*2-buttonSize)/(bodyHeight+12));
+    const footerH = Math.max(spec.footer,buttonSize/scale+8);
+    const height = bodyHeight + footerH + 4;
     if (scale <= 0) return null;
     const left = (chart.width - w * scale) / 2, top = (chart.height - height * scale) / 2;
     const target = (x, y, w, h) => ({x:left + x * scale, y:top + y * scale, w:w * scale, h:h * scale});
@@ -287,11 +360,11 @@
       return row;
     });
     const footer = {source:area(...(compact ? spec.compactBlank : spec.blank)),
-      target:target(0,bodyHeight,w,spec.footer), texture:spec.texture};
+      target:target(0,bodyHeight,w,footerH), texture:spec.texture};
     const rim = {source:area(0,h-4,w,4), target:target(0,height-4,w,4)};
-    const button = {source:accept, target:target(16,bodyHeight + (spec.footer-28)/2,106,28)};
-    const size = 56;
-    const back = {source:cancel, target:target(w-size-12,bodyHeight + (spec.footer-size)/2,size,size), decoration:'back'};
+    const size = buttonSize/scale;
+    const button = {source:accept, target:target(16,bodyHeight + (footerH-size)/2,106,size),decoration:'tall-button'};
+    const back = {source:cancel, target:target(w-size-12,bodyHeight + (footerH-size)/2,size,size), decoration:'back'};
     return {...chart, reflow:true, regions:[...body, button, back], paintRegions:[...body, footer, rim, button, back],
       ...(front.handler === SOUND_OPTIONS ? {frame:{source:area(0,0,w,h),target:target(0,0,w,height)}} : {})};
   }
@@ -325,7 +398,8 @@
     const fitted = (source,x,y) => ({x,y,w:source.w*scale,h:source.h*scale});
     const center = (source,y) => fitted(source,(width-source.w*scale)/2,y);
     const title = area(6,8,340,16);
-    const footerY = height-inset-42*scale;
+    const buttonSize = menuButtonHeight(width,height);
+    const footerY = height-inset-buttonSize;
     const filterTop = inset + (landscape?35:Math.min(70,(height-320*scale)*.22));
     const listX = landscape ? inset+labelWidth+gap : inset;
     const listTop = landscape ? filterTop : filterTop+110*scale;
@@ -359,8 +433,7 @@
     }
     add(list,listBox,'scenario-list',true);
     add(result,{...fitted(result,landscape?listX:inset,resultY),w:Math.min(listWidth,result.w*scale)},'scenario-caption');
-    add(ok,fitted(ok,inset,footerY),undefined,true);
-    const buttonSize = 56*scale;
+    add(ok,{...fitted(ok,inset,footerY),h:buttonSize},'tall-button',true);
     add(cancel,{x:width-inset-buttonSize,y:height-inset-buttonSize,w:buttonSize,h:buttonSize},'back',true);
     const frame = {source:area(0,0,352,352),target:{x:0,y:0,w:width,h:height},scale};
     const bar = guestView(wine,nativeBar.address,0x4a);
@@ -428,7 +501,7 @@
       const reflow = controls && reflowCustom(chart, controls, inset, backTarget);
       return reflow || (width < height && backTarget ? null : chart);
     }
-    if (fullFrame && width < height && front.handler === LOAD_GAME) {
+    if (fullFrame && front.handler === LOAD_GAME) {
       const controls = readControls(wine, front, LOAD_CONTROL_TYPES);
       if (controls) return reflowLoad(chart, controls, inset) || chart;
     }
@@ -445,7 +518,7 @@
   }
 
   const isAdaptedHandler = handler => HELD_CONTROLS.has(handler);
-  const api = Object.freeze({layout, wantsImmediatePress, isAdaptedHandler});
+  const api = Object.freeze({layout, wantsImmediatePress, isAdaptedHandler, paintTallButton, menuButtonHeight});
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WarcraftAssemblyDialogLayout = api;
 })(globalThis);

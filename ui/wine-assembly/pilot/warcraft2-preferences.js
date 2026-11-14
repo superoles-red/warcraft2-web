@@ -266,10 +266,10 @@
       const sy = frame.clientHeight / layout.height;
       const scale = layout.target.scale * sy;
       const box = [panel.left * sx, panel.top * sy, panel.width * sx, panel.height * sy,
-        (layout.target.top + 3 * layout.target.scale) * sy];
+        (layout.target.top + 3 * layout.target.scale) * sy, layout.back.target.height * sy];
       const css = box.join(':');
       if (extent !== css) {
-        const [left, top, width, height, headingTop] = box;
+        const [left, top, width, height, headingTop, buttonHeight] = box;
         Object.assign(prefs.style,{left:left+'px',top:top+'px',width:width+'px',height:height+'px'});
         Object.assign(heading.style,{left:left+width/2+'px',top:headingTop+'px',
           height:19*scale+'px'});
@@ -278,7 +278,8 @@
         const captionScale = Math.max(0, Math.min(scale,
           ((width - 2 * 4) / buttons.length - 6) / widestCaption));
         prefs.style.setProperty('--settings-choice-glyph', 19 * captionScale + 'px');
-        prefs.style.setProperty('--settings-control', Math.max(24, Math.min(42, height * .32)) + 'px');
+        prefs.style.setProperty('--settings-control', buttonHeight + 'px');
+        prefs.style.setProperty('--settings-check-height', 24 * scale + 'px');
         extent = css;
       }
       heading.hidden = false;
