@@ -7,8 +7,23 @@
   const nativeButton = (y, label) => ({label, source: {x: 208, y, w: 224, h: 28}});
   const submenu = (label, page = label.toLowerCase()) => ({label, page, glyph: page});
   const title = [{...nativeButton(240, 'Single Player Game'), action: 'single'}, submenu('Options')];
-  const single = [nativeButton(240, 'New Campaign'),
-    {...nativeButton(312, 'Fast Scenario'), glyph: 'fast-scenario'}, nativeButton(276, 'Load Game')];
+  const single = [{...nativeButton(240, 'Campaign'), caption: 'campaign'},
+    {...nativeButton(312, 'Fast Scenario'), glyph: 'fast-scenario'}];
+  const campaignIds = ['orc-tod', 'human-tod', 'orc-btdp', 'human-btdp'];
+  const continueItem = {label:'Continue', caption:'continue', resume:true};
+  const feedbackItem = {label:'Feedback', caption:'feedback', disabled:true};
+  const filesItem = {label:'Files', caption:'files', files:true};
+  const aboutItem = {label:'About', caption:'about', about:true};
+  const about = {
+    en: {
+      intro:'An unofficial web adaptation of Warcraft II: Battle.net Edition. We kept the original gameplay, campaigns and art. We adapted the controls, camera and menus for phones, removed desktop-only controls and added offline play.',
+      credits:'Thanks to Blizzard Entertainment for Warcraft II, Vladimir Grichina and the Wine-Assembly contributors for the browser runtime, the StormLib contributors and J.C. Fields for the work on MPQ archives, and the FFmpeg contributors for the media tools.',
+    },
+    ru: {
+      intro:'Неофициальная веб-адаптация Warcraft II: Battle.net Edition. Мы сохранили оригинальные правила, кампании и графику. Для телефонов обновили управление, камеру и меню, убрали лишние элементы и добавили игру без интернета.',
+      credits:'Спасибо Blizzard Entertainment за Warcraft II, Владимиру Гричине и участникам Wine-Assembly за запуск в браузере, разработчикам StormLib и J. C. Fields за работу с архивами MPQ, а команде FFmpeg — за инструменты для обработки видео и звука.',
+    },
+  };
   const optionPages = {
     options: [submenu('Story'), {label:'Sound', glyph:'sound', soundOptions:true}, submenu('Language')],
     story: [nativeButton(312, 'Replay Introduction'), nativeButton(348, 'Show Credits'),
@@ -84,6 +99,12 @@
 
   function createModalBack(wine) {
     const arrow = load('orc-back');
+    const russian = language()?.current?.() === 'ru';
+    const restartArt = Object.fromEntries(['human', 'orc'].map(faction => [faction, {
+      button: load(faction + '-wide-button'),
+      label: load('label-' + (russian ? 'ru-' : '') + 'restart-scenario' + (faction === 'orc' ? '-orc' : '')),
+    }]));
+    const waiting = Object.freeze({waiting: true});
     const previousPrefixes = [
       [0x10, 0x50, 0x72, 0x65, 0x76, 0x69, 0x6f, 0x75, 0x73, 0x20, 0x28], // Previous (
       [0x10, 0xcf, 0xf0, 0xe5, 0xe4, 0xfb, 0xe4, 0xf3, 0xf9, 0xe5, 0xe5, 0x20, 0x28], // Предыдущее (
@@ -96,12 +117,8 @@
         ? new DataView(memory, start, size) : null;
     }
     return packet => {
-      if (!arrow.naturalWidth) return null;
       const dialog = packet?.stack?.find(scene => scene.root === packet.currentDialog && scene.nativeVisible);
       if (!dialog || ![0x435b70, 0x441940].includes(dialog.handlerAddress)) return null;
-      const root = view(dialog.root, 0x4a);
-      if (root?.getUint32(0x2a, true) !== dialog.handlerAddress ||
-          root.getUint16(0x20, true) !== dialog.scene) return null;
       const settings = dialog.handlerAddress === 0x441940;
       // The generic handler is shared. The active native continuation and
       // button geometry distinguish Pause and End Scenario from confirmation dialogs.
@@ -109,44 +126,70 @@
       const pause = continuation === 0x435560;
       const options = continuation === 0x4356d0;
       const endScenario = continuation === 0x435780;
-      const compact = pause || options || endScenario;
+      const confirmation = continuation === 0x435980 || continuation === 0x4359f0;
+      const compact = pause || options || endScenario || confirmation;
+      // The common native painter can briefly keep the old root while its
+      // continuation is being replaced. No menu has a valid zero return path.
+      if (!settings && !continuation) return waiting;
+      const required = compact || settings ? waiting : null;
+      const root = view(dialog.root, 0x4a);
+      if (root?.getUint32(0x2a, true) !== dialog.handlerAddress ||
+          root.getUint16(0x20, true) !== dialog.scene) return required;
       const buttons = new Map();
       let previous = null;
       let node = root.getUint32(0x46, true);
       for (let count = 0; node && count < 32; count++) {
         const child = view(node, 0x36);
-        if (!child || child.getUint32(0x32, true) !== dialog.root) return null;
+        if (!child || child.getUint32(0x32, true) !== dialog.root) return required;
         const id = child.getInt16(0x20, true), kind = child.getUint16(0x22, true);
         const [left, top, right, bottom] = [4, 6, 8, 10].map(offset => child.getInt16(offset, true));
         const flags = child.getUint32(0x18, true);
-        if (id === -3 && !pause) {
-          if (settings) return kind === 2 && (flags & 10) === 8 &&
-            left === 12 && top === 256 && right === 117 && bottom === 283
-            ? {source: {left: dialog.rect.left + left, top: dialog.rect.top + top, width: 106, height: 28},
-              image: arrow, align: 'left'} : null;
+        if (id === -3 && !pause && !settings) {
           if ((kind !== 1 && kind !== 2) || (flags & 10) !== 8 || left !== 16 || top !== 248 ||
-              right !== 239 || bottom !== 275) return null;
+              right !== 239 || bottom !== 275) return required;
           if (!compact && !previousPrefixes.some(prefix => {
             const label = view(child.getUint32(0x14, true), prefix.length);
             return label && prefix.every((value, index) => label.getUint8(index) === value);
           })) return null;
           previous = {source: {left: dialog.rect.left + 16, top: dialog.rect.top + 248, width: 224, height: 28},
             image: arrow};
-          if (!compact) return previous;
+          if (!compact) return arrow.naturalWidth ? previous : waiting;
         }
-        if (compact && (flags & 8) && (kind === 1 || kind === 2)) {
-          if (bottom !== top + 27 || buttons.has(id)) return null;
+        if ((compact || (settings && (id === -3 || id === -2))) && (flags & 8) && (kind === 1 || kind === 2)) {
+          if (bottom !== top + 27 || buttons.has(id)) return required;
           buttons.set(id, {left, top, width: right - left + 1});
         }
         node = child.getUint32(0, true);
       }
-      if (node || !compact || (!pause && !previous)) return null;
+      if (node) return required;
+      const sourceOf = item => ({left: dialog.rect.left + item.left, top: dialog.rect.top + item.top,
+        width:item.width, height:28});
+      if (settings) {
+        const cancel = buttons.get(-3), ok = buttons.get(-2);
+        if (!arrow.naturalWidth || cancel?.left !== 12 || cancel.top !== 256 || cancel.width !== 106 ||
+            ok?.left !== 138 || ok.top !== 256 || ok.width !== 106) return waiting;
+        return {source:sourceOf(cancel), ok:sourceOf(ok), image:arrow};
+      }
+      if (!compact || (!pause && !previous)) return required;
+      if (confirmation) {
+        const accept = buttons.get(-2);
+        if (!arrow.naturalWidth || buttons.size !== 2 || accept?.left !== 16 ||
+            accept.top !== 108 || accept.width !== 224) return waiting;
+        return {...previous, compact:'confirmation'};
+      }
       const expected = pause ? PAUSE_BUTTONS : options ? OPTION_BUTTONS : END_BUTTONS;
       const firstId = buttons.has(2) ? 2 : 6;
       if (buttons.size !== expected.length || expected.some(([id, left, top, width], index) => {
         const button = buttons.get(endScenario && index === 0 ? firstId : id);
         return !button || button.left !== left || button.top !== top || button.width !== width;
-      })) return null;
+      })) return waiting;
+      if (endScenario) {
+        const faction = view(0x4abb7c, 1)?.getUint8(0) === 0 ? 'human' : 'orc';
+        const art = restartArt[faction];
+        if (!arrow.naturalWidth || !art.button.naturalWidth || !art.label.naturalWidth) return waiting;
+        return {...previous, compact:'end', restart:{...art, source:sourceOf(buttons.get(firstId))}};
+      }
+      if (!pause && !arrow.naturalWidth) return waiting;
       return {...previous, compact: pause ? 'pause' : 'two-actions'};
     };
   }
@@ -157,6 +200,18 @@
     layer.dataset.winePageDialog = '';
     layer.hidden = true;
     frame.append(layer);
+    const session = wine.warcraftSession;
+    const sessionArt = window.WarcraftSessionPanel;
+    const sessionPanel = session && sessionArt.create(frame);
+    const sessionAtlases = new Map();
+    const sessionCaptions = new Map();
+    let resume = null, resumeTimer = 0;
+    if (session) for (const locale of ['en', 'ru']) {
+      window.WarcraftSessionText.load(locale).then(atlas => {
+        sessionAtlases.set(locale, atlas);
+        repaint();
+      }).catch(console.error);
+    }
     const images = Object.fromEntries(['orc-texture', 'title-button', 'title-button-pressed', 'orc-back', 'orc-back-pressed',
       'label-options', 'label-fast-scenario', 'label-replay-demo',
       'label-story', 'label-sound', 'label-language', 'label-english',
@@ -233,8 +288,129 @@
       }));
     }
 
+    function closeSession() {
+      sessionPanel?.hide();
+      layer.inert = false;
+    }
+
+    function showSession(options) {
+      layer.inert = true;
+      sessionPanel.show(options).catch(error => {
+        closeSession();
+        console.error(error);
+      });
+    }
+
+    function confirm(slot, start, back, continuing = false) {
+      const {text, slotName} = sessionArt;
+      const lines = slotName(slot);
+      if (!continuing && session.store.read().slot) lines.push(text('replace'));
+      showSession({
+        heading:text(continuing ? 'resume' : 'newGame'),
+        lines,
+        accept:{title:text(continuing ? 'continue' : 'start'), action() {
+          if (!start()) return false;
+          closeSession();
+          return true;
+        }},
+        back,
+      });
+    }
+
+    function launchCampaign(slot, source) {
+      return session.native.armCampaign(slot) &&
+        activate(source.x + source.w / 2, source.y + source.h / 2);
+    }
+
+    function showCampaign(item) {
+      const {text, missionName, campaignName} = sessionArt;
+      const id = item.campaign;
+      const completed = session.store.read().completed[id];
+      const count = window.WarcraftSession.campaigns[id];
+      showSession({
+        heading:campaignName(id), list:true, back:closeSession,
+        rows:Array.from({length:count}, (_, index) => {
+          const mission = index + 1;
+          const slot = {kind:'campaign', campaign:id, mission};
+          return {
+            title:missionName(id, mission),
+            locked:!session.store.canStart(id, mission), completed:completed.includes(mission),
+            action:() => confirm(slot, () => launchCampaign(slot, item.source), () => showCampaign(item)),
+          };
+        }),
+      });
+    }
+
+    function clearResume() {
+      window.clearTimeout(resumeTimer);
+      resume = null;
+    }
+
+    function startResume() {
+      const slot = session?.store.read().slot;
+      if (!slot) return;
+      confirm(slot, () => {
+        if (session.native.continueSlot?.(slot) && activate(320,362)) return true;
+        if (!activate(320,254)) return false;
+        resume = {slot, stage:'single'};
+        resumeTimer = window.setTimeout(clearResume,6000);
+        return true;
+      }, closeSession, true);
+    }
+
+    function advanceResume(mode, originals) {
+      if (!resume || mode !== resume.stage) return;
+      const request = resume;
+      const {slot} = request;
+      if (mode === 'single') {
+        request.stage = slot.kind === 'campaign' ? 'campaign' : 'fast';
+        window.requestAnimationFrame(() => {
+          if (resume === request && !activate(320,slot.kind === 'campaign' ? 254 : 326)) clearResume();
+        });
+      } else {
+        const source = originals[campaignIds.indexOf(slot.campaign)];
+        request.stage = 'loading';
+        window.requestAnimationFrame(() => {
+          if (resume !== request) return;
+          clearResume();
+          if (source) launchCampaign(slot,source);
+        });
+      }
+    }
+
+    function handleFastDialog() {
+      if (resume?.stage !== 'fast') return;
+      const request = resume;
+      request.stage = 'loading';
+      window.requestAnimationFrame(() => {
+        if (resume !== request) return;
+        clearResume();
+        if (session.native.restoreFast(request.slot)) {
+          session.native.armFast(request.slot);
+          activate(510,418);
+        }
+      });
+    }
+
+    function confirmFast(start) {
+      const slot = session?.native.snapshotFast?.();
+      if (!slot) return false;
+      confirm(slot, () => {
+        session.native.armFast(slot);
+        return start();
+      },closeSession);
+      return true;
+    }
+
     function action(item) {
-      if (!active || pending || languageBusy) return;
+      if (!active || pending || languageBusy || sessionPanel?.active) return;
+      if (item.resume) return startResume();
+      if (item.files) return window.WarcraftFiles.open({session,showSession,back:closeSession});
+      if (item.about) {
+        const {intro,credits} = about[sessionArt.locale()];
+        return showSession({heading:sessionArt.text('about'), lines:[intro,credits], back:closeSession, prose:true});
+      }
+      if (item.campaign && session) return showCampaign(item);
       if (item.soundOptions) {
         const before = window.WarcraftAssemblyMenuPolicy?.requestSoundOptions(wine);
         if (before) soundOptions = {before, opened:false};
@@ -260,7 +436,7 @@
     function makeButton(item) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.setAttribute('aria-label', item.label);
+      button.setAttribute('aria-label', item.caption === 'feedback' ? sessionArt.text('feedback') : item.label);
       if (item.action) button.dataset.warcraftMenuAction = item.action;
       button.addEventListener('pointerdown', () => { pressed = item.label; repaint(); });
       for (const event of ['pointerup', 'pointerleave', 'pointercancel']) {
@@ -299,9 +475,9 @@
       const back = backBox(width, height);
       const top = portrait ? picture.y + picture.h + Math.min(56, height * .08) : height * .41;
       const available = (portrait ? back.y : height * .90) - top;
-      const scale = Math.max(0.1, Math.min(1.6, (width - (portrait ? 28 : 44)) / 224, available / 165));
+      const scale = Math.max(0.1, Math.min(1.6, (width - (portrait ? 28 : 44)) / 224, available / 172));
       const w = 224 * scale, h = 28 * scale;
-      const boxes = [0, 36, 96, 132].map(y => ({x: (width - w) / 2, y: top + y * scale, w, h}));
+      const boxes = [0, 36, 96, 132, 144].map(y => ({x: (width - w) / 2, y: top + y * scale, w, h}));
       return {picture, boxes, back, scale};
     }
 
@@ -329,11 +505,9 @@
       if (!languagePack || page === 'language') return languages();
       if (page === 'language-download') return [
         {label: 'Download', glyph: 'download', packAction: 'download'},
-        {label: 'Cancel', glyph: 'cancel', page: languagePack.stored ? 'language-pack' : 'language'},
       ];
       if (page === 'language-delete') return [
         {label: 'Delete', glyph: 'delete', packAction: 'remove'},
-        {label: 'Cancel', glyph: 'cancel', page: 'language-pack'},
       ];
       const action = languagePack.installed
         ? {label: 'Use language', glyph: 'use', packAction: 'use', disabled: language()?.current() === languagePack.id}
@@ -342,11 +516,21 @@
     }
 
     function drawButton(context, image, item, box) {
-      if (item.source && !item.glyph) return drawImage(context, image, box, item.source);
+      if (item.source && !item.glyph && !item.caption) return drawImage(context, image, box, item.source);
       const base = images[pressed === item.label ? 'title-button-pressed' : 'title-button'];
       drawImage(context, base, box);
-      const glyph = labelImage(item);
-      drawLabel(context, item, box, Math.min(box.h / 28, box.w / (glyph.naturalWidth + 40)));
+      if (item.caption) {
+        const locale = sessionArt.locale(), id = locale + ':' + item.caption;
+        if (!sessionCaptions.has(id)) sessionCaptions.set(id,
+          window.WarcraftSessionText.ink(sessionArt.text(item.caption), sessionAtlases.get(locale)));
+        const glyph = sessionCaptions.get(id);
+        const scale = Math.min(box.h / 28, box.w / (glyph.width + 40));
+        const w = glyph.width * scale, h = glyph.height * scale;
+        drawImage(context, glyph, {x:box.x + (box.w-w)/2,y:box.y + (box.h-h)/2,w,h});
+      } else {
+        const glyph = labelImage(item);
+        drawLabel(context, item, box, Math.min(box.h / 28, box.w / (glyph.naturalWidth + 40)));
+      }
       if (item.language) {
         const state = item.language === (language()?.current?.() || 'en') ? 'selected' :
           (item.language === 'ru' && !language()?.available?.('ru')) ? 'disabled' : 'unselected';
@@ -386,16 +570,23 @@
       const campaignLabels = ['Orc: Tides of Darkness', 'Human: Tides of Darkness',
         'Orc: Beyond the Dark Portal', 'Human: Beyond the Dark Portal'];
       const languageMenu = page.startsWith('language');
-      const items = campaign ? originals.slice(0, 4).map((source, i) => ({label: campaignLabels[i], source}))
-        : scene.mode === 'single' ? single : languageMenu ? languagePage() : optionPages[page] || title;
+      const titleItems = session?.store.read().slot ? [continueItem,...title] : title;
+      const options = page === 'options' && session
+        ? [...optionPages.options, ...(window.WarcraftFiles ? [filesItem] : []), aboutItem] : optionPages[page];
+      const items = campaign
+        ? originals.slice(0, 4).map((source, i) => ({label: campaignLabels[i], source, campaign:campaignIds[i]}))
+        : scene.mode === 'single' ? (session ? single : [{...single[0],caption:null},single[1]]) :
+          languageMenu ? languagePage() : options || titleItems;
+      const feedback = session && scene.mode === 'title' && page === 'title';
+      advanceResume(scene.mode, originals);
       const heading = !languageMenu ? null : page === 'language-pack' ? 'russian' :
         page === 'language-download' ? 'download-language' : page === 'language-delete' ? 'delete-language' : null;
-      const hasBack = !['language-download', 'language-delete'].includes(page) &&
-        (parentPage[page] || scene.mode === 'single' || campaign);
+      const hasBack = parentPage[page] || scene.mode === 'single' || campaign;
       if (!images['orc-texture'].naturalWidth ||
-          (items.some(item => item.glyph) && (!images['title-button'].naturalWidth ||
+          ((feedback || items.some(item => item.glyph || item.caption)) && (!images['title-button'].naturalWidth ||
             !images['title-button-pressed'].naturalWidth)) ||
           items.some(item => item.glyph && !labelImage(item)?.naturalWidth) ||
+          ((feedback || items.some(item => item.caption)) && !sessionAtlases.has(sessionArt.locale())) ||
           (heading && !labelImage({glyph: heading})?.naturalWidth) ||
           (hasBack && (!images['orc-back'].naturalWidth || !images['orc-back-pressed'].naturalWidth))) {
         layer.hidden = true;
@@ -407,7 +598,7 @@
       back.x += leftInset;
       for (const slot of slots) slot.x += leftInset;
       const boxes = slots.slice(0, items.length);
-      if (!campaign && boxes[2]) boxes[2].y = boxes[1].y + (boxes[1].y - boxes[0].y);
+      if (!campaign) boxes.forEach((box,i) => { box.y = slots[0].y + i * 36 * scale; });
       active = true;
       layer.hidden = false;
       paintTexture(context, images['orc-texture'], width, height);
@@ -437,6 +628,13 @@
       }
       items.forEach((item, i) => drawButton(context, image, item, boxes[i]));
       const controls = [...items];
+      if (feedback) {
+        const w = Math.min(132,contentWidth * .38), h = Math.min(44,height * .14);
+        const box = {x:leftInset + contentWidth - w - 12,y:height - h - 12,w,h};
+        controls.push(feedbackItem);
+        boxes.push(box);
+        drawButton(context,image,feedbackItem,box);
+      }
       if (hasBack) {
         controls.push({label: 'Back', source: parentPage[page] ? null :
           campaign ? originals[4] : nativeButton(348, 'Back').source});
@@ -462,6 +660,10 @@
       if (typeof original !== 'function') continue;
       keyHandlers.set(name, original);
       renderer[name] = function (...args) {
+        if (sessionPanel?.active) {
+          if (name === 'handleKeyDown' && args[0] === 27) sessionPanel.back();
+          return;
+        }
         if (!active) return original.apply(this, args);
         if (name === 'handleKeyDown' && args[0] === 27 && !pending) {
           const back = presented?.controls.find(item => item.label === 'Back' || item.label === 'Cancel');
@@ -469,9 +671,12 @@
         }
       };
     }
-    return {paint, hide, get active() { return active; }, get presented() { return presented; }, destroy() {
+    return {paint, hide, confirmFast, handleFastDialog,
+      get blocking() { return layer.inert; }, get active() { return active; }, get presented() { return presented; }, destroy() {
       for (const [name, original] of keyHandlers) renderer[name] = original;
       clearPending();
+      clearResume();
+      sessionPanel?.destroy();
       layer.remove();
     }};
   }

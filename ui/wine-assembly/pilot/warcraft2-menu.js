@@ -282,6 +282,7 @@
     const originalMap = renderer._mapExclusiveInputPoint;
     const originalUnmap = renderer._unmapExclusiveInputPoint;
     const originalImmediate = renderer.touchWantsImmediatePress;
+    const fastSetup = 0x415640;
     let scene = null, chart = null, last = null, raf = 0, originX = 0, originY = 0;
     let backdrop = null, borderColor = '#000';
     let activating = false, transitioning = false;
@@ -359,6 +360,7 @@
       const contentWidth = rect.width - left - right;
       const dialogArt = current.sound ? area(0, 0, image.width, image.height) : current.art;
       const params = {width: contentWidth, height: rect.height, art: dialogArt, scenes: current.scenes, wine,
+        backImage: dialogBack,
         backTarget: dialogBack?.naturalWidth && global.WarcraftAssemblyMenuNavigation.backBox(contentWidth, rect.height)};
       const nativeDialog = authored && bottomButtonLayout(wine, current, contentWidth, rect.height) ||
         (current.mode === 'menu' && global.WarcraftAssemblyDialogLayout?.layout(params));
@@ -428,6 +430,12 @@
                 const {x, y, w, h} = region.target;
                 const size = Math.round(w * .9), height = size * .95;
                 context.drawImage(dialogBack, x + (w - size) / 2, y + (h - height) / 2, size, height);
+              } else if (region.texture && dialogTexture?.naturalWidth) {
+                const {x,y,w,h} = region.target;
+                context.save();
+                context.translate(x,y);
+                global.WarcraftAssemblyMenuNavigation.paintTexture(context,dialogTexture,w,h);
+                context.restore();
               } else if (region.foreground && backdrop) foreground(image, region);
               else {
                 const {source, target} = region;
@@ -436,6 +444,12 @@
                   next.dialog?.handler, {left: source.x, top: source.y, width: source.w, height: source.h},
                   {left: target.x, top: target.y, width: target.w, height: target.h});
               }
+            }
+            if (current.sound && next.frame) {
+              const {source, target} = next.frame;
+              global.WarcraftModalPresentationV15?.paintSettingsFrame(context, image, next.dialog?.handler,
+                {left:source.x,top:source.y,width:source.w,height:source.h},
+                {left:target.x,top:target.y,width:target.w,height:target.h});
             }
           }
         } finally {
@@ -451,6 +465,7 @@
       transitioning = false;
       canvas.style.display = 'block';
       onPrepared?.({mode: current.mode, authored: Boolean(authoredPaint)});
+      if (chart?.dialog?.handler === fastSetup) navigation?.handleFastDialog();
     }
 
     function repaint() {
@@ -463,7 +478,7 @@
 
     function map(x, y) {
       if (activating) return originalMap.call(this, x, y);
-      if (transitioning || navigation?.active) return {outside: true};
+      if (transitioning || navigation?.active || navigation?.blocking) return {outside: true};
       if (!chart) return originalMap.call(this, x, y);
       if (!dialogStillActive()) return this._mouseButtonsMask
         ? {x: originX + 640, y: originY + 480} : {outside: true};
@@ -492,12 +507,36 @@
       return originalImmediate?.call(this, x, y) ?? false;
     }
 
+    const originalDown = renderer.handleMouseDown;
+    const originalKeyDown = renderer.handleKeyDown;
+    function fastScene() {
+      return chart?.dialog?.handler === fastSetup && dialogStillActive();
+    }
+    function mouseDown(x,y,button,...args) {
+      if (!activating && button === 0 && fastScene()) {
+        const hit = map.call(this,x,y);
+        const nx = hit.x - originX, ny = hit.y - originY;
+        if (nx >= 400 && nx < 624 && ny >= 404 && ny < 432 &&
+            navigation?.confirmFast(() => activate(510,418))) return;
+      }
+      return originalDown.call(this,x,y,button,...args);
+    }
+    function keyDown(key,...args) {
+      if (key === 13 && fastScene() && !navigation?.blocking &&
+          navigation?.confirmFast(() => activate(510,418))) return;
+      return originalKeyDown.call(this,key,...args);
+    }
+
     const resize = new ResizeObserver(repaint);
     resize.observe(frame);
     frame.addEventListener('warcraft-hud-insets-change', repaint);
     renderer._mapExclusiveInputPoint = map;
     renderer._unmapExclusiveInputPoint = unmap;
     if (authored) renderer.touchWantsImmediatePress = immediatePress;
+    if (wine.warcraftSession) {
+      renderer.handleMouseDown = mouseDown;
+      renderer.handleKeyDown = keyDown;
+    }
 
     return {
       get nativeTouch() { return authored && chart?.mode === 'dialog'; },
@@ -528,6 +567,8 @@
         if (renderer._mapExclusiveInputPoint === map) renderer._mapExclusiveInputPoint = originalMap;
         if (renderer._unmapExclusiveInputPoint === unmap) renderer._unmapExclusiveInputPoint = originalUnmap;
         if (renderer.touchWantsImmediatePress === immediatePress) renderer.touchWantsImmediatePress = originalImmediate;
+        if (renderer.handleMouseDown === mouseDown) renderer.handleMouseDown = originalDown;
+        if (renderer.handleKeyDown === keyDown) renderer.handleKeyDown = originalKeyDown;
         hide();
         navigation?.destroy();
         frame.classList.remove('warcraft-owns-presentation');

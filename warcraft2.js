@@ -166,6 +166,15 @@
           await installBridge(wine);
           await window.WarcraftAssemblyMenuPolicy?.install(wine);
           window.WarcraftMatchPreferences?.install(wine);
+          if (window.WarcraftSessionNative && window.WarcraftSession && ownsPresentation) {
+            window.WarcraftSessionNative.install(wine);
+            const store = window.WarcraftSession.create(localStorage);
+            const native = window.WarcraftSessionNative.attach(wine, {
+              onStarted: slot => store.start(slot),
+              onVictory: slot => store.win(slot),
+            });
+            wine.warcraftSession = {store, native};
+          }
           releaseV16 = window.attachWarcraftAssemblyV16(wine, shell.renderer,
             {onTitlePrepared: titlePrepared, initialPage});
           movie = moviePilot?.attach(wine, movieMedia);

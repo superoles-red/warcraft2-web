@@ -1,0 +1,127 @@
+/* Original briefing titles, rez\\objctivs.tbl, entries 60–111 in each language. */
+window.WarcraftMissionNames = {
+  "en": {
+    "human-tod": [
+      "I. HILLSBRAD",
+      "II. AMBUSH AT TARREN MILL",
+      "III. SOUTHSHORE",
+      "IV. ATTACK ON ZUL'DARE",
+      "V. TOL BARAD",
+      "VI. DUN ALGAZ",
+      "VII. GRIM BATOL",
+      "VIII. TYR'S HAND",
+      "IX. THE BATTLE AT DARROWMERE",
+      "X. THE PRISONERS",
+      "XI. BETRAYAL AND THE DESTRUCTION OF ALTERAC",
+      "XII. THE BATTLE AT CRESTFALL",
+      "XIII. ASSAULT ON BLACKROCK SPIRE",
+      "XIV. THE GREAT PORTAL"
+    ],
+    "orc-tod": [
+      "I. ZUL'DARE",
+      "II. RAID AT HILLSBRAD",
+      "III. SOUTHSHORE",
+      "IV. ASSAULT ON HILLSBRAD",
+      "V. TOL BARAD",
+      "VI. THE BADLANDS",
+      "VII. THE FALL OF STROMGARDE",
+      "VIII. THE RUNESTONE AT CAER DARROW",
+      "IX. THE RAZING OF TYR'S HAND",
+      "X. THE DESTRUCTION OF STRATHOLME",
+      "XI. THE DEAD RISE AS QUEL'THALAS FALLS",
+      "XII. THE TOMB OF SARGERAS",
+      "XIII. THE SIEGE OF DALARAN",
+      "XIV. THE FALL OF LORDAERON"
+    ],
+    "human-btdp": [
+      "I. ALLERIA'S JOURNEY",
+      "II. THE BATTLE FOR NETHERGARDE",
+      "III. ONCE MORE UNTO THE BREACH",
+      "IV. BEYOND THE DARK PORTAL",
+      "V. UPON THE SHADOWED SEAS",
+      "VI. THE FALL OF AUCHINDOUN",
+      "VII. DEATHWING",
+      "VIII. COAST OF BONES",
+      "IX. THE HEART OF EVIL",
+      "X. SIEGE OF VANGUARD",
+      "XI. DANCE OF THE LAUGHING SKULL",
+      "XII. THE BITTER TASTE OF VICTORY"
+    ],
+    "orc-btdp": [
+      "I. SLAYER OF THE SHADOWMOON",
+      "II. THE SKULL OF GUL'DAN",
+      "III. THUNDERLORD AND BONECHEWER",
+      "IV. THE RIFT AWAKENED",
+      "V. DRAGONS OF BLACKROCK SPIRE",
+      "VI. NEW STORMWIND",
+      "VII. THE SEAS OF AZEROTH",
+      "VIII. ASSAULT ON KUL TIRAS",
+      "IX. THE TOMB OF SARGERAS",
+      "X. ALTERAC",
+      "XI. THE EYE OF DALARAN",
+      "XII. THE DARK PORTAL"
+    ]
+  },
+  "ru": {
+    "human-tod": [
+      "I. ХИЛСБРАД",
+      "II. ЗАСАДА У МЕЛЬНИЦЫ ТАРРЕН",
+      "III. ЮЖНОБЕРЕЖЬЕ",
+      "IV. НАПАДЕНИЕ НА ЗУЛ'ДАР",
+      "V. ТОЛ БАРАД",
+      "VI. ДУН АЛЬГАЗ",
+      "VII. ГРИМ БАТОЛ",
+      "VIII. ДЛАНЬ ТИРА",
+      "IX. БИТВА ПРИ ДАРРОУМИРЕ",
+      "X. ПЛЕННИКИ",
+      "XI. АЛЬТЕРАК: РАЗРУШЕНИЕ ЗА ПРЕДАТЕЛЬСТВО",
+      "XII. БОЙ ПРИ УНЫЛОСТИ",
+      "XIII. ШТУРМ ПИКА ЧЕРНОЙ ГОРЫ",
+      "XIV. ВЕЛИКИЙ ПОРТАЛ"
+    ],
+    "orc-tod": [
+      "I. ЗУЛ'ДАР",
+      "II. НАЛЕТ НА ХИЛСБРАД",
+      "III. ЮЖНОБЕРЕЖЬЕ",
+      "IV. ШТУРМ ХИЛСБРАДА",
+      "V. ТОЛ БАРАД",
+      "VI. ПУСТОШИ",
+      "VII. ПАДЕНИЕ СТОРМГАРДА",
+      "VIII. РУННЫЙ КАМЕНЬ В КАЭР ДАРРОУ",
+      "IX. РАЗРУШЕНИЕ ДЛАНИ ТИРА",
+      "X. РАЗРУШЕНИЕ СТРАТХОЛЬМА",
+      "XI.МЕРТВЫЕ ВОССТАНУТ,И КЕЛЬ'ТАЛАС ПАДЕТ",
+      "XII. ГРОБНИЦА САРГЕРАСА",
+      "XIII. ОСАДА ДАЛАРАНА",
+      "XIV. ПАДЕНИЕ ЛОРДЕРОНА"
+    ],
+    "human-btdp": [
+      "I. СТРАНСТВИЕ АЛЛЕРИИ",
+      "II. СРАЖЕНИЕ ЗА КРЕПОСТЬ СТРАЖЕЙ ПУСТОТЫ",
+      "III. И СНОВА К РАЗЛОМУ",
+      "IV. ПО ТУ СТОРОНУ ТЕМНОГО ПОРТАЛА",
+      "V. НА ЗАТЕНЕННЫХ МОРЯХ",
+      "VI. ПАДЕНИЕ АУКИНДОНА",
+      "VII. СМЕРТОКРЫЛ",
+      "VIII. БЕРЕГ КОСТЕЙ",
+      "IX. СЕРДЦЕ ЗЛА",
+      "X. ОСАДА АВАНГАРДА",
+      "XI. ТАНЕЦ ВЕСЕЛОГО ЧЕРЕПА",
+      "XII. ГОРЬКИЙ ВКУС ПОБЕДЫ"
+    ],
+    "orc-btdp": [
+      "I. УБИЙЦА ИЗ ПРИЗРАЧНОЙ ЛУНЫ",
+      "II. ЧЕРЕП ГУЛ'ДАНА",
+      "III. ГРОМОБОРЦЫ И КОСТЕГЛОДЫ",
+      "IV. ПРОБУЖДЕННЫЙ РАЗЛОМ",
+      "V. ДРАКОНЫ С ПИКА ЧЕРНОЙ ГОРЫ",
+      "VI. НОВЫЙ ШТОРМГРАД",
+      "VII. МОРЯ АЗЕРОТА",
+      "VIII. ШТУРМ КУЛ ТИРАСА",
+      "IX. ГРОБНИЦА САРГЕРАСА",
+      "X. АЛЬТЕРАК",
+      "XI. ОКО ДАЛАРАНА",
+      "XII. ТЕМНЫЙ ПОРТАЛ"
+    ]
+  }
+};

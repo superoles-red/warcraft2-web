@@ -7,11 +7,12 @@
     options.get('camera') !== 'tile';
   const guardPixels = ahead ? 64 : 32;
   const EPSILON = 1e-7;
-  const COAST_DECAY_MS = 185;
+  const COAST_DECAY_MS = 230;
   const COAST_BRAKE_MS = 90;
   const COAST_RECOVERY_ACCELERATION = .005;
   const COAST_MAX_STALL_MS = 55;
-  const MAX_COAST_CSS_SPEED = 1;
+  const MAX_COAST_CSS_SPEED = 3.4;
+  const COAST_TRAVEL_MS = 1050;
   const PAN_SUPERSEDED_MS = 160;
   const PAN_TIMEOUT_MS = 600;
   const FLICK_WINDOW_MS = 90;
@@ -22,6 +23,35 @@
   const DRAG_LEAD_MS = 135;
   const MAX_DRAG_CSS_SPEED = 3.6;
   const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+  function flickVelocity(samples, time, scale) {
+    const last = samples.at(-1);
+    if (!last || time - last.to >= FLICK_MAX_PAUSE_MS) return {x:0, y:0};
+    const start = Math.max(last.to - FLICK_WINDOW_MS, samples[0].from);
+    let x = 0, y = 0;
+    for (const sample of samples) {
+      const fraction = Math.max(0, sample.to - Math.max(sample.from,start)) / (sample.to - sample.from);
+      x += sample.dx * fraction;
+      y += sample.dy * fraction;
+    }
+    const span = Math.max(8,last.to - start), distance = Math.hypot(x,y);
+    const speed = distance / span;
+    const terminal = Math.hypot(last.dx,last.dy) / (last.to - last.from);
+    if (distance < FLICK_MIN_DISTANCE * scale || Math.min(speed,terminal) < FLICK_MIN_SPEED * scale) return {x:0,y:0};
+    const limit = Math.min(speed,terminal,MAX_COAST_CSS_SPEED * scale);
+    const pause = Math.max(0,time - last.to) / FLICK_MAX_PAUSE_MS;
+    const factor = (limit / speed) * (1 - pause ** 2) / span;
+    return {x:x*factor,y:y*factor};
+  }
+
+  function sampleFlick(samples, dx, dy, from, to) {
+    const last = samples.at(-1);
+    if (to - from > FLICK_MAX_PAUSE_MS || (last && dx * last.dx + dy * last.dy < 0)) samples.length = 0;
+    const tail = samples.at(-1);
+    if (tail && tail.to === to) { tail.dx += dx; tail.dy += dy; }
+    else samples.push({from:Math.min(to-8, Math.max(from,to-FLICK_WINDOW_MS)), to, dx, dy});
+    while (samples[0].to <= to-FLICK_WINDOW_MS) samples.shift();
+  }
 
   function validGeometry(g) {
     return g?.active === true && g.world && [g.width, g.height, g.world.left, g.world.top,
@@ -122,11 +152,13 @@
     let latest = null, desired = null, visible = null, pending = null;
     let dragging = false, vx = 0, vy = 0, lastSample = 0, lastTick = null;
     let releaseTime = null, pixelScale = 1, displaySpeed = 0, catchingUp = false, coastBlockedSince = null;
-    let motionSamples = [], recentDistance = 0;
+    let motionSamples = [];
     let retainDragTravel = false, travelDeadline = null, lastDragX = 0, lastDragY = 0;
+    let jump = null, dimensionsNow = null;
     const telemetry = { requests: 0, externalResets: 0, timeouts: 0, coverageHolds: 0, recovered: 0 };
 
     function stop() {
+      jump = null;
       dragging = false;
       vx = vy = 0;
       releaseTime = null;
@@ -136,7 +168,6 @@
       catchingUp = false;
       displaySpeed = 0;
       motionSamples = [];
-      recentDistance = 0;
       lastTick = null;
       if (visible) desired = { ...visible };
     }
@@ -146,6 +177,7 @@
       key = '';
       viewWidth = viewHeight = 0;
       latest = desired = visible = pending = null;
+      dimensionsNow = null;
     }
 
     function pause(g) {
@@ -183,6 +215,7 @@
         visible = { ...desired };
         lastTick = time;
       }
+      dimensionsNow = d;
       const resized = viewWidth > 0 && (width !== viewWidth || height !== viewHeight);
       viewWidth = width;
       viewHeight = height;
@@ -198,7 +231,14 @@
         }
       }
       latest = native;
-      if (pending && native.x === pending.to.x && native.y === pending.to.y) pending = null;
+      if (pending && native.x === pending.to.x && native.y === pending.to.y) {
+        if (pending.jump && jump) {
+          visible = fit(pending.jump,liveBounds);
+          desired = {...visible};
+          if (jump === pending.jump) jump = null;
+        }
+        pending = null;
+      }
       if (pending) {
         const status = panReply(pending.serial);
         const age = time - pending.at;
@@ -211,7 +251,10 @@
           current?.x === native.x && current.y === native.y;
         const superseded = status === 1 && age > PAN_SUPERSEDED_MS &&
           receipt?.sequence !== pending.ackSequence;
-        if (status > 1) pending = null;
+        if (status > 1) {
+          if (jump === pending.jump) jump = null;
+          pending = null;
+        }
         else if (stable && (age > PAN_TIMEOUT_MS || superseded)) {
           if (age > PAN_TIMEOUT_MS && !pending.timedOut) telemetry.timeouts++;
           telemetry.recovered++;
@@ -223,6 +266,18 @@
         if (pending) pending.bounds = intersection(coverage(pending.from, d), coverage(pending.to, d));
         visible = fit(visible, pending ? pending.bounds : liveBounds);
         desired = { ...visible };
+      }
+      if(jump&&!pending){
+        const x=clamp(Math.round((jump.x-d.extraX/2)/TILE),0,g.maxX);
+        const y=clamp(Math.round((jump.y-d.extraY/2)/TILE),0,g.maxY);
+        if(x===native.x&&y===native.y){
+          visible=fit(jump,liveBounds);desired={...visible};jump=null;
+        }else{
+          const serial=panTiles(x-native.x,y-native.y,native);
+          if(serial!==false){
+            pending={from:native,to:{x,y},bounds:liveBounds,at:time,timedOut:false,serial,frameSequence:receipt?.sequence,jump};
+          }
+        }
       }
       if (pending && !pending.timedOut && time - pending.at > PAN_TIMEOUT_MS) {
         if (!retainDragTravel) stop();
@@ -238,9 +293,18 @@
       const tracking = dragging || releaseTime !== null;
       if (travelDeadline !== null && time >= travelDeadline) {
         desired = { ...visible };
+        vx = vy = 0;
         travelDeadline = null;
       }
-      if (!retainDragTravel && lookAhead && !tracking) {
+      if (retainDragTravel && !tracking && travelDeadline !== null) {
+        const integration = -COAST_DECAY_MS * Math.expm1(-dt / COAST_DECAY_MS);
+        const decay = Math.exp(-elapsed / COAST_DECAY_MS);
+        desired.x += vx * integration;
+        desired.y += vy * integration;
+        vx *= decay;
+        vy *= decay;
+        if (Math.hypot(vx,vy) < .018 * pixelScale) vx = vy = 0;
+      } else if (lookAhead && !tracking) {
         if (visible.x === d.minX && vx < 0 || visible.x === d.maxX && vx > 0) vx = 0;
         if (visible.y === d.minY && vy < 0 || visible.y === d.maxY && vy > 0) vy = 0;
         const speed = Math.hypot(vx, vy);
@@ -292,7 +356,11 @@
           if (outside) speedLimit = Math.min(speedLimit, distance / 44);
         }
       }
-      const limit = (retainDragTravel ? MAX_DRAG_CSS_SPEED * pixelScale : speedLimit) * dt;
+      if (retainDragTravel) {
+        speedLimit = tracking ? MAX_DRAG_CSS_SPEED * pixelScale :
+          Math.min(MAX_DRAG_CSS_SPEED * pixelScale, Math.max(Math.hypot(vx,vy),Math.hypot(desired.x-visible.x,desired.y-visible.y)/75));
+      }
+      const limit = speedLimit * dt;
       if (distance > limit) {
         dx *= limit / distance;
         dy *= limit / distance;
@@ -303,20 +371,20 @@
         displaySpeed = Math.hypot(dx, dy) / dt;
         catchingUp = outside || (catchingUp && distance - limit > .5);
       }
-      if (travelDeadline !== null && Math.hypot(desired.x - visible.x, desired.y - visible.y) <= .02) {
+      if (travelDeadline !== null && !vx && !vy && Math.hypot(desired.x - visible.x, desired.y - visible.y) <= .02) {
         desired = { ...visible };
         travelDeadline = null;
       }
       if (releaseTime !== null && dt > 0) {
         // Coast from the position actually drawn, with no remaining drag debt.
         const speed = Math.hypot(vx, vy);
-        const limit = Math.min(MAX_COAST_CSS_SPEED * pixelScale, Math.max(.52 * pixelScale, displaySpeed));
+        const limit = MAX_COAST_CSS_SPEED * pixelScale;
         const scale = speed > limit ? limit / speed : 1;
         const decay = Math.exp(-Math.max(0, time - releaseTime) / COAST_DECAY_MS);
         vx *= scale * decay;
         vy *= scale * decay;
         displaySpeed = Math.hypot(vx, vy);
-        desired = { ...visible };
+        if(!retainDragTravel)desired = { ...visible };
         releaseTime = null;
       }
 
@@ -368,35 +436,17 @@
     function trackMotion(dx, dy, time) {
       const previous = motionSamples.at(-1);
       const reversed = previous && dx * previous.dx + dy * previous.dy < 0;
-      if (reversed || time - lastSample > FLICK_MAX_PAUSE_MS) motionSamples = [];
       if (reversed) {
         // A turn cancels the part of the previous drag that was never displayed.
         if (dx * (desired.x - visible.x) < 0) desired.x = visible.x;
         if (dy * (desired.y - visible.y) < 0) desired.y = visible.y;
       }
       time = Math.max(lastSample, time);
+      sampleFlick(motionSamples,dx,dy,lastSample,time);
       const tail = motionSamples.at(-1);
-      if (tail && tail.to === time) {
-        tail.dx += dx;
-        tail.dy += dy;
-      } else {
-        const from = Math.min(time - 8, Math.max(lastSample, time - FLICK_WINDOW_MS));
-        motionSamples.push({ from, to: time, dx, dy });
-      }
+      vx = tail.dx / (tail.to-tail.from);
+      vy = tail.dy / (tail.to-tail.from);
       lastSample = time;
-      const cutoff = time - FLICK_WINDOW_MS;
-      while (motionSamples[0].to <= cutoff) motionSamples.shift();
-      const start = Math.max(cutoff, motionSamples[0].from);
-      let x = 0, y = 0;
-      for (const sample of motionSamples) {
-        const weight = (sample.to - Math.max(sample.from, start)) / (sample.to - sample.from);
-        x += sample.dx * weight;
-        y += sample.dy * weight;
-      }
-      const span = time - start;
-      vx = x / span;
-      vy = y / span;
-      recentDistance = Math.hypot(x, y) / pixelScale;
     }
 
     function move(dx, dy, time = now()) {
@@ -426,40 +476,31 @@
     function end(time = now()) {
       if (!dragging) return;
       dragging = false;
-      if (retainDragTravel) {
-        if (time - lastSample >= FLICK_MAX_PAUSE_MS) stop();
-        else {
-          vx = vy = 0;
-          travelDeadline = time + DRAG_TRAVEL_MS;
-        }
-        return;
-      }
       if (lookAhead) {
-        const pause = Math.max(0, time - lastSample);
-        if (pause >= FLICK_MAX_PAUSE_MS) {
-          stop();
-          return;
-        }
-        const last = motionSamples.at(-1);
-        const speed = Math.hypot(vx, vy) / pixelScale;
-        const terminalSpeed = last ? Math.hypot(last.dx, last.dy) / (last.to - last.from) / pixelScale : 0;
-        if (recentDistance < FLICK_MIN_DISTANCE || Math.min(speed, terminalSpeed) < FLICK_MIN_SPEED) vx = vy = 0;
-        else {
-          const fraction = Math.min(1, terminalSpeed / speed) * (1 - (pause / FLICK_MAX_PAUSE_MS) ** 2);
-          vx *= fraction;
-          vy *= fraction;
-        }
-        releaseTime = time;
+        const velocity = flickVelocity(motionSamples,time,pixelScale);
+        vx = velocity.x;
+        vy = velocity.y;
+        if (retainDragTravel) {
+          travelDeadline = time + ((vx || vy) ? COAST_TRAVEL_MS : DRAG_TRAVEL_MS);
+        } else releaseTime = time;
         return;
       }
       lastTick = time;
       if (time - lastSample > 100) vx = vy = 0;
     }
 
+    function centerOn(x,y) {
+      if(!dimensionsNow||!Number.isFinite(x)||!Number.isFinite(y))return false;
+      stop();
+      const d=dimensionsNow;
+      jump={x:clamp(x-d.w/2,0,d.realMaxX),y:clamp(y-d.h/2,0,d.realMaxY)};
+      return true;
+    }
+
     return {
-      frame, begin, move, end, stop, pause, reset,
-      get active() { return moving() || (!!pending && !pending.timedOut); },
-      get settled() { return !!latest && !pending; },
+      frame, begin, move, end, stop, pause, reset, centerOn,
+      get active() { return moving() || (!!pending && !pending.timedOut) || (!!jump && !pending); },
+      get settled() { return !!latest && !pending && !jump; },
       debug() {
         return { dragging, velocity: { x: vx, y: vy }, desired: desired && { ...desired }, visible: visible && { ...visible },
           pending: pending && { ...pending, from: { ...pending.from }, to: { ...pending.to }, bounds: { ...pending.bounds } },
@@ -468,7 +509,7 @@
     };
   }
 
-  const api = { createCamera, ahead, guardPixels };
+  const api = { createCamera, ahead, guardPixels, coastMs: COAST_DECAY_MS, flickVelocity, sampleFlick };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WarcraftSmoothCamera = api;
 })(typeof window !== 'undefined' ? window : globalThis);

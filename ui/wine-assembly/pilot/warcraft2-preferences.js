@@ -182,7 +182,7 @@
 
   function create(wine, frame) {
     // The widest speed caption in the shipped English and Russian bitmap sets.
-    const widestCaption = 82;
+    const widestCaption = 83;
     const prefs = document.createElement('div');
     prefs.id = 'warcraft-match-settings';
     prefs.dataset.winePageDialog = '';
@@ -198,7 +198,8 @@
     toggle.type = 'checkbox';
     toggle.className = 'warcraft-native-checkbox';
     toggle.setAttribute('aria-label', ru ? 'Туман войны' : 'Fog of War');
-    fog.append(toggle, glyph('fog-of-war'));
+    const fogCaption = glyph('fog-of-war');
+    fog.append(toggle, fogCaption);
 
     const heading = glyph('settings');
     heading.id = 'warcraft-match-settings-heading';
@@ -226,7 +227,7 @@
     speed.append(speedTitle, group);
     prefs.append(fog, speed);
     frame.append(heading, prefs);
-    let active = null, extent = null;
+    let active = null, extent = null, fogFaction;
 
     function updateButtons(index) {
       buttons.forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)));
@@ -247,6 +248,11 @@
     return layout => {
       const panel = layout?.preferencesBody;
       if (!panel || layout.layers?.at(-1)?.handlerAddress !== handler) { hide(); return; }
+      const faction = frame.dataset.warcraftModalFaction;
+      if (faction !== fogFaction) {
+        fogFaction = faction;
+        fogCaption.src = `./menu-art/label-${ru ? 'ru-' : ''}fog-of-war${faction === 'human' ? '-human' : ''}.png`;
+      }
       if (layout.token !== active?.token) {
         const currentSpeed = view(wine, 0x4d6b38, 4)?.getInt32(0, true);
         const expansion = !!view(wine, 0x4ae26c, 4)?.getInt32(0, true);
@@ -268,6 +274,7 @@
         Object.assign(heading.style,{left:left+width/2+'px',top:headingTop+'px',
           height:19*scale+'px'});
         prefs.style.setProperty('--settings-glyph', 19 * scale + 'px');
+        prefs.style.setProperty('--settings-body-glyph', 16 * scale + 'px');
         const captionScale = Math.max(0, Math.min(scale,
           ((width - 2 * 4) / buttons.length - 6) / widestCaption));
         prefs.style.setProperty('--settings-choice-glyph', 19 * captionScale + 'px');

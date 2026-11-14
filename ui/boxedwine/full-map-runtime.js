@@ -11,6 +11,7 @@
   const coherentFrames=foregroundVersion==='v16';
   const cleanHud=['v13','v14','v15','v16'].includes(foregroundVersion),balancedHud=['v14','v15','v16'].includes(foregroundVersion);
   let camera,modalPresenter,cursorPresenter,lastScene=null,selectedCommand=null,animation=null,lastDialogToken=null;
+  let displayedEndRaster=null;
   let bootstrapPainter,nativeFramePainter,visibleFramePainter,lastMapEpoch=null,lastRenderedGeometry=null;
   let bootstrapCanvas,onPresented,onUnavailable,acceptsInput,modalBack,modalSlider;
   let bootstrapInUse=false,bootstrapPaletteKey=null;
@@ -244,7 +245,7 @@
     const ctx=canvas===output?context:canvas.getContext('2d');
     cleanChart.render(ctx,pixels,{layers:foregroundPainter.capture(foreground),
       afterMap:cameraPilot?(ctx,map)=>drawWorldOutline(ctx,map,world,cleanG):undefined});
-    if(cameraPilot)drawMinimapOutline(ctx,cleanChart,world,cleanG,dpr,false);
+    if(cameraPilot)drawMinimapOutline(ctx,cleanChart,world,cleanG,dpr);
     modalPresenter.captureBackground(canvas,{inGame:true,dialogOpen:false});
     bootstrapInUse=true;bootstrapPaletteKey=paletteKey;
     telemetry.bootstrapEpoch=packet.sceneEpoch;return true;
@@ -279,9 +280,28 @@
     const pixels=partialFrame?visibleFramePainter.paint(packet,layout):bootstrapPainter.paint(packet);
     layout.render(ctx,pixels,{layers:foregroundPainter.capture(foreground),
       afterMap:(ctx,map)=>drawWorldOutline(ctx,map,crop,g)});
-    drawMinimapOutline(ctx,layout,crop,g,dpr,partialFrame);
+    drawMinimapOutline(ctx,layout,crop,g,dpr);
     modalPresenter.captureBackground(canvas,{inGame:true,dialogOpen:false});
     modalBackgroundWidth=width;modalBackgroundHeight=height;modalBackgroundDpr=dpr;modalBackgroundInsets=hudInsets;
+  }
+  function endMenuRows(packet, rect) {
+    if(!packet?.usable||!rect||rect.right-rect.left!==255||rect.bottom-rect.top!==287||
+        rect.right>=packet.screen.width||rect.bottom>=packet.screen.height)return null;
+    const columns=packet.screen.width,x=rect.left+24;
+    // Sample two original End-menu button backgrounds that are bare stone in
+    // Quit/Restart. Start away from the caption, focus border and mouse cursor.
+    return [60,158].map(dy=>{
+      const from=(rect.top+dy)*columns+x;
+      return packet.indices.slice(from,from+12);
+    });
+  }
+  function hasConfirmationRaster(back, packet, view) {
+    if(!displayedEndRaster||back?.compact!=='confirmation'||packet?.sceneEpoch!==displayedEndRaster.epoch)return true;
+    const rows=endMenuRows(packet,view?.modal?.rect);
+    if(!rows)return true;
+    displayedEndRaster.waitUntil??=performance.now()+300;
+    return performance.now()>=displayedEndRaster.waitUntil||
+      rows.every((row,i)=>row.some((value,j)=>value!==displayedEndRaster.rows[i][j]));
   }
   function render(captureNative=true) {
     if(!installed)return;
@@ -308,12 +328,12 @@
     const {g,state,view,ui,foreground}=lastScene;
     if(coherentFrames){
       if(lastMapEpoch!==null&&!state?.ready){waitForNativeFrame();return;}
-      if(!state?.inGame){lastMapEpoch=null;modalPresenter.reset();camera.reset();lastRenderedGeometry=null;bootstrapInUse=false;bootstrapPaletteKey=null;cleanWorldReady=false;lastWorldPaint=frozenWorld=null;}
+      if(!state?.inGame){lastMapEpoch=null;modalPresenter.reset();camera.reset();lastRenderedGeometry=null;bootstrapInUse=false;bootstrapPaletteKey=null;cleanWorldReady=false;lastWorldPaint=frozenWorld=displayedEndRaster=null;}
       else if(!view?.mapEpoch){waitForNativeFrame();return;}
       else if(lastMapEpoch!==view.mapEpoch){
         lastMapEpoch=view.mapEpoch;modalPresenter.reset();camera.reset();bootstrapPainter.reset();selectedCommand=null;
         lastRenderedGeometry=null;chart=null;lastDialogToken=null;
-        bootstrapInUse=false;bootstrapPaletteKey=null;cleanWorldReady=false;lastWorldPaint=frozenWorld=null;
+        bootstrapInUse=false;bootstrapPaletteKey=null;cleanWorldReady=false;lastWorldPaint=frozenWorld=displayedEndRaster=null;
       }
       if(state?.inGame&&lastScene.packet?.usable&&lastScene.packet.sceneEpoch===view?.mapEpoch&&
         (!!lastScene.packet.dialogRoot!==!!state.dialogOpen||lastScene.packet.dialogRoot!==(view.dialogAddress||0))){
@@ -347,12 +367,14 @@
         selectedCommand=null;
       }
       lastDialogToken=view?.modal?.identity;
+      const back=modalBack?.(view?.modal);
+      if(coherentFrames&&!hasConfirmationRaster(back,lastScene.packet,view)){waitForNativeFrame();return;}
       const width=Math.max(1,Math.floor(container.clientWidth)),height=Math.max(1,Math.floor(container.clientHeight));
       const dpr=enhancedHud?Math.max(1,Math.min(3,global.devicePixelRatio||1)):1;
       if(cameraPilot)resizeFrozenWorld(width,height,dpr);
       const framePixels=coherentFrames?nativeFramePainter.paint(lastScene.frame):lastScene.frame;
       const modal={inGame:true,dialogOpen:true,packet:view?.modal,panelTexture:modalTexture?.(),
-        back:modalBack?.(view?.modal),fillBackground:!!onPresented,
+        back,fillBackground:!!onPresented,
         dialogPixelRatio:onPresented?dpr:0,
         leftInset:hudInsets.left>4?hudInsets.left*dpr:0,rightInset:hudInsets.right>4?hudInsets.right*dpr:0};
       if(onPresented&&modalPresenter.plan(framePixels,{...modal,width:Math.round(width*dpr),
@@ -362,7 +384,11 @@
       if(output.height!==Math.round(height*dpr))output.height=Math.round(height*dpr);
       const layout=modalPresenter.present(context,framePixels,modal);
       telemetry.mode='dialog';
-      if(layout.mode==='modal')onPresented?.('dialog',layout);
+      if(layout.mode==='modal'){
+        const rows=back?.compact==='end'&&endMenuRows(lastScene.packet,view?.modal?.rect);
+        displayedEndRaster=rows?{rows,epoch:lastScene.packet.sceneEpoch}:null;
+        onPresented?.('dialog',layout);
+      }
       return;
     }
     const expanded=g&&(g.columns>14||g.rows>14);
@@ -376,6 +402,7 @@
     try {
       bootstrapInUse=false;bootstrapPaletteKey=null;
       lastDialogToken=null;
+      displayedEndRaster=null;
       const width=Math.max(1,Math.floor(container.clientWidth)),height=Math.max(1,Math.floor(container.clientHeight));
       const dpr=enhancedHud?Math.max(1,Math.min(3,global.devicePixelRatio||1)):1;
       const receipt=cameraPilot&&view?.usable&&lastScene.packet?.usable
@@ -414,7 +441,7 @@
       if(output.height!==Math.round(height*dpr))output.height=Math.round(height*dpr);
       chart.render(context,framePixels,{layers,
         afterMap:cameraPilot?(ctx,map)=>drawWorldOutline(ctx,map,world,g):undefined});
-      if(cameraPilot)drawMinimapOutline(context,chart,world,g,dpr,camera.independent);
+      if(cameraPilot)drawMinimapOutline(context,chart,world,g,dpr);
       else if(camera?.independent)drawMinimapView(world,g,dpr);
       lastRenderedGeometry=g;
       if(cameraPilot){
@@ -510,7 +537,7 @@
     if(origin.x+world.width>=width-edge)context.fillRect(map.right-1,map.top,1,map.height);
     if(origin.y+world.height>=height-edge)context.fillRect(map.left,map.bottom-1,map.width,1);
   }
-  function drawMinimapOutline(context,layout,world,g,dpr,independent) {
+  function drawMinimapOutline(context,layout,world,g,dpr) {
     const mini=layout.regions.find(region=>region.id==='minimap')?.transform.painted;
     if(!mini)return;
     context.save();
@@ -518,7 +545,7 @@
     context.strokeStyle='#fff';
     context.strokeRect(mini.left+.5,mini.top+.5,mini.width-1,mini.height-1);
     context.restore();
-    if(independent)drawMinimapView(world,g,dpr,context,layout);
+    drawMinimapView(world,g,dpr,context,layout);
   }
   function drawMinimapView(world,g,dpr,ctx=context,layout=chart) {
     const mini=layout.regions.find(region=>region.id==='minimap')?.transform.painted;
@@ -536,16 +563,16 @@
   }
   function moveByMinimap(event) {
     const state=global.WarcraftUiBridge.state(),g=lastRenderedGeometry;
-    if(!camera?.independent||telemetry.mode!=='world'||!g||!state.inputAllowed||
+    if(!camera?.centerOn||telemetry.mode!=='world'||!g||!state.inputAllowed||
       state.targetPending||state.buildingPending)return false;
-    const mini=chart.regions.find(region=>region.id==='minimap');
+    const mini=chart?.regions.find(region=>region.id==='minimap');
     const point=pick(event,input.getBoundingClientRect());
     if(!mini||point?.regionId!=='minimap')return false;
     const {source}=mini;
-    camera.centerOn((point.x-source.left)*g.mapWidth*32/source.width,
+    const handled = camera.centerOn((point.x-source.left)*g.mapWidth*32/source.width,
       (point.y-source.top)*g.mapHeight*32/source.height);
-    scheduleAnimation(true);
-    return true;
+    if (handled) scheduleAnimation(true);
+    return handled;
   }
   function cancelButtons() {
     minimapDrag=false;
@@ -798,7 +825,7 @@
     commandHighlight?.remove();
     buildConfirm?.remove();
     output=context=copier=buildConfirm=commandHighlight=null;
-    lastScene=lastNative=lastRenderedGeometry=lastDialogToken=selectedCommand=lastMapEpoch=null;
+    lastScene=lastNative=lastRenderedGeometry=lastDialogToken=selectedCommand=lastMapEpoch=displayedEndRaster=null;
     camera=modalPresenter=cursorPresenter=foregroundPainter=bootstrapPainter=nativeFramePainter=visibleFramePainter=bootstrapCanvas=null;
     onPresented=onUnavailable=acceptsInput=modalBack=modalSlider=modalTexture=infoButtons=null;
     bootstrapInUse=false;

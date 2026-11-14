@@ -9,8 +9,8 @@
   const corePath = 'install-core.bin';
   const russianPatchBytes = 479620;
   const russianBlockTable = 477204;
-  const fontOverlayBytes = 135989;
-  const correctedPatchHash = '1d3e9b3a82c3ab85ef1f0aec8266f3b1ad8852e6a0777d45acbae6c2255dc331';
+  const fontOverlayBytes = 131456;
+  const correctedPatchHash = 'cefcddd1809b292690318acc91374cddffc33e3a8b72bc7629c963ec10d7f20d';
 
   async function fixRussianGlyph(original) {
     if (original.length !== russianPatchBytes) return original;

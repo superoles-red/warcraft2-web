@@ -10,7 +10,7 @@
     : referenceViewport);
   const explicitBuilding = document.currentScript?.hasAttribute('data-build-confirm') === true;
   const tile = 32;
-  const coastMs = 185;
+  const {coastMs, sampleFlick, flickVelocity} = window.WarcraftSmoothCamera;
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
   function coversWorld(g) {
@@ -25,10 +25,12 @@
     let independent = false, view = null, position = null;
     let dragging = false, velocityX = 0, velocityY = 0;
     let lastMove = 0, lastFrame = 0, pixelScale = 1;
+    const motion = [];
 
     function stop() {
       dragging = false;
       velocityX = velocityY = 0;
+      motion.length = 0;
     }
 
     function setPosition(x, y) {
@@ -95,28 +97,26 @@
       move(dx, dy, time) {
         if (!independent) return fallback.move(dx, dy, time);
         if (!dragging || (!dx && !dy)) return;
-        const elapsed = Math.max(8, time - lastMove);
+        time = Math.max(lastMove,time);
+        sampleFlick(motion,dx,dy,lastMove,time);
         lastMove = time;
-        velocityX = dx / elapsed;
-        velocityY = dy / elapsed;
         setPosition(position.x + dx, position.y + dy);
       },
       end(time) {
         if (!independent) return fallback.end(time);
         if (!dragging) return;
         dragging = false;
-        const speed = Math.hypot(velocityX, velocityY);
-        if (time - lastMove > 55 || speed < .35 * pixelScale) stop();
-        else if (speed > pixelScale) {
-          velocityX *= pixelScale / speed;
-          velocityY *= pixelScale / speed;
-        }
-        lastFrame = performance.now();
+        const velocity = flickVelocity(motion,time,pixelScale);
+        velocityX = velocity.x;
+        velocityY = velocity.y;
+        lastFrame = time;
       },
       centerOn(x, y) {
-        if (!independent || !view) return false;
+        if (!independent) return fallback.centerOn(x,y);
+        if (!view) return false;
         stop();
-        setPosition(x - view.w / 2, y - view.h / 2);
+        setPosition(clamp(x - view.w / 2, 0, 1024 - view.w),
+          clamp(y - view.h / 2, 0, 1024 - view.h));
         return true;
       },
       stop() { if (independent) stop(); else fallback.stop(); },

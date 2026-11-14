@@ -8,6 +8,14 @@
   const SELECT_SCENARIO = 0x41d490;
   const SOUND_OPTIONS = 0x441940;
   const AUTHORED_OR_CINEMATIC = new Set([0x42adc0, 0x441cc0, 0x434a00, 0x429580, 0x42fef0]);
+  // Original rez\snd_dlg.bin and rez\filefltr.bin. These are local,
+  // inclusive native footer controls decoded to half-open source rectangles.
+  const NATIVE_FOOTERS = new Map([
+    [SOUND_OPTIONS, {w:256, h:288, cancel:[12,256], accept:[138,256],
+      body:256, blank:[0,208,256,48], footer:48}],
+    [SELECT_SCENARIO, {w:352, h:352, cancel:[44,318], accept:[188,318],
+      body:314, blank:[44,34,88,72], footer:48, texture:true}],
+  ]);
 
   // Both native dialogs register a 640x480 root with a transparent upper
   // area. These crops include the complete lower native content, borders,
@@ -245,12 +253,37 @@
     return {...chart, reflow: true, regions, paintRegions: [title, ...regions]};
   }
 
+  function reflowNativeFooter(chart, front, controls, spec, inset) {
+    if (front.w !== spec.w || front.h !== spec.h) return null;
+    const {x, y, w, h} = front;
+    const area = (left, top, width, height) => ({x:x + left, y:y + top, w:width, h:height});
+    const cancel = area(...spec.cancel,106,28), accept = area(...spec.accept,106,28);
+    const liveCancel = controls.get(-3), liveAccept = [...controls.values()].find(item => same(item.source, accept));
+    if (liveCancel?.type !== 2 || !(liveCancel.flags & 8) || !same(liveCancel.source, cancel) ||
+        !liveAccept || ![1, 2].includes(liveAccept.type)) return null;
+
+    const height = spec.body + spec.footer + 4;
+    const scale = Math.min(chart.regions[0].target.w / w, (chart.height - inset * 2) / height);
+    if (scale <= 0) return null;
+    const left = (chart.width - w * scale) / 2, top = (chart.height - height * scale) / 2;
+    const target = (x, y, w, h) => ({x:left + x * scale, y:top + y * scale, w:w * scale, h:h * scale});
+    const body = {source:area(0,0,w,spec.body), target:target(0,0,w,spec.body)};
+    const footer = {source:area(...spec.blank),
+      target:target(0,spec.body,w,spec.footer), texture:spec.texture};
+    const rim = {source:area(0,h-4,w,4), target:target(0,height-4,w,4)};
+    const button = {source:accept, target:target(16,spec.body + (spec.footer-28)/2,106,28)};
+    const size = 44;
+    const back = {source:cancel, target:target(w-size-12,spec.body + (spec.footer-size)/2,size,size), decoration:'back'};
+    return {...chart, reflow:true, regions:[body, button, back], paintRegions:[body, footer, rim, button, back],
+      ...(front.handler === SOUND_OPTIONS ? {frame:{source:area(0,0,w,h),target:target(0,0,w,height)}} : {})};
+  }
+
   function wantsImmediatePress(chart, nativeX, nativeY) {
     const point = {x: Math.floor(nativeX), y: Math.floor(nativeY), w: 1, h: 1};
     return chart?.mode === 'dialog' && chart.heldControls.some(rect => contains(rect, point));
   }
 
-  function layout({width, height, art, scenes, wine, backTarget}) {
+  function layout({width, height, art, scenes, wine, backTarget, backImage}) {
     if (![width, height].every(value => Number.isFinite(value) && value > 0) ||
         !art || !contains(art, art) || !Array.isArray(scenes)) return null;
     const dialogs = scenes.filter(scene => scene.painter === DIALOG_PAINTER);
@@ -291,11 +324,17 @@
     };
     if (fullFrame && front.handler === CUSTOM_GAME_SETUP) {
       const controls = readControls(wine, front, CUSTOM_CONTROL_TYPES);
-      if (controls) return reflowCustom(chart, controls, inset, backTarget) || chart;
+      const reflow = controls && reflowCustom(chart, controls, inset, backTarget);
+      return reflow || (width < height && backTarget ? null : chart);
     }
     if (fullFrame && width < height && front.handler === LOAD_GAME) {
       const controls = readControls(wine, front, LOAD_CONTROL_TYPES);
       if (controls) return reflowLoad(chart, controls, inset) || chart;
+    }
+    const footer = NATIVE_FOOTERS.get(front.handler);
+    if (footer && backImage?.naturalWidth) {
+      const buttons = readControls(wine, front, new Set([1,2,13]));
+      if (buttons) return reflowNativeFooter(chart, front, buttons, footer, inset) || chart;
     }
     return chart;
   }

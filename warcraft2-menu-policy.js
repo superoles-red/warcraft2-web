@@ -27,6 +27,7 @@
   const volumeKey = 'HKCU\\Software\\Blizzard Entertainment\\Warcraft II BNE';
   const soundDialogEntry = 0x441b90;
   const settingsSliders = new Map([[0x441940, 2], [0x442050, 3]]);
+  const minimapViewportOutline = 0x42de19;
   const horizontalArrowPaint = [0x406d94, 0x406ea9];
   const scrollbarPress = 0x409367;
   const scrollbarPressCode = 0x48f4a0;
@@ -36,6 +37,10 @@
   const objectivesButtonCode = 0x48f4e0;
   const objectivesPreferenceKey = 'warcraft-show-objectives-at-start';
   const deferredDialog = 0x4ab8e4;
+  // Shared user-facing file dialogs. The native disk save/load functions
+  // used by the checkpoint adapter have their own entry points.
+  const fileDialogs = [[0x43c4b0, '83 ec 10 e8 b8 af 03 00 85 c0 75 71'],
+    [0x43c960, 'e8 9b f4 ff ff 85 c0 74 42']];
   const soundSwitches = Object.freeze({unitspeech:1, unitnoise:2, bldgnoise:4, dispmsgs:0x40000});
   const installed = new WeakMap();
   const controls = Object.freeze({
@@ -104,6 +109,7 @@
     [soundDialogEntry, `68 40 19 44 00 6a 02 68 14 03 00 00 68 94 1b 4a 00 68 80 2e 46 00
       68 10 2c 46 00 68 84 1b 4a 00 c7 05 e4 b8 4a 00 00 00 00 00 c7 05 94 db 4b 00 01 00 00 00
       e8 07 31 fc ff 83 c4 14 50 e8 4e 3b fc ff 83 c4 0c c3`],
+    [minimapViewportOutline, 'e8 42 ab 05 00 6a 0c e8 8b 84 05 00 83 c4 14'],
     [horizontalArrowPaint[0], 'e8 07 1e 08 00 8b 4f 04 66 8b 15 bc b8 4a 00'],
     [horizontalArrowPaint[1], 'e8 f2 1c 08 00 8b 46 18 83 c4 28'],
     [scrollbarPress, 'e8 f4 01 00 00 83 c4 08 83 f8 06 74 51'],
@@ -113,6 +119,7 @@
     [0x435380, '68 a0 53 43 00 68 50 10 4a 00 e8 a1 98 ff ff 83 c4 08 c3'],
     [objectivesButtonSetup, 'e8 1f 82 ff ff 6a 68 68 2c 10 4a 00'],
     [0x42d6b0, '8b 44 24 04 6a fd 50 e8 14 54 fd ff'],
+    ...fileDialogs,
   ].map(([address, bytes]) => ({address, bytes: hex(bytes)}));
 
   // Entry: return false from the idle timer. The remaining now-unreachable
@@ -266,6 +273,8 @@
     // The authored menu holds its last complete frame during this exit.
     // Shorten only the hidden fade. A positive duration keeps its divisor valid.
     memory[mapped.get(0x44f807) + fastStartFade - 0x44f807 + 1] = 1;
+    // The web viewport draws its own footprint on the original minimap.
+    memory.fill(0x90, mapped.get(minimapViewportOutline), mapped.get(minimapViewportOutline) + 5);
     for (const address of horizontalArrowPaint) memory.fill(0x90, mapped.get(address), mapped.get(address) + 5);
     memory.set(scrollbarPressWrapper, scrollbarCodeOffset);
     memory.set(hex('e8 34 61 08 00'), mapped.get(scrollbarPress));
@@ -275,6 +284,7 @@
     memory.set(hex('80 3d d0 f4 48 00 00 90 74 05 e8 16 46 01 00'), mapped.get(startupTips));
     memory.set(objectivesButtonWrapper, objectivesButtonOffset);
     memory.set(hex('e8 4f a0 05 00'), mapped.get(objectivesButtonSetup));
+    for (const [address] of fileDialogs) memory.set(hex('31 c0 c3'), mapped.get(address));
     memory[objectivesSettingOffset] = 1;
     try { memory[objectivesSettingOffset] = Number(global.localStorage?.getItem(objectivesPreferenceKey) !== '0'); }
     catch (_) {}

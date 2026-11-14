@@ -28,7 +28,15 @@
       context.drawImage(frame,source.left,source.top,width,height,0,0,width,height);
       context.restore();
     }
-    copy(rim,source.height-rim,true,false);
+    // A taller reflowed footer still uses the native three-pixel bevel.
+    if(Math.abs(scaleY-scaleX)>1e-6){
+      context.save();
+      try{
+        context.translate(target.left+target.width,target.top);
+        context.scale(-scaleX,1);
+        context.drawImage(frame,source.left,source.top,rim,source.height-rim,0,0,rim,target.height-rim*scaleX);
+      }finally{context.restore();}
+    }else copy(rim,source.height-rim,true,false);
     copy(source.width-rim,rim,false,true);
     copy(rim,rim,true,true);
   }
@@ -36,8 +44,10 @@
   function inside(r,x,y){return x>=r.left&&y>=r.top&&x<r.right&&y<r.bottom;}
   // Keep original full-width raster strips, including the frame and controls.
   // Leave six native pixels between the remaining rows.
-  const MENU_STRIPS={pause:[[0,104],[138,211],[245,288]],
-    'two-actions':[[0,70],[104,141],[198,248],[284,288]]};
+  const MENU_STRIPS={pause:[[0,39],[70,104],[138,211],[245,288]],
+    'two-actions':[[0,70],[104,141],[190,246],[284,288]],
+    end:[[0,35],[104,140],[35,72],[190,246],[284,288]],
+    confirmation:[[0,144],[190,246],[284,288]]};
   function contain(source,width,height,maxScale=Infinity,margin=0,left=margin,right=margin){
     const scale=Math.min(maxScale,(width-left-right)/source.width,(height-margin*2)/source.height);
     if(!positive(scale))return null;
@@ -123,6 +133,7 @@
       if(!inGame){reset();return layout;}
       if(!dialogOpen){layout=Object.freeze({active:false,mode:'world'});return layout;}
       if(!base){layout=Object.freeze({active:false,mode:'native-fallback',reason:'no-clean-background'});return layout;}
+      if(back?.waiting){layout=Object.freeze({active:false,mode:'waiting-native-dialog',reason:'native-layout-not-ready'});return layout;}
       if(!positive(width)||!positive(height)||![leftInset,rightInset].every(n=>finite(n)&&n>=0))
         throw new TypeError('Positive modal dimensions and nonnegative side insets required');
       const background=fillBackground?(() => {
@@ -135,10 +146,10 @@
       const objectives=native?.layers.length===1&&native.layers[0].handlerAddress===0x4353a0&&
         native.source.width===256&&native.source.height===288;
       const preferences=native?.layers.length===1&&native.layers[0].handlerAddress===0x441940&&
-        native.source.width===256&&native.source.height===288;
+        native.source.width===256&&native.source.height===288&&!!back?.ok;
       const compactHeight=compact?.reduce((sum,[start,end])=>sum+end-start,0);
       const bounds=objectives?{width:256,height:288+OBJECTIVES_ROW}:
-        compact?{width:native.source.width,height:compactHeight}:native?.union;
+        preferences?{width:256,height:312}:compact?{width:native.source.width,height:compactHeight}:native?.union;
       const scaleMargin=8*dialogPixelRatio;
       const classicMax=dialogPixelRatio&&native?.source.width===256&&native.source.height<=288
         ? classicDialogScale(width-Math.max(0,leftInset-scaleMargin)-Math.max(0,rightInset-scaleMargin),height,dialogPixelRatio)
@@ -153,7 +164,7 @@
       let objectivesCheckbox=null,objectivesStone=null,preferencesBody=null;
       if(ready&&preferences){
         const {source}=native,{scale}=unionTarget;
-        const nativeBands=[[0,166],[256,288]];
+        const nativeBands=[[0,166]];
         strips=nativeBands.map(([start,end])=>{
           const cut=freezeRect({...source,top:source.top+start,height:end-start});
           return Object.freeze({source:cut,target:mapRect(cut)});
@@ -189,25 +200,37 @@
         });
       }
       const backSource=back?.source&&freezeRect(back.source);
-      let backControl=null;
+      let backControl=null,okControl=null,restart=null;
       if(ready&&back?.image?.naturalWidth&&backSource&&inside(native.source,backSource.left,backSource.top)&&
           inside(native.source,backSource.right-1,backSource.bottom-1)){
-        const panel=strips?unionTarget:mapRect(native.source);
+        const panel=strips?unionTarget:mapRect(native.source),scale=panel.scale;
         const oldTarget=mapRect(backSource);
-        const size=(compact?38:28)*panel.scale, inset=8*panel.scale;
-        const leftAligned=back.align==='left';
-        const left=leftAligned?oldTarget.left+(oldTarget.width-size)/2:panel.right-size-inset;
-        const top=compact?panel.bottom-size-inset:oldTarget.top;
+        const size=48*scale,inset=8*scale;
+        const left=panel.right-size-inset,top=panel.bottom-size-inset;
         const target=freezeRect({left,top,width:size,height:size});
-        backControl={source:backSource,oldTarget,replaceButton:!compact,target,
-          hitTarget:leftAligned?oldTarget:target};
+        backControl={source:backSource,oldTarget,replaceButton:!compact&&!preferences,target};
+        if(preferences&&back.ok){
+          const source=freezeRect(back.ok);
+          okControl={source,target:freezeRect({left:oldTarget.left,top:top+(size-source.height*scale)/2,
+            width:source.width*scale,height:source.height*scale,scale})};
+          preferencesBody=freezeRect({...preferencesBody,height:top-4*scale-preferencesBody.top});
+        }
+      }
+      if(ready&&compact&&back?.restart){
+        const source=freezeRect(back.restart.source);
+        const strip=strips.find(({source:s})=>inside(s,source.left,source.top));
+        if(strip){
+          const s=strip.source,t=strip.target;
+          restart={source,target:freezeRect({left:t.left+(source.left-s.left)*t.scale,
+            top:t.top+(source.top-s.top)*t.scale,width:source.width*t.scale,height:source.height*t.scale,scale:t.scale})};
+        }
       }
       layout=Object.freeze({active:true,mode:ready?'modal':'waiting-native-dialog',
         width,height,background,source:ready?native.source:null,target:ready?(strips?unionTarget:mapRect(native.source)):null,
         unionSource:ready?native.union:null,unionTarget:ready?unionTarget:null,
         layers:Object.freeze(ready?native.layers.map(layer=>Object.freeze({...layer,target:mapRect(layer.source)})):[]),
         strips:strips&&Object.freeze(strips),
-        objectivesCheckbox,objectivesStone,preferencesBody,
+        objectivesCheckbox,objectivesStone,preferencesBody,ok:okControl,restart,
         token:ready?packet.token:null,back:backControl,
         reason:ready?null:'missing-stale-or-invalid-native-dialog'});
       return layout;
@@ -245,9 +268,19 @@
             const t=p.unionTarget,s=p.source,scale=t.scale;
             context.drawImage(frame,s.left,s.top+166,256,90,t.left,t.top+166*scale,t.width,90*scale);
             context.drawImage(frame,s.left+4,s.top+235,248,18,t.left+4*scale,t.top+4*scale,248*scale,18*scale);
-            // Hidden native controls are gone by the first interactive frame.
-            // Complete the rim using the original native bevel.
+            // Fill the footer from verified empty stone directly above it.
+            context.drawImage(frame,s.left,s.top+200,256,56,t.left,t.top+256*scale,t.width,56*scale);
             paintSettingsFrame(context,frame,0x441940,s,t);
+          }
+          if(p.ok){
+            const {source:s,target:t}=p.ok;
+            context.drawImage(frame,s.left,s.top,s.width,s.height,t.left,t.top,t.width,t.height);
+          }
+          if(p.restart){
+            const t=p.restart.target,label=options.back.restart.label;
+            context.drawImage(options.back.restart.button,t.left,t.top,t.width,t.height);
+            const w=label.naturalWidth*t.scale,h=label.naturalHeight*t.scale;
+            context.drawImage(label,t.left+(t.width-w)/2,t.top+(t.height-h)/2,w,h);
           }
           if(p.objectivesStone){
             const {source:s,target:t}=p.objectivesStone;
@@ -277,7 +310,7 @@
               // Cover the original button using nearby original stone at the same scale.
               const s=p.back.source,t=p.target,extra=Math.ceil(2/t.scale);
               const patchW=s.width+extra*2,patchH=s.height+extra*2;
-              const sourceY=p.preferencesBody?p.source.top+214:s.top-patchH-extra;
+              const sourceY=s.top-patchH-extra;
               context.drawImage(frame,s.left-extra,sourceY,patchW,patchH,
                 old.left-2,old.top-2,old.width+4,old.height+4);
             }
@@ -302,9 +335,14 @@
       if(!layout.active||!finite(x)||!finite(y)||x<0||y<0||x>=layout.width||y>=layout.height)return null;
       if(layout.mode==='modal'&&layout.back){
         const back=layout.back;
-        if(inside(back.hitTarget,x,y))return {regionId:'native-modal-back',kind:'native-ui',
+        if(inside(back.target,x,y))return {regionId:'native-modal-back',kind:'native-ui',
           x:back.source.left+back.source.width/2,y:back.source.top+back.source.height/2,token:layout.token};
         if(back.replaceButton&&inside(back.oldTarget,x,y))return {regionId:'modal-blocker',kind:'blocked'};
+      }
+      if(layout.mode==='modal'&&layout.ok&&inside(layout.ok.target,x,y)){
+        const {source:s,target:t}=layout.ok;
+        return {regionId:'native-modal',kind:'native-ui',x:s.left+(x-t.left)/t.scale,
+          y:s.top+(y-t.top)/t.scale,token:layout.token};
       }
       if(layout.mode!=='modal'||!inside(layout.target,x,y))return {regionId:'modal-blocker',kind:'blocked'};
       const strip=layout.strips?.find(region=>inside(region.target,x,y));
@@ -322,6 +360,9 @@
       const back=layout.back;
       if(back&&inside(back.source,x,y))return {x:(back.target.left+back.target.width/2)*c.scale+c.left,
         y:(back.target.top+back.target.height/2)*c.scale+c.top,visible:true,token:layout.token};
+      const ok=layout.ok;
+      if(ok&&inside(ok.source,x,y))return {x:(ok.target.left+(x-ok.source.left)*ok.target.scale)*c.scale+c.left,
+        y:(ok.target.top+(y-ok.source.top)*ok.target.scale)*c.scale+c.top,visible:true,token:layout.token};
       const strip=layout.strips?.find(region=>inside(region.source,x,y));
       if(layout.strips&&!strip)return null;
       const s=strip?.source||layout.source,t=strip?.target||layout.target;

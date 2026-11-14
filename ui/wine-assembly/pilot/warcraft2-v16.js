@@ -197,6 +197,7 @@
         notifyMapFrame = callback;
         wrap(renderer, 'observePresentationPublication', observe => function(...args) {
           observe.apply(this, args);
+          wine.warcraftSession?.native?.tick();
           callback();
           if (args[0]?.backend !== 'warcraft-map') menu?.onFrame(args[0]);
         });
