@@ -1,0 +1,19 @@
+{
+  "id": "./",
+  "name": "Warcraft II: Battle.net Edition",
+  "short_name": "Warcraft II",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#161513",
+  "theme_color": "#161513",
+  "icons": [
+    {
+      "src": "./icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

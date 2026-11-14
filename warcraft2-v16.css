@@ -1,0 +1,58 @@
+#screen-canvas-stack .warcraft-native-occluded { visibility: hidden; }
+#screen-canvas-stack #warcraft-map-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+#screen-canvas-stack #warcraft-map-canvas[hidden] { display: none !important; }
+#screen.warcraft-original-cursor { cursor: var(--warcraft-original-cursor) !important; }
+#screen-canvas-stack.warcraft-owns-presentation :is(#screen-present, #screen) { opacity: 0 !important; }
+#warcraft-menu-navigation { position: absolute; inset: 0; z-index: 3; }
+#warcraft-menu-navigation[hidden] { display: none !important; }
+#warcraft-menu-navigation button {
+  position: absolute;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+#warcraft-menu-navigation button:focus-visible { outline: 2px solid #f4d343; }
+#warcraft-build-confirm {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  width: 106px;
+  min-height: 44px;
+  z-index: 3;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+#warcraft-build-confirm img { display: block; width: 100%; image-rendering: pixelated; }
+#warcraft-build-confirm:disabled { opacity: .5; cursor: default; }
+#warcraft-build-confirm[hidden] { display: none !important; }
+/* Leave the game's bottom-right Cancel reachable beside the shell keyboard. */
+#screen-wrap:has(#warcraft-build-confirm:not([hidden]), #warcraft-menu-navigation:not([hidden]) button[aria-label="Back"]) #touch-controls .tc-utility-row {
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+/* Keep shell utilities out of the native menu controls and the Back corner. */
+.warcraft-page #page-fullscreen-exit { display: none !important; }
+.warcraft-page #screen-wrap:has(#screen-canvas-stack[data-warcraft-presentation="menu"], #screen-canvas-stack[data-warcraft-mode="dialog"]) #touch-controls .tc-utility-row {
+  top: max(8px, env(safe-area-inset-top, 0px));
+  right: max(8px, env(safe-area-inset-right, 0px));
+  bottom: auto !important;
+}
+
+.warcraft-page #screen-wrap:has(#screen-canvas-stack[data-warcraft-mode="dialog"]) #touch-controls .tc-utility-row {
+  top: auto;
+  right: auto;
+  left: max(8px, env(safe-area-inset-left, 0px));
+  bottom: max(8px, env(safe-area-inset-bottom, 0px)) !important;
+}
+
+.warcraft-page #screen-wrap:has(#screen-canvas-stack[data-warcraft-mode="world"][data-warcraft-cancel-visible]) #touch-controls .tc-utility-row {
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+/* The full-page Warcraft surface already uses the available viewport. */
+.warcraft-page :is(#scroll-collapse-gutter, #scroll-collapse-spacer) {
+  display: none !important;
+}

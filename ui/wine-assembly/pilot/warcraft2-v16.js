@@ -1,0 +1,174 @@
+/* Connect the V16 compositor and gestures to the Wine-Assembly guest. */
+(() => {
+  'use strict';
+  const nativePath = name => 'c:\\' + name.replaceAll('/', '\\');
+
+  function attach(wine, renderer, {onTitlePrepared} = {}) {
+    const vfs = wine._helpCtx.vfs;
+    const surface = document.getElementById('screen');
+    const display = document.getElementById('screen-present');
+    const frame = document.getElementById('screen-canvas-stack');
+    const input = window.WarcraftAssemblyInput.create(wine, renderer);
+    let presented = null;
+    function show(owner, mode) {
+      if (presented !== owner) {
+        presented = owner;
+        frame.dataset.warcraftPresentation = owner;
+      }
+      if (frame.dataset.warcraftMode !== mode) frame.dataset.warcraftMode = mode;
+      delete frame.dataset.warcraftTransition;
+    }
+    function hold(owner) {
+      if ((!presented || presented === owner) && !('warcraftTransition' in frame.dataset)) {
+        frame.dataset.warcraftTransition = '';
+      }
+    }
+    if (onTitlePrepared) {
+      hold('menu');
+      for (const name of ['handleKeyDown', 'handleKeyPress']) {
+        const handle = renderer[name];
+        if (typeof handle !== 'function') continue;
+        renderer[name] = function(...args) {
+          if (!('warcraftTransition' in frame.dataset)) return handle.apply(this, args);
+        };
+      }
+    }
+    let menu, notifyMapFrame;
+    window.attachWarcraftUiTransport({
+      ...input,
+      surface,
+      input: surface,
+      allowNativeTouch: () => menu?.nativeTouch === true,
+      read(name) {
+        const bytes = vfs.files.get(nativePath(name))?.data;
+        if (!bytes) throw new Error('Waiting for native UI packet ' + name);
+        return bytes;
+      },
+      write(name, bytes) {
+        vfs.files.set(nativePath(name), {data:bytes, attrs:0x20});
+      },
+    });
+    menu = window.WarcraftIndependentCameraPilot && window.WarcraftAssemblyMenu
+      ? window.WarcraftAssemblyMenu.install({wine, renderer, source: surface, frame,
+        onPrepared({mode, authored}) {
+          if (!onTitlePrepared) return;
+          show('menu', mode);
+          if (mode === 'title' && authored) onTitlePrepared();
+        },
+        onUnavailable() { if (onTitlePrepared) hold('menu'); },
+      })
+      : null;
+    if (menu) window.WarcraftAssemblyMenuDebug = menu.debug;
+    const textures = window.WarcraftAssemblyMenuNavigation && ['human', 'orc'].map(faction => {
+      const image = new Image();
+      image.src = `./menu-art/${faction}-texture.png`;
+      return image;
+    });
+    window.WarcraftFullMap.install({
+      source: surface, input: surface, display, frame, container: frame,
+      independentCamera: window.WarcraftIndependentCameraPilot,
+      onPresented: onTitlePrepared ? mode => show('map', mode) : undefined,
+      onUnavailable: onTitlePrepared ? () => hold('map') : undefined,
+      acceptsInput: onTitlePrepared
+        ? () => presented === 'map' && !('warcraftTransition' in frame.dataset) : undefined,
+      modalBack: window.WarcraftAssemblyMenuNavigation?.createModalBack?.(wine),
+      modalTexture() {
+        if (!textures || !window.WarcraftUiBridge.state().inGame) return null;
+        const offset = wine.instance?.exports?.guest_to_wasm?.(0x4abb7c) >>> 0;
+        const memory = wine.memory?.buffer;
+        return offset > 0xf0 && offset < memory?.byteLength
+          ? textures[new Uint8Array(memory, offset, 1)[0] === 0 ? 0 : 1] : null;
+      },
+      setOriginalCursor(element, value) {
+        // Wine owns the canvas cursor and may hide it for software-cursor games.
+        // While BNE supplies its cursor plane, display it on a separate CSS property.
+        const property = '--warcraft-original-cursor';
+        if (value === null) {
+          element.classList.remove('warcraft-original-cursor');
+          element.style.removeProperty(property);
+        } else if (element.style.getPropertyValue(property) !== value) {
+          element.style.setProperty(property, value);
+          element.classList.add('warcraft-original-cursor');
+        }
+      },
+      subscribeFrame(callback) {
+        notifyMapFrame = callback;
+        const observe = renderer.observePresentationPublication;
+        renderer.observePresentationPublication = function(...args) {
+          observe.apply(this, args);
+          callback();
+          if (args[0]?.backend !== 'warcraft-map') menu?.onFrame(args[0]);
+        };
+      },
+    });
+    if (onTitlePrepared && menu) {
+      const gdi = wine.hostCtx.sharedGdi;
+      const upload = gdi.presentBestDxOffscreen;
+      const repaint = renderer._repaintOnce;
+      const scanout = renderer._presentDisplayCanvas;
+      let mapRepaint = false, hiddenCopyDeferred = false, restoreScanout = false;
+
+      function guestValue(address, bytes) {
+        const offset = wine.instance.exports.guest_to_wasm(address) >>> 0;
+        const buffer = wine.memory.buffer;
+        if (offset <= 0xf0 || offset + bytes > buffer.byteLength) return -1;
+        const view = new DataView(buffer);
+        if (bytes === 1) return view.getUint8(offset);
+        if (bytes === 2) return view.getUint16(offset, true);
+        return view.getUint32(offset, true);
+      }
+
+      function ownsWorld() {
+        if (!wine.running || wine.guestWorker || presented !== 'map' || frame.dataset.warcraftMode !== 'world' ||
+            'warcraftTransition' in frame.dataset || renderer._immutableCaptureRequest) return false;
+        const hwnd = wine.instance.exports.get_dx_exclusive_hwnd() >>> 0;
+        if (!hwnd || renderer._exclusiveTransform?.hwnd !== hwnd ||
+            renderer.windows[hwnd]?.wasm !== wine.instance ||
+            Object.values(renderer.windows).some(win => win.visible && !win.isChild && win.hwnd !== hwnd) ||
+            guestValue(0x4ae86c, 1) !== 1 || guestValue(0x4ae480, 2) !== 3 ||
+            guestValue(0x4b406c, 4) !== 0 || guestValue(0x4d4ae0, 2) !== surface.width ||
+            guestValue(0x4d4ae2, 2) !== surface.height) return false;
+        const bridge = window.WarcraftUiBridge;
+        const completed = bridge.completedFrame();
+        return completed?.usable && !completed.dialogRoot && completed.sceneEpoch === bridge.viewState()?.mapEpoch &&
+          completed.screen.width === surface.width && completed.screen.height === surface.height;
+      }
+
+      // The V16 canvas uses the completed indexed guest frame. Keep normal
+      // DirectDraw timing and input bookkeeping but skip uploading a second,
+      // hidden copy once the original world and our displayed owner agree.
+      gdi.presentBestDxOffscreen = function(...args) {
+        if (restoreScanout || !ownsWorld()) {
+          const uploaded = upload.apply(this, args);
+          if (uploaded) hiddenCopyDeferred = false;
+          return uploaded;
+        }
+        hiddenCopyDeferred = true;
+        notifyMapFrame();
+        return 0;
+      };
+      renderer._repaintOnce = function(capture) {
+        mapRepaint = !capture && ownsWorld();
+        if (mapRepaint) return null;
+        if (hiddenCopyDeferred && !wine._dxLockDeferred && wine.running) {
+          // A capture or a window change can request a repaint before the
+          // next guest unlock. Restore through the normal lock-aware upload.
+          restoreScanout = true;
+          wine._dxDirty = true;
+          try { wine._presentDxIfDirty(true); }
+          finally { restoreScanout = false; }
+        }
+        return repaint.call(this, capture);
+      };
+      renderer._presentDisplayCanvas = function() {
+        if (!mapRepaint) return scanout.call(this);
+        mapRepaint = false;
+        return {source: null, output: this.canvas, backend: 'warcraft-map'};
+      };
+    }
+    window.installWarcraftDuneControls();
+    window.WarcraftFullMap.installInputRouter();
+  }
+
+  window.attachWarcraftAssemblyV16 = attach;
+})();

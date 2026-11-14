@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru" data-compact>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#161513">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Warcraft II</title>
+<style>
+  html { color-scheme: dark; background: #161513; color: #f2e6ca; font: 17px system-ui, sans-serif }
+  body { margin: 0; min-height: 100dvh; display: grid; place-items: center }
+  main { width: min(87vw, 26rem); text-align: center; padding: 1rem 0 }
+  h1 { font-size: clamp(1.7rem, 6vw, 2.4rem); margin: 0 0 1rem }
+  a, button { display: inline-block; padding: .65rem 1rem; border: 1px solid #98753d;
+    border-radius: .3rem; color: #f2e6ca; background: #421e15; font: inherit; text-decoration: none }
+  [hidden] { display: none !important }
+</style>
+<main>
+  <h1>Warcraft II</h1>
+  <p id="status" role="status">Подготовка приложения…</p>
+  <a id="open" href="./game.html" hidden>Открыть игру</a>
+  <button id="retry" type="button" hidden>Повторить</button>
+  <p id="iphone" hidden>В Safari открой «Поделиться» → «На экран Домой». Открой игру с иконки, чтобы скачать её для запуска без интернета.</p>
+</main>
+<script src="./install.js" defer></script>
+</html>

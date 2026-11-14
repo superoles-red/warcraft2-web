@@ -1,0 +1,297 @@
+{
+  "schemaVersion": 1,
+  "files": [
+    {
+      "url": "nfs2se-demo/DSETUP.DLL",
+      "vfsPath": "c:\\DSETUP.DLL"
+    },
+    {
+      "url": "nfs2se-demo/EACSND.DLL",
+      "vfsPath": "c:\\EACSND.DLL"
+    },
+    {
+      "url": "nfs2se-demo/FEDATA/PC/ART/SLIDES/TITLE.QFS",
+      "vfsPath": "c:\\FEDATA\\PC\\ART\\SLIDES\\TITLE.QFS"
+    },
+    {
+      "url": "nfs2se-demo/FEDATA/PC/CONFIG/CONFIG.DAT",
+      "vfsPath": "c:\\FEDATA\\PC\\CONFIG\\CONFIG.DAT"
+    },
+    {
+      "url": "nfs2se-demo/FEDATA/PC/CONFIG/HUDCON.DAT",
+      "vfsPath": "c:\\FEDATA\\PC\\CONFIG\\HUDCON.DAT"
+    },
+    {
+      "url": "nfs2se-demo/FEDATA/PC/CONFIG/PLATCFG.DAT",
+      "vfsPath": "c:\\FEDATA\\PC\\CONFIG\\PLATCFG.DAT"
+    },
+    {
+      "url": "nfs2se-demo/FEDATA/PC/CONFIG/TEMP",
+      "vfsPath": "c:\\FEDATA\\PC\\CONFIG\\TEMP"
+    },
+    {
+      "url": "nfs2se-demo/FEDATA/PC/CONFIG/TEMP.TXT",
+      "vfsPath": "c:\\FEDATA\\PC\\CONFIG\\TEMP.TXT"
+    },
+    {
+      "url": "nfs2se-demo/FEDATA/PC/STATS/LAST.SSF",
+      "vfsPath": "c:\\FEDATA\\PC\\STATS\\LAST.SSF"
+    },
+    {
+      "url": "nfs2se-demo/FEDATA/PC/STATS/LAST.STF",
+      "vfsPath": "c:\\FEDATA\\PC\\STATS\\LAST.STF"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/AUDIO/PC/LASTROCK.ASF",
+      "vfsPath": "c:\\GAMEDATA\\AUDIO\\PC\\LASTROCK.ASF"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/AUDIO/PC/LASTROCK.MAP",
+      "vfsPath": "c:\\GAMEDATA\\AUDIO\\PC\\LASTROCK.MAP"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/AUDIO/SFX/PC/CNTENG.BNK",
+      "vfsPath": "c:\\GAMEDATA\\AUDIO\\SFX\\PC\\CNTENG.BNK"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/AUDIO/SFX/PC/GEN.BNK",
+      "vfsPath": "c:\\GAMEDATA\\AUDIO\\SFX\\PC\\GEN.BNK"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/AUDIO/SFX/PC/OTR355.BNK",
+      "vfsPath": "c:\\GAMEDATA\\AUDIO\\SFX\\PC\\OTR355.BNK"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/AUDIO/SFX/PC/RAIN.BNK",
+      "vfsPath": "c:\\GAMEDATA\\AUDIO\\SFX\\PC\\RAIN.BNK"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/AUDIO/SFX/PC/SPCHENG.BNK",
+      "vfsPath": "c:\\GAMEDATA\\AUDIO\\SFX\\PC\\SPCHENG.BNK"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/AUDIO/SFX/PC/TR355.BNK",
+      "vfsPath": "c:\\GAMEDATA\\AUDIO\\SFX\\PC\\TR355.BNK"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/AUDIO/SFX/PC/TRAMB03.BNK",
+      "vfsPath": "c:\\GAMEDATA\\AUDIO\\SFX\\PC\\TRAMB03.BNK"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/AUDIO/SFX/PC/TRAMB04.BNK",
+      "vfsPath": "c:\\GAMEDATA\\AUDIO\\SFX\\PC\\TRAMB04.BNK"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/AUDIO/SFX/PC/WTR355.BNK",
+      "vfsPath": "c:\\GAMEDATA\\AUDIO\\SFX\\PC\\WTR355.BNK"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/CARMODEL/PC/BEER.QFS",
+      "vfsPath": "c:\\GAMEDATA\\CARMODEL\\PC\\BEER.QFS"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/CARMODEL/PC/CART.QFS",
+      "vfsPath": "c:\\GAMEDATA\\CARMODEL\\PC\\CART.QFS"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/CARMODEL/PC/F355A.QFS",
+      "vfsPath": "c:\\GAMEDATA\\CARMODEL\\PC\\F355A.QFS"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/CARMODEL/PC/RUIN.QFS",
+      "vfsPath": "c:\\GAMEDATA\\CARMODEL\\PC\\RUIN.QFS"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/CARMODEL/PC/SIMTUNE.QDA",
+      "vfsPath": "c:\\GAMEDATA\\CARMODEL\\PC\\SIMTUNE.QDA"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/DASHHUD/PC/HUDDATA.VIV",
+      "vfsPath": "c:\\GAMEDATA\\DASHHUD\\PC\\HUDDATA.VIV"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/DASHHUD/PC/TEXTSIM.ENG",
+      "vfsPath": "c:\\GAMEDATA\\DASHHUD\\PC\\TEXTSIM.ENG"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/RENDER/PC/FXTEXT.FSH",
+      "vfsPath": "c:\\GAMEDATA\\RENDER\\PC\\FXTEXT.FSH"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/RENDER/PC/LASLOAD.QFS",
+      "vfsPath": "c:\\GAMEDATA\\RENDER\\PC\\LASLOAD.QFS"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/SIM/AI/PRSONAL.DAT",
+      "vfsPath": "c:\\GAMEDATA\\SIM\\AI\\PRSONAL.DAT"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/SIM/AI/PRSONAL.DES",
+      "vfsPath": "c:\\GAMEDATA\\SIM\\AI\\PRSONAL.DES"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/SIM/AICARDT/CARDATA.VIV",
+      "vfsPath": "c:\\GAMEDATA\\SIM\\AICARDT\\CARDATA.VIV"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/SIM/CARDATA/CARDATA.VIV",
+      "vfsPath": "c:\\GAMEDATA\\SIM\\CARDATA\\CARDATA.VIV"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/DATA/PC/SM04.DAT",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\DATA\\PC\\SM04.DAT"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/DATA/PC/SM04.DES",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\DATA\\PC\\SM04.DES"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/DATA/PC/TR0400.CAN",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\DATA\\PC\\TR0400.CAN"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/DATA/PC/TR0400A.CAN",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\DATA\\PC\\TR0400A.CAN"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/DATA/PC/TR0401.CAN",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\DATA\\PC\\TR0401.CAN"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/DATA/PC/TR0402.CAN",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\DATA\\PC\\TR0402.CAN"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/DATA/PC/TR0403.CAN",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\DATA\\PC\\TR0403.CAN"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/DATA/PC/TR0404.CAN",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\DATA\\PC\\TR0404.CAN"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/DATA/PC/TR0405.CAN",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\DATA\\PC\\TR0405.CAN"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/DATA/PC/TR0406.CAN",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\DATA\\PC\\TR0406.CAN"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SE/3TR04.HRZ",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SE\\3TR04.HRZ"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SE/SKY.FSH",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SE\\SKY.FSH"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SE/TR04.COL",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SE\\TR04.COL"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SE/TR04.LGT",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SE\\TR04.LGT"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SE/TR04.TRK",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SE\\TR04.TRK"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SE/TR040.QFS",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SE\\TR040.QFS"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04.ALN",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04.ALN"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04.ASP",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04.ASP"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04.PLN",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04.PLN"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04.PSP",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04.PSP"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04.QAL",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04.QAL"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04.QAS",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04.QAS"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04.QPL",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04.QPL"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04.QPS",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04.QPS"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04.SAL",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04.SAL"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04.SPD",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04.SPD"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04.SPE",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04.SPE"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04.SPL",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04.SPL"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04B.ALN",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04B.ALN"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04B.ASP",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04B.ASP"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04B.PLN",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04B.PLN"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04B.PSP",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04B.PSP"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04B.QAL",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04B.QAL"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04B.QAS",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04B.QAS"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04B.QPL",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04B.QPL"
+    },
+    {
+      "url": "nfs2se-demo/GAMEDATA/TRACKS/SPEEDS/TR04B.QPS",
+      "vfsPath": "c:\\GAMEDATA\\TRACKS\\SPEEDS\\TR04B.QPS"
+    },
+    {
+      "url": "nfs2se-demo/INSTALL.WIN",
+      "vfsPath": "c:\\INSTALL.WIN"
+    },
+    {
+      "url": "nfs2se-demo/NFS2SEA.EXE",
+      "vfsPath": "c:\\NFS2SEA.EXE"
+    },
+    {
+      "url": "nfs2se-demo/README.TXT",
+      "vfsPath": "c:\\README.TXT"
+    }
+  ]
+}
