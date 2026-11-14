@@ -10,17 +10,21 @@
     return new Uint8Array(memory, offset, 1)[0] === 0 ? 'human' : 'orc';
   }
 
-  function infoButtons(wine, layer) {
+  function guestReader(wine) {
     const translate = wine.instance?.exports?.guest_to_wasm;
     const memory = wine.memory?.buffer;
-    if (!translate || !memory || !layer.root || wine.guestWorker) return [];
-    function view(address, length) {
+    if (!translate || !memory || wine.guestWorker) return () => null;
+    return (address, length) => {
       if (address < 0x10000 || address + length > 0x100000000) return null;
       const start = translate(address) >>> 0;
       const end = translate(address + length - 1) >>> 0;
       return start > 0xf0 && end === start + length - 1 && end < memory.byteLength
         ? new DataView(memory, start, length) : null;
-    }
+    };
+  }
+
+  function infoButtons(view, layer) {
+    if (!layer?.root) return [];
     if (view(0x4bdcd0, 4)?.getUint32(0, true) !== layer.root) return [];
     const root = view(layer.root, 0x4a);
     if (root?.getUint16(0x20, true) !== 15 || root.getUint16(0x22, true) !== 0 ||
@@ -39,9 +43,38 @@
           child.getUint32(0x2e, true) !== 0x445370) continue;
       const x = child.getInt16(4, true), y = child.getInt16(6, true);
       const width = child.getInt16(8, true) - x + 1, height = child.getInt16(10, true) - y + 1;
-      if (width > 0 && height > 0) rects.push({left: layer.source.left + x, top: layer.source.top + y, width, height});
+      if (width > 0 && height > 0) rects.push({left: layer.source.left + x, top: layer.source.top + y, width, height,
+        id:child.getUint16(0x20, true), unit:child.getUint32(0x26, true)});
     }
     return node ? [] : rects;
+  }
+
+  function infoFocus(wine, layer, point, selection, g, shiftKey) {
+    const view = guestReader(wine), portraits = infoButtons(view, layer);
+    const portrait = portraits.find(({left, top, width, height}) => point.x >= left && point.x < left + width &&
+      point.y >= top && point.y < top + height);
+    const count = view(0x4bdce0, 1)?.getUint8(0);
+    if (!portrait || !count || count > 9) return null;
+
+    // 44B035 uses the painted cell for a group and the active object for one
+    // selection. Keep Shift removal and the transport's passenger action native.
+    if (count > 1 && shiftKey) return {native:true};
+    const active = count === 1 ? view(0x4bdcc8, 4)?.getUint32(0, true) : portrait.unit;
+    if (!active || !selection.selectedPointers.includes(active) ||
+        (count > 1 && selection.contextPointers[portrait.id] !== active)) return null;
+    const unit = view(active, 0x46);
+    if (!unit) return null;
+    const type = unit.getUint8(0x27);
+    if (count === 1 && portrait.unit !== active &&
+        (view(0x4cf574 + type * 4, 4)?.getUint32(0, true) & 0x400)) return {native:true};
+    // Match the original camera action's ownership check and map tile anchor.
+    const player = view(0x4acb68, 1)?.getUint8(0);
+    if (player === undefined || (unit.getUint8(0x2c) !== player && unit.getUint16(0x44, true) !== 0)) return null;
+    const tx = unit.getInt16(0x18, true), ty = unit.getInt16(0x1a, true);
+    if (tx < 0 || tx >= g.mapWidth || ty < 0 || ty >= g.mapHeight) return null;
+    const size = view(0x4cee6c + type * 4, 4);
+    const center = (tile, span) => (tile + (span && span % 2 === 0 ? 0 : .5)) * 32;
+    return {unit:active, x:center(tx, size?.getUint16(0, true)), y:center(ty, size?.getUint16(2, true))};
   }
 
   function createObjectivesCheckbox(wine, frame, surface) {
@@ -174,7 +207,8 @@
       } : undefined,
       acceptsInput: onTitlePrepared
         ? () => presented === 'map' && !('warcraftTransition' in frame.dataset) : undefined,
-      infoButtons: layer => infoButtons(wine, layer),
+      infoButtons: layer => infoButtons(guestReader(wine), layer),
+      infoFocus: (...args) => infoFocus(wine, ...args),
       modalBack: window.WarcraftAssemblyMenuNavigation?.createModalBack?.(wine),
       modalSlider: (layer, x, y) => window.WarcraftAssemblyMenuPolicy?.sliderAt(wine, layer, x, y),
       modalTexture() {

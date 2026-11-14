@@ -57,7 +57,7 @@
       }
       const title = document.createElement('h2');
       title.setAttribute('aria-label',heading);
-      title.append(print(heading,235));
+      title.append(print(heading, accept ? 272 : 235));
       const content = document.createElement('div');
       content.className = 'warcraft-session-content';
       const controls = document.createElement('div');
@@ -66,7 +66,7 @@
         if (!message) return;
         const block = document.createElement('p');
         block.setAttribute('aria-label',message);
-        const inkWidth = prose ? Math.max(190, Math.min(330, frame.clientWidth - 42)) : 225;
+        const inkWidth = prose ? Math.max(190, Math.min(330, frame.clientWidth - 42)) : accept ? 254 : 225;
         block.append(print(message,inkWidth,prose));
         parent.append(block);
       }
@@ -95,6 +95,7 @@
       controls.append(arrow);
       panel.replaceChildren(title,content,controls);
       panel.classList.toggle('mission-list',list);
+      panel.classList.toggle('session-confirmation',!!accept);
       panel.classList.toggle('session-prose',prose);
       layer.hidden = false;
       backAction = back;

@@ -21,6 +21,7 @@
   let cropX=0,cropY=0,cropKey='';
   let minimapDrag=false;
   let sliderDrag=null;
+  let portraitPress=null;
   let listeners,insetObserver,insetProbes;
   const held=new Set();
   let infoPress=false;
@@ -574,9 +575,21 @@
     if (handled) scheduleAnimation(true);
     return handled;
   }
+  function portraitAt(event) {
+    if(!infoFocus||!camera?.centerOn||telemetry.mode!=='world'||!lastRenderedGeometry)return null;
+    const point=pick(event,input.getBoundingClientRect());
+    if(point?.regionId!=='info')return null;
+    const bridge=global.WarcraftUiBridge,state=bridge.state(),selection=bridge.viewState();
+    const layer=lastScene?.foreground?.layers.find(item=>item.id===100);
+    if(!state.inputAllowed||state.dialogOpen||state.targetPending||state.buildingPending||
+      !selection?.selectionToken||!layer)return {};
+    const target=infoFocus(layer,point,selection,lastRenderedGeometry,event.shiftKey);
+    return {...target, token:selection.selectionToken, epoch:selection.mapEpoch};
+  }
   function cancelButtons() {
     minimapDrag=false;
     sliderDrag=null;
+    portraitPress=null;
     infoPress=false;
     if(!held.size)return;
     const g=nativeGeometry(),point=g?{x:g.width-1,y:g.height-1}:lastNative;
@@ -637,6 +650,34 @@
     if(routerInstalled)return;routerInstalled=true;
     const stop=event=>{event.preventDefault();event.stopImmediatePropagation();};
     const inScope=event=>event.target===input;
+    if(infoFocus&&cameraPilot){
+      const capture={capture:true,passive:false};
+      listen('pointerdown',event=>{
+        if(event.button!==0||event.isPrimary===false||!inScope(event)||portraitPress)return;
+        const focus=portraitAt(event);
+        if(!focus||focus.native)return;
+        portraitPress={id:event.pointerId,x:event.clientX,y:event.clientY,focus};
+        try{input.setPointerCapture(event.pointerId);}catch(_){}
+        input.focus({preventScroll:true});
+        stop(event);
+      },capture);
+      listen('pointermove',event=>{
+        if(event.pointerId!==portraitPress?.id)return;
+        if(Math.hypot(event.clientX-portraitPress.x,event.clientY-portraitPress.y)>8)portraitPress.cancelled=true;
+        stop(event);
+      },capture);
+      for(const name of ['pointerup','pointercancel','lostpointercapture'])listen(name,event=>{
+        const press=portraitPress;
+        if(event.pointerId!==press?.id)return;
+        portraitPress=null;
+        stop(event);
+        if(name!=='pointerup'||press.cancelled||!press.focus.unit||
+          Math.hypot(event.clientX-press.x,event.clientY-press.y)>8)return;
+        const target=portraitAt(event);
+        if(target?.unit!==press.focus.unit||target.token!==press.focus.token||target.epoch!==press.focus.epoch)return;
+        if(camera.centerOn(target.x,target.y,{useEdgeRoom:true}))scheduleAnimation(true);
+      },capture);
+    }
     // A finger does not reliably emit the compatibility mouse click on WebKit
     // when the surface owns touch gestures. Use the same minimap hit test.
     if(cameraPilot){
@@ -704,13 +745,14 @@
     },{capture:true});
     listen('contextmenu',event=>{if(visible&&inScope(event))stop(event);},{capture:true,passive:false});
   }
-  let cameraPilot,hostPresentation,modalTexture,infoButtons,touchOnly=false;
+  let cameraPilot,hostPresentation,modalTexture,infoButtons,infoFocus,touchOnly=false;
   function install(host) {
     if(installed)return;
     listeners=new AbortController();
     keepNativeUntilReady=!!host;
     cameraPilot=coherentFrames?host?.independentCamera:null;
     infoButtons=host?.infoButtons;
+    infoFocus=host?.infoFocus;
     touchOnly=global.matchMedia?.('(pointer: coarse)').matches===true;
     source=host?.source || document.getElementById('boxedwine-webgl-canvas-0');
     display=host?.display || source;
@@ -827,7 +869,7 @@
     output=context=copier=buildConfirm=commandHighlight=null;
     lastScene=lastNative=lastRenderedGeometry=lastDialogToken=selectedCommand=lastMapEpoch=displayedEndRaster=null;
     camera=modalPresenter=cursorPresenter=foregroundPainter=bootstrapPainter=nativeFramePainter=visibleFramePainter=bootstrapCanvas=null;
-    onPresented=onUnavailable=acceptsInput=modalBack=modalSlider=modalTexture=infoButtons=null;
+    onPresented=onUnavailable=acceptsInput=modalBack=modalSlider=modalTexture=infoButtons=infoFocus=null;
     bootstrapInUse=false;
     bootstrapPaletteKey=modalBackgroundInsets=null;
     modalBackgroundWidth=modalBackgroundHeight=modalBackgroundDpr=0;

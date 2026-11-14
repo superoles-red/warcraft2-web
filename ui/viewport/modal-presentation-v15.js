@@ -44,10 +44,10 @@
   function inside(r,x,y){return x>=r.left&&y>=r.top&&x<r.right&&y<r.bottom;}
   // Keep original full-width raster strips, including the frame and controls.
   // Leave six native pixels between the remaining rows.
-  const MENU_STRIPS={pause:[[0,39],[70,104],[138,211],[245,288]],
+  const MENU_STRIPS={pause:[[0,39],[70,104],[138,206],[205,247],[284,288]],
     'two-actions':[[0,70],[104,141],[190,246],[284,288]],
-    end:[[0,35],[104,140],[35,72],[190,246],[284,288]],
-    confirmation:[[0,144],[190,246],[284,288]]};
+    end:[[0,72],[104,140],[190,246],[284,288]],
+    confirmation:[[0,101],[190,246],[284,288]]};
   function contain(source,width,height,maxScale=Infinity,margin=0,left=margin,right=margin){
     const scale=Math.min(maxScale,(width-left-right)/source.width,(height-margin*2)/source.height);
     if(!positive(scale))return null;
@@ -200,12 +200,18 @@
         });
       }
       const backSource=back?.source&&freezeRect(back.source);
-      let backControl=null,okControl=null,restart=null;
+      let backControl=null,okControl=null,restart=null,confirmation=null;
+      if(ready&&compact&&back?.confirmation){
+        const t=unionTarget,scale=t.scale;
+        const button=(source,left)=>({source:freezeRect(source),
+          target:freezeRect({left:t.left+left*scale,top:t.top+115*scale,width:106*scale,height:28*scale,scale})});
+        confirmation={ok:button(back.confirmation.ok,16),cancel:button(back.confirmation.cancel,134)};
+      }
       if(ready&&back?.image?.naturalWidth&&backSource&&inside(native.source,backSource.left,backSource.top)&&
           inside(native.source,backSource.right-1,backSource.bottom-1)){
         const panel=strips?unionTarget:mapRect(native.source),scale=panel.scale;
         const oldTarget=mapRect(backSource);
-        const size=48*scale,inset=8*scale;
+        const size=(back.compact==='pause'?38:48)*scale,inset=8*scale;
         const left=panel.right-size-inset,top=panel.bottom-size-inset;
         const target=freezeRect({left,top,width:size,height:size});
         backControl={source:backSource,oldTarget,replaceButton:!compact&&!preferences,target};
@@ -230,7 +236,7 @@
         unionSource:ready?native.union:null,unionTarget:ready?unionTarget:null,
         layers:Object.freeze(ready?native.layers.map(layer=>Object.freeze({...layer,target:mapRect(layer.source)})):[]),
         strips:strips&&Object.freeze(strips),
-        objectivesCheckbox,objectivesStone,preferencesBody,ok:okControl,restart,
+        objectivesCheckbox,objectivesStone,preferencesBody,ok:okControl,restart,confirmation,
         token:ready?packet.token:null,back:backControl,
         reason:ready?null:'missing-stale-or-invalid-native-dialog'});
       return layout;
@@ -282,6 +288,15 @@
             const w=label.naturalWidth*t.scale,h=label.naturalHeight*t.scale;
             context.drawImage(label,t.left+(t.width-w)/2,t.top+(t.height-h)/2,w,h);
           }
+          if(p.confirmation){
+            const {button,labels}=options.back.confirmation;
+            for(const key of ['ok','cancel']){
+              const t=p.confirmation[key].target,label=labels[key];
+              context.drawImage(button,t.left,t.top,t.width,t.height);
+              const w=label.width*t.scale,h=label.height*t.scale;
+              context.drawImage(label,t.left+(t.width-w)/2,t.top+(t.height-h)/2,w,h);
+            }
+          }
           if(p.objectivesStone){
             const {source:s,target:t}=p.objectivesStone;
             const texture=options.panelTexture;
@@ -317,7 +332,7 @@
             const arrow=p.back.target;
             const size=arrow.width*.9;
             context.drawImage(options.back.image,arrow.left+(arrow.width-size)/2,
-              arrow.top+(arrow.height-size*.95)/2,size,size*.95);
+              arrow.top+(arrow.height-size)/2,size,size);
           }
           counters.modalFrames++;
         }else counters.waitingFrames++;
@@ -338,6 +353,12 @@
         if(inside(back.target,x,y))return {regionId:'native-modal-back',kind:'native-ui',
           x:back.source.left+back.source.width/2,y:back.source.top+back.source.height/2,token:layout.token};
         if(back.replaceButton&&inside(back.oldTarget,x,y))return {regionId:'modal-blocker',kind:'blocked'};
+      }
+      if(layout.mode==='modal'&&layout.confirmation){
+        for(const {source:s,target:t} of Object.values(layout.confirmation)){
+          if(inside(t,x,y))return {regionId:'native-modal',kind:'native-ui',
+            x:s.left+(x-t.left)*s.width/t.width,y:s.top+(y-t.top)*s.height/t.height,token:layout.token};
+        }
       }
       if(layout.mode==='modal'&&layout.ok&&inside(layout.ok.target,x,y)){
         const {source:s,target:t}=layout.ok;
@@ -363,6 +384,12 @@
       const ok=layout.ok;
       if(ok&&inside(ok.source,x,y))return {x:(ok.target.left+(x-ok.source.left)*ok.target.scale)*c.scale+c.left,
         y:(ok.target.top+(y-ok.source.top)*ok.target.scale)*c.scale+c.top,visible:true,token:layout.token};
+      if(layout.confirmation){
+        for(const {source:s,target:t} of Object.values(layout.confirmation)){
+          if(inside(s,x,y))return {x:(t.left+(x-s.left)*t.width/s.width)*c.scale+c.left,
+            y:(t.top+(y-s.top)*t.height/s.height)*c.scale+c.top,visible:true,token:layout.token};
+        }
+      }
       const strip=layout.strips?.find(region=>inside(region.source,x,y));
       if(layout.strips&&!strip)return null;
       const s=strip?.source||layout.source,t=strip?.target||layout.target;

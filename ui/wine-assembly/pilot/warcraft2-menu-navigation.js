@@ -4,6 +4,7 @@
 
   const artPath = './menu-art/';
   const art = {x: 0, y: 0, w: 640, h: 480};
+  const originalVersion = 'Warcraft II BNE v2.02';
   const nativeButton = (y, label) => ({label, source: {x: 208, y, w: 224, h: 28}});
   const submenu = (label, page = label.toLowerCase()) => ({label, page, glyph: page});
   const title = [{...nativeButton(240, 'Single Player Game'), action: 'single'}, submenu('Options')];
@@ -17,15 +18,17 @@
   const about = {
     en: {
       intro:'An unofficial web adaptation of Warcraft II: Battle.net Edition. We kept the original gameplay, campaigns and art. We adapted the controls, camera and menus for phones, removed desktop-only controls and added offline play.',
+      community:'Thanks to all the enthusiasts who create and support noncommercial projects and fan adaptations, share their knowledge, and keep the internet open and free.',
       credits:'Thanks to Blizzard Entertainment for Warcraft II, Vladimir Grichina and the Wine-Assembly contributors for the browser runtime, the StormLib contributors and J.C. Fields for the work on MPQ archives, and the FFmpeg contributors for the media tools.',
     },
     ru: {
       intro:'Неофициальная веб-адаптация Warcraft II: Battle.net Edition. Мы сохранили оригинальные правила, кампании и графику. Для телефонов обновили управление, камеру и меню, убрали лишние элементы и добавили игру без интернета.',
+      community:'Спасибо всем энтузиастам, которые создают и поддерживают некоммерческие проекты и народные адаптации, делятся знаниями и помогают сохранять интернет открытым и свободным.',
       credits:'Спасибо Blizzard Entertainment за Warcraft II, Владимиру Гричине и участникам Wine-Assembly за запуск в браузере, разработчикам StormLib и J. C. Fields за работу с архивами MPQ, а команде FFmpeg — за инструменты для обработки видео и звука.',
     },
   };
   const optionPages = {
-    options: [submenu('Story'), {label:'Sound', glyph:'sound', soundOptions:true}, submenu('Language')],
+    options: [{label:'Sound', glyph:'sound', soundOptions:true}, submenu('Language'), submenu('Story')],
     story: [nativeButton(312, 'Replay Introduction'), nativeButton(348, 'Show Credits'),
       {label: 'Replay Demo', glyph: 'replay-demo', demo: true}],
   };
@@ -55,7 +58,7 @@
   }
 
   const pictures = new WeakMap();
-  function softenedArtwork(original) {
+  function softenedArtwork(original, cleanVersion) {
     const previous = pictures.get(original);
     if (previous) return previous;
     const picture = document.createElement('canvas');
@@ -63,6 +66,7 @@
     picture.height = art.h;
     const context = picture.getContext('2d');
     context.drawImage(original, 0, 0);
+    context.drawImage(cleanVersion, 58, 458);
     context.globalCompositeOperation = 'destination-in';
     for (const axis of ['x', 'y']) {
       const length = axis === 'x' ? art.w : art.h;
@@ -96,12 +100,34 @@
   const OPTION_BUTTONS = [[1, 16, 40, 224], [2, 16, 74, 224], [3, 16, 108, 224], [-3, 16, 248, 224]];
   const END_BUTTONS = [[2, 16, 40, 224], [1, 16, 74, 224], [3, 16, 108, 224],
     [4, 16, 142, 224], [-3, 16, 248, 224]];
+  const titleInk = [247, 211, 171, 95];
+  const factionInk = {
+    human:[[252,248,240],[252,248,240],[156,156,156],[108,108,108]],
+    orc:[[244,224,32],[208,192,28],[168,140,16],[92,48,0]],
+  };
 
   function createModalBack(wine) {
     const arrow = load('orc-back');
     const russian = language()?.current?.() === 'ru';
+    let confirmationLabels;
+    const font = window.WarcraftSessionText;
+    font?.load(russian ? 'ru' : 'en').then(atlas => {
+      function factionCaption(caption, palette) {
+        const label = font.ink(caption, atlas);
+        const context = label.getContext('2d'), image = context.getImageData(0,0,label.width,label.height);
+        for (let i=0; i<image.data.length; i+=4) {
+          const shade=titleInk.indexOf(image.data[i]);
+          if (shade>=0) image.data.set(palette[shade],i);
+        }
+        context.putImageData(image,0,0);
+        return label;
+      }
+      confirmationLabels = Object.fromEntries(Object.entries(factionInk).map(([faction, palette]) =>
+        [faction,{ok:factionCaption('OK', palette), cancel:factionCaption(russian ? 'Отмена' : 'Cancel', palette)}]));
+    }).catch(console.error);
     const restartArt = Object.fromEntries(['human', 'orc'].map(faction => [faction, {
       button: load(faction + '-wide-button'),
+      shortButton: load(faction + '-short-button'),
       label: load('label-' + (russian ? 'ru-' : '') + 'restart-scenario' + (faction === 'orc' ? '-orc' : '')),
     }]));
     const waiting = Object.freeze({waiting: true});
@@ -173,9 +199,12 @@
       if (!compact || (!pause && !previous)) return required;
       if (confirmation) {
         const accept = buttons.get(-2);
-        if (!arrow.naturalWidth || buttons.size !== 2 || accept?.left !== 16 ||
+        const faction = view(0x4abb7c, 1)?.getUint8(0) === 0 ? 'human' : 'orc';
+        const {shortButton:button} = restartArt[faction];
+        if (!confirmationLabels || !button.naturalWidth || buttons.size !== 2 || accept?.left !== 16 ||
             accept.top !== 108 || accept.width !== 224) return waiting;
-        return {...previous, compact:'confirmation'};
+        return {compact:'confirmation', confirmation:{ok:sourceOf(accept), cancel:previous.source,
+          labels:confirmationLabels[faction], button}};
       }
       const expected = pause ? PAUSE_BUTTONS : options ? OPTION_BUTTONS : END_BUTTONS;
       const firstId = buttons.has(2) ? 2 : 6;
@@ -189,8 +218,9 @@
         if (!arrow.naturalWidth || !art.button.naturalWidth || !art.label.naturalWidth) return waiting;
         return {...previous, compact:'end', restart:{...art, source:sourceOf(buttons.get(firstId))}};
       }
-      if (!pause && !arrow.naturalWidth) return waiting;
-      return {...previous, compact: pause ? 'pause' : 'two-actions'};
+      if (!arrow.naturalWidth) return waiting;
+      if (pause) return {compact:'pause', source:sourceOf(buttons.get(-3)), image:arrow};
+      return {...previous, compact:'two-actions'};
     };
   }
 
@@ -212,7 +242,7 @@
         repaint();
       }).catch(console.error);
     }
-    const images = Object.fromEntries(['orc-texture', 'title-button', 'title-button-pressed', 'orc-back', 'orc-back-pressed',
+    const images = Object.fromEntries(['orc-texture', 'title-version-clean', 'title-button', 'title-button-pressed', 'orc-back', 'orc-back-pressed',
       'label-options', 'label-fast-scenario', 'label-replay-demo',
       'label-story', 'label-sound', 'label-language', 'label-english',
       'label-russian', 'label-russian-text', 'language-selected', 'language-unselected',
@@ -407,8 +437,8 @@
       if (item.resume) return startResume();
       if (item.files) return window.WarcraftFiles.open({session,showSession,back:closeSession});
       if (item.about) {
-        const {intro,credits} = about[sessionArt.locale()];
-        return showSession({heading:sessionArt.text('about'), lines:[intro,credits], back:closeSession, prose:true});
+        const {intro,credits,community} = about[sessionArt.locale()];
+        return showSession({heading:sessionArt.text('about'), lines:[originalVersion,intro,credits,community], back:closeSession, prose:true});
       }
       if (item.campaign && session) return showCampaign(item);
       if (item.soundOptions) {
@@ -466,18 +496,24 @@
       });
     }
 
-    function place(width, height) {
+    function place(width, height, count, campaign, home) {
       const portrait = width < height;
       const artTop = Math.min(16, height * .025);
       const artScale = Math.min((width - 16) / art.w, height * (portrait ? .43 : .94) / art.h);
       const picture = {x: (width - art.w * artScale) / 2, y: artTop,
         w: art.w * artScale, h: art.h * artScale};
       const back = backBox(width, height);
-      const top = portrait ? picture.y + picture.h + Math.min(56, height * .08) : height * .41;
-      const available = (portrait ? back.y : height * .90) - top;
-      const scale = Math.max(0.1, Math.min(1.6, (width - (portrait ? 28 : 44)) / 224, available / 172));
-      const w = 224 * scale, h = 28 * scale;
-      const boxes = [0, 36, 96, 132, 144].map(y => ({x: (width - w) / 2, y: top + y * scale, w, h}));
+      const positions = campaign ? [0,36,96,132] : Array.from({length:count},(_,i)=>i*36);
+      const span = positions.at(-1) + 28;
+      const panelTop = portrait ? picture.y + picture.h + Math.min(36,height*.06) : height*.41;
+      const panelBottom = portrait ? (home ? height - 14 : back.y - 8) : height*.90;
+      const scale = Math.max(.1, Math.min(1.6,
+        (width - (portrait ? 28 : 44))/224,
+        (panelBottom - panelTop) / (portrait ? span : Math.max(172,span))));
+      const w = 224*scale, h = 28*scale;
+      const centered = home ? height*5/6 : (panelTop+panelBottom)/2;
+      const top = portrait ? Math.max(panelTop,Math.min(panelBottom-span*scale,centered-span*scale/2)) : panelTop;
+      const boxes = positions.map(y => ({x:(width-w)/2,y:top+y*scale,w,h}));
       return {picture, boxes, back, scale};
     }
 
@@ -577,12 +613,13 @@
         ? originals.slice(0, 4).map((source, i) => ({label: campaignLabels[i], source, campaign:campaignIds[i]}))
         : scene.mode === 'single' ? (session ? single : [{...single[0],caption:null},single[1]]) :
           languageMenu ? languagePage() : options || titleItems;
-      const feedback = session && scene.mode === 'title' && page === 'title';
+      const home = scene.mode === 'title' && page === 'title';
+      const feedback = session && scene.mode === 'title' && page === 'options';
       advanceResume(scene.mode, originals);
       const heading = !languageMenu ? null : page === 'language-pack' ? 'russian' :
         page === 'language-download' ? 'download-language' : page === 'language-delete' ? 'delete-language' : null;
       const hasBack = parentPage[page] || scene.mode === 'single' || campaign;
-      if (!images['orc-texture'].naturalWidth ||
+      if (!images['orc-texture'].naturalWidth || !images['title-version-clean'].naturalWidth ||
           ((feedback || items.some(item => item.glyph || item.caption)) && (!images['title-button'].naturalWidth ||
             !images['title-button-pressed'].naturalWidth)) ||
           items.some(item => item.glyph && !labelImage(item)?.naturalWidth) ||
@@ -593,20 +630,18 @@
         return null;
       }
       const contentWidth = width - leftInset - rightInset;
-      const {picture, boxes: slots, back, scale} = place(contentWidth, height);
+      const {picture, boxes, back, scale} = place(contentWidth,height,items.length,campaign,home);
       picture.x += leftInset;
       back.x += leftInset;
-      for (const slot of slots) slot.x += leftInset;
-      const boxes = slots.slice(0, items.length);
-      if (!campaign) boxes.forEach((box,i) => { box.y = slots[0].y + i * 36 * scale; });
+      for (const box of boxes) box.x += leftInset;
       active = true;
       layer.hidden = false;
       paintTexture(context, images['orc-texture'], width, height);
-      drawImage(context, softenedArtwork(backdrop.canvas), picture, art);
+      drawImage(context, softenedArtwork(backdrop.canvas,images['title-version-clean']), picture, art);
       if (campaign) {
         const headings = scene.controls.filter(control => control.text).sort((a, b) => a.y - b.y);
         headings.forEach((source, i) => {
-          const slot = slots[i * 2];
+          const slot = boxes[i * 2];
           if (!slot) return;
           const nextButton = originals[i * 2];
           if (!nextButton) return;
@@ -629,8 +664,8 @@
       items.forEach((item, i) => drawButton(context, image, item, boxes[i]));
       const controls = [...items];
       if (feedback) {
-        const w = Math.min(132,contentWidth * .38), h = Math.min(44,height * .14);
-        const box = {x:leftInset + contentWidth - w - 12,y:height - h - 12,w,h};
+        const w = Math.min(124,contentWidth*.32), h = Math.min(42,height*.14);
+        const box = {x:leftInset + contentWidth-w-12,y:12,w,h};
         controls.push(feedbackItem);
         boxes.push(box);
         drawButton(context,image,feedbackItem,box);
@@ -642,7 +677,7 @@
         const arrow = images[pressed === 'Back' ? 'orc-back-pressed' : 'orc-back'];
         const size = Math.round(back.w * .9);
         drawImage(context, arrow, {x: back.x + (back.w - size) / 2,
-          y: back.y + (back.h - size * .95) / 2, w: size, h: size * .95});
+          y: back.y + (back.h - size) / 2, w:size, h:size});
       }
       presented = {picture, controls, boxes, page};
       setButtons(controls, boxes);

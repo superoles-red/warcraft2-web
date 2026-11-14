@@ -7,6 +7,7 @@
   const DOUBLE_TAP_MS = 300;
   const SELECTION_WAIT_MS = 100;
   const DOUBLE_TAP_RADIUS = 24; // CSS pixels.
+  const BOX_TAP_RADIUS = 84;
   const TILE = 32;     // Original Warcraft camera tile, in native pixels.
   const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 
@@ -341,30 +342,36 @@
       }
       const p = (event.button === 0 || event.button === 2) && point(event);
       const current=state();
-      if (!enabled || destroyed || !startAllowed(current) || (!inWorld(p)&&!canPanFromPadding(event,p,current))) {
-        if (previousTap) commitTouchTap(previousTap);
-        return false;
-      }
       const building=current.buildingPending===true;
       const touch = commandMode() && event.pointerType === 'touch';
       const startedAt = eventTime(event);
-      let doubleTap = false, restoreTouchSelection = false;
+      const previous = previousTap?.point;
+      const elapsed = startedAt - previousTap?.timeStamp;
+      const distance = p && previous ? Math.hypot(p.clientX-previous.clientX,p.clientY-previous.clientY) : Infinity;
+      const boxTap = touch && inWorld(p) && !building && !current.targetPending &&
+        elapsed >= 0 && elapsed <= DOUBLE_TAP_MS && distance <= BOX_TAP_RADIUS &&
+        sameGeometry(p.geometry,previous.geometry) && sameCanvas(p.canvasRect,previous.canvasRect);
+      // A single tap can still be finishing the original selection callback.
+      // Accept its matching second press while the real world is visible.
+      const selectionFinishing = boxTap && previousTap.committed && current.inGame===true &&
+        current.dialogOpen===false && current.trusted!==false;
+      if (!enabled || destroyed || (!startAllowed(current)&&!selectionFinishing) ||
+          (!inWorld(p)&&!canPanFromPadding(event,p,current))) {
+        if (previousTap) commitTouchTap(previousTap);
+        return false;
+      }
+      const doubleTap = boxTap && distance <= DOUBLE_TAP_RADIUS;
+      let restoreTouchSelection = false;
       if (previousTap) {
-        if (touch && !p.padding && !building && !current.targetPending) {
-          const elapsed = startedAt - previousTap.timeStamp;
-          const previous = previousTap.point;
-          doubleTap = elapsed >= 0 && elapsed <= DOUBLE_TAP_MS &&
-            sameGeometry(p.geometry,previous.geometry) && sameCanvas(p.canvasRect,previous.canvasRect) &&
-            Math.hypot(p.clientX-previous.clientX,p.clientY-previous.clientY) <= DOUBLE_TAP_RADIUS;
-        }
         restoreTouchSelection = doubleTap && previousTap.committed;
-        if (!doubleTap) commitTouchTap(previousTap);
+        if (!boxTap) commitTouchTap(previousTap);
       }
       if(commandMode())selectCommand(null);
       gesture = {id: idOf(event), button: event.button,
         mode:building?(explicitBuilding?(event.button===0?'building-aim':'building-cancel'):
           (event.button===0?'placement':'placement-cancel')):'pending', origin: p, last: p,
-        remainderX: 0, remainderY: 0, startedAt, touch, doubleTap, restoreTouchSelection,
+        remainderX: 0, remainderY: 0, startedAt, touch, doubleTap, boxTap, restoreTouchSelection,
+        precedingTap:boxTap && !doubleTap ? previousTap : null,
         targetPendingAtStart: current.targetPending===true,
         placementLastValid:building?p:null,geometry:p.geometry};
       if(building&&!explicitBuilding)moveNative(p);
@@ -393,7 +400,7 @@
       }
       if (g.mode === 'building-aim' || g.mode === 'building-cancel') return true;
       if (g.mode === 'pending' && Math.hypot(p.clientX - g.origin.clientX, p.clientY - g.origin.clientY) > THRESHOLD) {
-        g.mode = g.button === 2 || g.doubleTap ? 'box' : 'pan';
+        g.mode = g.button === 2 || g.boxTap ? 'box' : 'pan';
         if (g.mode === 'box') {
           const origin=commandMode()?point(g.origin,g.geometry,true):g.origin;
           if(!origin){cancel();return true;}
@@ -473,6 +480,7 @@
                 press(1,tap); release(1,tap);
               }
             } else {
+              if (g.precedingTap) commitTouchTap(g.precedingTap);
               deferTouchTap(tap,eventTime(event));
             }
             return true;

@@ -58,7 +58,7 @@
 
   function layout({wine, width, height, art, scenes}) {
     if (![width, height].every(value => Number.isFinite(value) && value > 0) ||
-        width < 220 || height < 260 || art?.x !== 0 || art.y !== 0 || art.w !== 640 || art.h !== 480 ||
+        width < 200 || height < 180 || art?.x !== 0 || art.y !== 0 || art.w !== 640 || art.h !== 480 ||
         !Array.isArray(scenes)) return null;
     const dialogs = scenes.filter(scene => scene.painter === DIALOG_PAINTER);
     const scene = dialogs[0];
@@ -224,14 +224,18 @@
     }
   }
 
-  function paint({wine, context, image, chart, backgroundLeft = 0, backgroundWidth = chart.width}) {
+  function prepare(wine,image,chart) {
     let state = states.get(wine);
     if (!state) {
-      state = {scratch: makeCanvas(480, 200, true).canvas};
-      states.set(wine, state);
+      state = {scratch:makeCanvas(480,200,true).canvas};
+      states.set(wine,state);
     }
-    const background = cleanArtwork(wine, image, chart, state);
-    if (!background) return false;
+    const background = cleanArtwork(wine,image,chart,state);
+    return background ? {background,scratch:state.scratch.getContext('2d')} : null;
+  }
+
+  function paint({context,image,chart,prepared,backgroundLeft=0,backgroundWidth=chart.width}) {
+    const {background,scratch} = prepared;
     const {height, art, artwork, textScale, source, targets} = chart;
     const cover = Math.max(backgroundWidth / BACKDROP.w, height / BACKDROP.h);
     const coverW = BACKDROP.w * cover, coverH = BACKDROP.h * cover;
@@ -240,7 +244,6 @@
     context.fillStyle = 'rgba(0,0,0,.8)';
     context.fillRect(backgroundLeft, 0, backgroundWidth, height);
     draw(context, background.artwork, art, artwork);
-    const scratch = state.scratch.getContext('2d');
     paintText(context, image, scratch, background, source.heading, targets.heading, textScale);
     paintText(context, image, scratch, background, source.narrative, targets.narrative);
     paintText(context, image, scratch, background, source.objectives, targets.objectives);
@@ -248,7 +251,7 @@
     return true;
   }
 
-  const api = Object.freeze({layout, paint});
+  const api = Object.freeze({layout,prepare,paint});
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WarcraftAssemblyBriefingLayout = api;
 })(globalThis);

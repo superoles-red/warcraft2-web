@@ -7,18 +7,20 @@
     options.get('camera') !== 'tile';
   const guardPixels = ahead ? 64 : 32;
   const EPSILON = 1e-7;
-  const COAST_DECAY_MS = 230;
+  const COAST_DECAY_MS = 310;
   const COAST_BRAKE_MS = 90;
   const COAST_RECOVERY_ACCELERATION = .005;
   const COAST_MAX_STALL_MS = 55;
-  const MAX_COAST_CSS_SPEED = 3.4;
-  const COAST_TRAVEL_MS = 1050;
+  const MAX_COAST_CSS_SPEED = 4.0;
+  const COAST_TRAVEL_MS = 1700;
+  const MAX_COAST_FRAME_MS = 80;
   const PAN_SUPERSEDED_MS = 160;
   const PAN_TIMEOUT_MS = 600;
   const FLICK_WINDOW_MS = 90;
-  const FLICK_MAX_PAUSE_MS = 55;
+  const FLICK_MAX_PAUSE_MS = 120;
+  const FLICK_RELEASE_GRACE_MS = 25;
   const FLICK_MIN_DISTANCE = 12;
-  const FLICK_MIN_SPEED = .35;
+  const FLICK_MIN_SPEED = .31;
   const DRAG_TRAVEL_MS = 300;
   const DRAG_LEAD_MS = 135;
   const MAX_DRAG_CSS_SPEED = 3.6;
@@ -28,29 +30,41 @@
     const last = samples.at(-1);
     if (!last || time - last.to >= FLICK_MAX_PAUSE_MS) return {x:0, y:0};
     const start = Math.max(last.to - FLICK_WINDOW_MS, samples[0].from);
-    let x = 0, y = 0;
+    const releaseStart = Math.max(start,last.to - 40);
+    let x = 0, y = 0, releaseX = 0, releaseY = 0;
     for (const sample of samples) {
-      const fraction = Math.max(0, sample.to - Math.max(sample.from,start)) / (sample.to - sample.from);
+      const portion = cutoff => Math.max(0,sample.to - Math.max(sample.from,cutoff)) / (sample.to - sample.from);
+      const fraction = portion(start), releaseFraction = portion(releaseStart);
       x += sample.dx * fraction;
       y += sample.dy * fraction;
+      releaseX += sample.dx * releaseFraction;
+      releaseY += sample.dy * releaseFraction;
     }
     const span = Math.max(8,last.to - start), distance = Math.hypot(x,y);
     const speed = distance / span;
-    const terminal = Math.hypot(last.dx,last.dy) / (last.to - last.from);
+    const terminal = Math.hypot(releaseX,releaseY) / Math.max(8,last.to - releaseStart);
     if (distance < FLICK_MIN_DISTANCE * scale || Math.min(speed,terminal) < FLICK_MIN_SPEED * scale) return {x:0,y:0};
     const limit = Math.min(speed,terminal,MAX_COAST_CSS_SPEED * scale);
-    const pause = Math.max(0,time - last.to) / FLICK_MAX_PAUSE_MS;
+    const pause = Math.max(0,time - last.to - FLICK_RELEASE_GRACE_MS) / (FLICK_MAX_PAUSE_MS - FLICK_RELEASE_GRACE_MS);
     const factor = (limit / speed) * (1 - pause ** 2) / span;
     return {x:x*factor,y:y*factor};
   }
 
-  function sampleFlick(samples, dx, dy, from, to) {
+  function sampleFlick(samples, dx, dy, from, to, scale = 1) {
     const last = samples.at(-1);
-    if (to - from > FLICK_MAX_PAUSE_MS || (last && dx * last.dx + dy * last.dy < 0)) samples.length = 0;
+    const significantTurn = last && Math.hypot(dx,dy) >= 5 * scale &&
+      dx * last.dx + dy * last.dy < -0.35 * Math.hypot(dx,dy) * Math.hypot(last.dx,last.dy);
+    if (to - from >= FLICK_MAX_PAUSE_MS || significantTurn) samples.length = 0;
     const tail = samples.at(-1);
     if (tail && tail.to === to) { tail.dx += dx; tail.dy += dy; }
     else samples.push({from:Math.min(to-8, Math.max(from,to-FLICK_WINDOW_MS)), to, dx, dy});
     while (samples[0].to <= to-FLICK_WINDOW_MS) samples.shift();
+  }
+
+  function coastStep(elapsed) {
+    const step = clamp(elapsed,0,MAX_COAST_FRAME_MS);
+    const remaining = Math.exp(-step/COAST_DECAY_MS);
+    return {distance:COAST_DECAY_MS*(1-remaining),remaining};
   }
 
   function validGeometry(g) {
@@ -297,12 +311,11 @@
         travelDeadline = null;
       }
       if (retainDragTravel && !tracking && travelDeadline !== null) {
-        const integration = -COAST_DECAY_MS * Math.expm1(-dt / COAST_DECAY_MS);
-        const decay = Math.exp(-elapsed / COAST_DECAY_MS);
-        desired.x += vx * integration;
-        desired.y += vy * integration;
-        vx *= decay;
-        vy *= decay;
+        const {distance,remaining} = coastStep(elapsed);
+        desired.x += vx * distance;
+        desired.y += vy * distance;
+        vx *= remaining;
+        vy *= remaining;
         if (Math.hypot(vx,vy) < .018 * pixelScale) vx = vy = 0;
       } else if (lookAhead && !tracking) {
         if (visible.x === d.minX && vx < 0 || visible.x === d.maxX && vx > 0) vx = 0;
@@ -442,7 +455,7 @@
         if (dy * (desired.y - visible.y) < 0) desired.y = visible.y;
       }
       time = Math.max(lastSample, time);
-      sampleFlick(motionSamples,dx,dy,lastSample,time);
+      sampleFlick(motionSamples,dx,dy,lastSample,time,pixelScale);
       const tail = motionSamples.at(-1);
       vx = tail.dx / (tail.to-tail.from);
       vy = tail.dy / (tail.to-tail.from);
@@ -489,11 +502,12 @@
       if (time - lastSample > 100) vx = vy = 0;
     }
 
-    function centerOn(x,y) {
+    function centerOn(x,y,{useEdgeRoom=false} = {}) {
       if(!dimensionsNow||!Number.isFinite(x)||!Number.isFinite(y))return false;
       stop();
       const d=dimensionsNow;
-      jump={x:clamp(x-d.w/2,0,d.realMaxX),y:clamp(y-d.h/2,0,d.realMaxY)};
+      jump={x:clamp(x-d.w/2,useEdgeRoom ? d.minX : 0,useEdgeRoom ? d.maxX : d.realMaxX),
+        y:clamp(y-d.h/2,useEdgeRoom ? d.minY : 0,useEdgeRoom ? d.maxY : d.realMaxY)};
       return true;
     }
 
@@ -509,7 +523,7 @@
     };
   }
 
-  const api = { createCamera, ahead, guardPixels, coastMs: COAST_DECAY_MS, flickVelocity, sampleFlick };
+  const api = { createCamera, ahead, guardPixels, coastStep, flickVelocity, sampleFlick };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WarcraftSmoothCamera = api;
 })(typeof window !== 'undefined' ? window : globalThis);

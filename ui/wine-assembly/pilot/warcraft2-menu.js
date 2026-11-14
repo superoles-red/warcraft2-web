@@ -364,13 +364,21 @@
         backTarget: dialogBack?.naturalWidth && global.WarcraftAssemblyMenuNavigation.backBox(contentWidth, rect.height)};
       const nativeDialog = authored && bottomButtonLayout(wine, current, contentWidth, rect.height) ||
         (current.mode === 'menu' && global.WarcraftAssemblyDialogLayout?.layout(params));
-      const briefing = current.mode === 'briefing' && global.WarcraftAssemblyBriefingLayout?.layout(params);
+      const briefingLayout = global.WarcraftAssemblyBriefingLayout;
+      const briefing = current.mode === 'briefing' && briefingLayout?.layout(params);
+      const preparedBriefing = briefing && briefingLayout.prepare(wine,image,briefing);
+      if (authored && current.mode === 'briefing' && !preparedBriefing) {
+        // The briefing can be registered before the original bitmap and its
+        // palette agree. Keep the last authored frame until they do.
+        waitForScene();
+        return;
+      }
       if (authored && current.mode === 'menu' && !nativeDialog &&
           current.scenes.some(scene => scene.handler && global.WarcraftAssemblyDialogLayout?.isAdaptedHandler?.(scene.handler))) {
         waitForScene();
         return;
       }
-      let next = briefing || nativeDialog || layout(contentWidth, rect.height, current.mode, current.art,
+      const next = (preparedBriefing && briefing) || nativeDialog || layout(contentWidth, rect.height, current.mode, current.art,
         backdrop ? current.controls : []);
       if (!next) {
         hide();
@@ -419,17 +427,16 @@
         context.save();
         try {
           context.translate(left, 0);
-          const briefingPaint = briefing &&
-            global.WarcraftAssemblyBriefingLayout.paint({wine, context, image, chart: briefing,
+          if (preparedBriefing) {
+            briefingLayout.paint({context,image,chart:briefing,prepared:preparedBriefing,
               backgroundLeft:-left,backgroundWidth:rect.width});
-          if (!briefingPaint) {
-            if (briefing) next = layout(contentWidth, rect.height, current.mode, current.art);
+          } else {
             if (backdrop && next.artwork) drawTitle(context, image, next, backdrop, scratch);
             else for (const region of next.paintRegions || next.regions) {
               if (region.decoration === 'back') {
                 const {x, y, w, h} = region.target;
-                const size = Math.round(w * .9), height = size * .95;
-                context.drawImage(dialogBack, x + (w - size) / 2, y + (h - height) / 2, size, height);
+                const size = Math.round(w*.9);
+                context.drawImage(dialogBack,x+(w-size)/2,y+(h-size)/2,size,size);
               } else if (region.texture && dialogTexture?.naturalWidth) {
                 const {x,y,w,h} = region.target;
                 context.save();

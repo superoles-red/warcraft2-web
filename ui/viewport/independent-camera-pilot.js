@@ -10,7 +10,7 @@
     : referenceViewport);
   const explicitBuilding = document.currentScript?.hasAttribute('data-build-confirm') === true;
   const tile = 32;
-  const {coastMs, sampleFlick, flickVelocity} = window.WarcraftSmoothCamera;
+  const {coastStep, sampleFlick, flickVelocity} = window.WarcraftSmoothCamera;
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
   function coversWorld(g) {
@@ -70,15 +70,11 @@
       const elapsed = time - lastFrame;
       lastFrame = time;
       if (!dragging && (velocityX || velocityY)) {
-        if (elapsed > 100) stop();
-        else {
-          const decay = Math.exp(-Math.max(0, elapsed) / coastMs);
-          const travel = coastMs * (1 - decay);
-          setPosition(position.x + velocityX * travel, position.y + velocityY * travel);
-          velocityX *= decay;
-          velocityY *= decay;
-          if (Math.hypot(velocityX, velocityY) < .015 * pixelScale) stop();
-        }
+        const {distance,remaining} = coastStep(elapsed);
+        setPosition(position.x + velocityX * distance, position.y + velocityY * distance);
+        velocityX *= remaining;
+        velocityY *= remaining;
+        if (Math.hypot(velocityX,velocityY) < .015 * pixelScale) stop();
       }
       return {left: g.world.left + position.x, top: g.world.top + position.y,
         width: w, height: h, extraX: worldWidth - w, extraY: worldHeight - h,
@@ -98,7 +94,7 @@
         if (!independent) return fallback.move(dx, dy, time);
         if (!dragging || (!dx && !dy)) return;
         time = Math.max(lastMove,time);
-        sampleFlick(motion,dx,dy,lastMove,time);
+        sampleFlick(motion,dx,dy,lastMove,time,pixelScale);
         lastMove = time;
         setPosition(position.x + dx, position.y + dy);
       },
@@ -111,12 +107,12 @@
         velocityY = velocity.y;
         lastFrame = time;
       },
-      centerOn(x, y) {
-        if (!independent) return fallback.centerOn(x,y);
-        if (!view) return false;
+      centerOn(x,y, options) {
+        if (!independent) return fallback.centerOn(x,y,options);
+        if (!view || !Number.isFinite(x) || !Number.isFinite(y)) return false;
         stop();
-        setPosition(clamp(x - view.w / 2, 0, 1024 - view.w),
-          clamp(y - view.h / 2, 0, 1024 - view.h));
+        if (options?.useEdgeRoom) setPosition(x-view.w/2,y-view.h/2);
+        else setPosition(clamp(x-view.w/2,0,1024-view.w),clamp(y-view.h/2,0,1024-view.h));
         return true;
       },
       stop() { if (independent) stop(); else fallback.stop(); },

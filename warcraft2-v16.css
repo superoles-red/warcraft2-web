@@ -216,6 +216,12 @@
 .warcraft-session-panel p { margin: 0; padding: 0; }
 .session-prose .warcraft-session-content { gap: 14px; }
 .session-prose p img { margin-left: 0; }
+.session-confirmation h2 img,
+.session-confirmation p img {
+  zoom: 1.24;
+  max-width: 100%;
+}
+.session-confirmation .warcraft-session-footer .warcraft-session-choice img { zoom: 1.16; }
 .warcraft-session-content {
   overflow-y: auto;
   overscroll-behavior: contain;
