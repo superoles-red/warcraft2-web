@@ -2,7 +2,7 @@
 (function (global) {
   'use strict';
   const MAX_QUEUE = 256, TIMEOUT_MS = 750, POLL_MS = 4;
-  const BARRIER = Object.freeze({barrier: true});
+  const BARRIER = Object.freeze({request: 'clearEmpty'});
 
   function createInputFence(options) {
     const {send, readAck} = options || {};
@@ -28,6 +28,7 @@
     }
     function fail(reason, cause) {
       queue.length = 0;
+      if (waiting) waiting.cancelled = true;
       const first = !faulted;
       faulted = true;
       if (first) {
@@ -61,8 +62,10 @@
         if (!faulted && clock() - waiting.started >= TIMEOUT_MS) fail('timeout');
         const ack = readAck();
         if (validAck(ack) && ack.sequence !== waiting.baseline) {
+          const {accepted, cancelled} = waiting;
           waiting = null;
           faulted = false;
+          if (accepted && !cancelled && ack.status === 1) queue.unshift(accepted);
           drain();
           return;
         }
@@ -75,15 +78,20 @@
       try {
         while (queue.length && !waiting && !faulted && !destroyed) {
           const action = queue.shift();
-          if (action === BARRIER) {
+          if (action.request) {
             let baseline, started;
             try {
               const ack = readAck();
               baseline = validSequence(ack?.sequence) ? ack.sequence : 0;
               started = clock();
             } catch (error) { fail('ack-failed', error); break; }
-            waiting = {baseline, started, epoch: ++epoch};
-            try { send({type: 'clearEmpty'}); }
+            waiting = {baseline, started, epoch: ++epoch, accepted:action.accepted};
+            try {
+              if (send({type:action.request}) === false) {
+                waiting = null;
+                continue;
+              }
+            }
             catch (error) { fail('send-failed', error); }
             pollLater();
           } else {
@@ -96,8 +104,7 @@
     function enqueue(action) {
       if (destroyed || faulted) return false;
       const last = queue[queue.length - 1];
-      if (action !== BARRIER && action?.type === 'move' &&
-          last !== BARRIER && last?.type === 'move') queue[queue.length - 1] = action;
+      if (action?.type === 'move' && last?.type === 'move') queue[queue.length - 1] = action;
       else {
         if (queue.length >= MAX_QUEUE) { fail('queue-overflow'); return false; }
         queue.push(action);
@@ -114,9 +121,10 @@
         catch (error) { fail('send-failed', error); return false; }
         finally { draining = false; drain(); }
       },
-      barrier() { return enqueue(BARRIER); },
+      barrier(request, accepted) { return enqueue(request ? {request, accepted} : BARRIER); },
       cancel() {
         queue.length = 0; cancelCount++;
+        if (waiting) waiting.cancelled = true;
         // Keep the current request and poll alive. New inputs wait behind its
         // ACK, so an old completion cannot release a newer barrier by mistake.
       },

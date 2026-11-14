@@ -41,8 +41,6 @@
   position: absolute;
   left: var(--warcraft-hud-left, 4px);
   bottom: var(--warcraft-hud-bottom, 4px);
-  width: 106px;
-  min-height: 44px;
   z-index: 3;
   padding: 0;
   border: 0;

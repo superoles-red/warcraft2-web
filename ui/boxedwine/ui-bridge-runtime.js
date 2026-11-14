@@ -9,7 +9,7 @@
   const coherentFrames=new URLSearchParams(location.search).get('bridge')==='v16';
   const cameraAhead=coherentFrames&&global.WarcraftSmoothCamera.ahead;
   const scans = {clear:64, clearEmpty:62, left:65, right:66,
-    up:modernInput?63:67, down:68, poll:69};
+    up:modernInput?63:67, down:68, poll:69, rememberTouch:70, restoreTouch:71};
   let root = null;
   let transport = null;
   const guestPath = path => root + '/home/username/.wine/drive_c/' + path;
@@ -148,6 +148,19 @@
         sendAction({type:'button',args:[0,0,x,y]});
       return;
     }
+    if(action.type==='touchOrder'){
+      const current=snapshot();
+      const map=global.WarcraftFullMap;
+      const p=map?.globalToWorld(action.x,action.y),world=nativeGeometry()?.world;
+      if(!p || !world || !map.cameraSettled || !current.inputAllowed || current.targetPending ||
+        action.epoch!==backend.viewState()?.mapEpoch)return;
+      const x=Math.floor(p.x),y=Math.floor(p.y);
+      if(x<world.left || x>=world.right || y<world.top || y>=world.bottom)return;
+      sendAction({type:'move',args:[x,y]});
+      if(sendAction({type:'button',args:[1,1,x,y]})!==false)
+        sendAction({type:'button',args:[0,1,x,y]});
+      return;
+    }
     if(action.type==='worldMove'||action.type==='worldButton'){
       const button=action.type==='worldButton',args=action.args;
       const p=global.WarcraftFullMap?.globalToWorld(args[button?2:0],args[button?3:1]);
@@ -162,7 +175,9 @@
       if(mouseButton(down?1:0,button,actualPoint.x,actualPoint.y)===false)return false;
       if(down)actualHeld.add(button);else actualHeld.delete(button);
     } else if(action.type==='clearEmpty') {
-      if(!command('clearEmpty'))throw new Error('Native empty-click query unavailable');
+      return command('clearEmpty');
+    } else if(action.type==='restoreTouch') {
+      return command('restoreTouch');
     } else if(action.type==='command')command(action.args[0]);
     else if(action.type==='pan') {
       if(cameraAhead)return sendCamera(action);
@@ -178,7 +193,11 @@
     global.WarcraftInputFence.createInputFence({send:sendAction,readAck:emptyClickAck,
       schedule:(fn,ms)=>global.setTimeout(fn,ms),clearSchedule:id=>global.clearTimeout(id),now:()=>Date.now(),
       onError:error=>{if(telemetry.errors.length<8)telemetry.errors.push(String(error));releaseActualButtons();}}):null;
-  const directDispatch=action=>action.type==='emptyBarrier'?fence.barrier():fence?fence.dispatch(action):sendAction(action);
+  function directDispatch(action) {
+    if(action.type==='emptyBarrier')return fence.barrier();
+    if(action.type==='touchOrder')return fence.barrier('restoreTouch',action);
+    return fence?fence.dispatch(action):sendAction(action);
+  }
   const cameraGate=enhancedInput?global.WarcraftCameraInputGateV15.createGate({
     send:directDispatch,ready:()=>{
       const map=global.WarcraftFullMap;
@@ -215,6 +234,12 @@
   }
   const backend = {
     state:snapshot,
+    retainsTouchSelection:()=>coherentFrames&&transport?.touchSelection===true,
+    rememberTouchSelection:()=>dispatch({type:'command',args:['rememberTouch']}),
+    orderWithTouchSelection(x,y) {
+      const p=global.WarcraftFullMap?.worldToGlobal(x,y),epoch=backend.viewState()?.mapEpoch;
+      if(p&&epoch)dispatch({type:'touchOrder',x:p.x,y:p.y,epoch});
+    },
     nativeMove:(x,y) => dispatch({type:'move',args:[x,y]}),
     nativeButton:(down,button,x,y) => dispatch({type:'button',args:[down,button,x,y]}),
     ...(enhancedInput?{

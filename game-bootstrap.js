@@ -29,7 +29,7 @@ async function watchForGameUpdate() {
     const title = document.querySelector('#screen-canvas-stack[data-warcraft-presentation="menu"]' +
       '[data-warcraft-mode="title"]:not([data-warcraft-transition])');
     return !document.hidden && title?.querySelector('#warcraft-menu-navigation:not([hidden]) ' +
-      'button[aria-label="Single Player Game"]:not([disabled])') &&
+      'button[data-warcraft-menu-action="single"]:not([disabled])') &&
       !document.getElementById('war2-launch-cover') && !document.querySelector('#wc2-movie-pilot:not([hidden])');
   }
 
@@ -84,7 +84,8 @@ async function watchForGameUpdate() {
     });
     observer.observe(document.body, {childList: true});
     observer.observe(frame, {attributes: true, childList: true, subtree: true,
-      attributeFilter: ['data-warcraft-presentation', 'data-warcraft-mode', 'data-warcraft-transition', 'hidden', 'disabled']});
+      attributeFilter: ['data-warcraft-presentation', 'data-warcraft-mode', 'data-warcraft-transition',
+        'data-warcraft-menu-action', 'hidden', 'disabled']});
     observeMovie();
     restartAtMenu();
   }

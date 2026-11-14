@@ -134,6 +134,25 @@
           width:region.target.width,height:region.target.height}:region.target};
     });
   }
+  const infoHeights = new WeakMap();
+  function createInfoRegion(layer, {left, top, scale, right, bottom}) {
+    placement(left, top, scale);
+    if (!layer?.captured || !layer.nativeVisible || right <= left || bottom <= top) return null;
+    const {left: nativeLeft, top: nativeTop, width} = sourceRect(layer.source);
+    let visibleHeight = infoHeights.get(layer);
+    if (visibleHeight === undefined) {
+      // The native foreground mask identifies padding below the last drawn icon or line.
+      let last = layer.alpha.length - 1;
+      while (last >= 0 && !layer.alpha[last]) last--;
+      visibleHeight = Math.ceil((last + 1) / width);
+      infoHeights.set(layer, visibleHeight);
+    }
+    if (!visibleHeight) return null;
+    const fitted = Math.min(scale, (right - left) / width, (bottom - top) / visibleHeight);
+    return {id: 'info', source: {left: nativeLeft, top: nativeTop, width, height: visibleHeight},
+      layer: 'native-hud-100', visualSource: {left: 0, top: 0, width, height: visibleHeight},
+      target: {left, top, width: width * fitted, height: visibleHeight * fitted}};
+  }
   /** V14: exactly one header row. Caller supplies native alpha bounds through
    * field.compact.source. Reserved native widths stabilize short counters without
    * cropping larger ones. All glyph pixels and source coordinates remain native.
@@ -266,6 +285,6 @@
     return {regions, bounds, scale};
   }
   return Object.freeze({createCommandRegions,createMinimapRegion,createHeaderLayout,
-    createV14CommandRegions,createCompactHeaderLayout,createStatusLayout,createGapStatusLayout,
+    createV14CommandRegions,createInfoRegion,createCompactHeaderLayout,createStatusLayout,createGapStatusLayout,
     nativeMinimap:MINIMAP,nativeMenu:MENU,nativeMenuButton:MENU_BUTTON});
 });

@@ -18,6 +18,13 @@
   const gameState = 0x4ae480;
   const inGame = 0x4ae86c;
   const titleScene = 0x4d495c;
+  const audioCode = 0x48f430;
+  const volumeRequest = 0x8000;
+  const volumeOptions = Object.freeze({
+    sound: {address: 0x4d6b48, registry: 'sfx'},
+    music: {address: 0x4d6b44, registry: 'music'},
+  });
+  const volumeKey = 'HKCU\\Software\\Blizzard Entertainment\\Warcraft II BNE';
   const installed = new WeakMap();
   const controls = Object.freeze({
     single: Object.freeze({id: 1, x: 320, y: 254}),
@@ -75,6 +82,10 @@
     [0x441bf0, '6a 01 e8 29 e9 fd ff 83 c4 04 e8 81 e8 fd ff 66 3d 04 00 75 34'],
     [0x44f4ec, `38 1d ce 49 4b 00 74 0e e8 b7 34 fe ff 66 89 1d 5c 3f 4b 00
       eb 05 e8 49 b4 fd ff e8 74 0f fd ff 66 3d 04 00 74 da`],
+    // Sound dialog's original music updater and adjacent DWORD settings records.
+    [0x4409e0, 'a1 5c db 4b 00 85 c0 0f 84 d3 00 00 00 8b 44 24 04 8b 40 0c 85 c0 74 75 8b 04 85 84 0c 49 00'],
+    [0x4aa56c, `70 a9 4a 00 00 00 00 00 64 00 00 00 4b 00 00 00 44 6b 4d 00 01 00 00 00
+      6c a9 4a 00 00 00 00 00 64 00 00 00 64 00 00 00 48 6b 4d 00`],
   ].map(([address, bytes]) => ({address, bytes: hex(bytes)}));
 
   // Entry: return false from the idle timer. The remaining now-unreachable
@@ -101,7 +112,18 @@
     66 83 3d e4 58 49 00 fe 75 1e 66 c7 05 e4 58 49 00 58 02
     66 83 3d 80 e4 4a 00 04 75 0b e8 2e 00 00 00
     b8 01 00 00 00 c3 31 c0 c3`);
-  const callDemoWrapper = hex('e8 9f d4 fe ff');
+  // The title's original tick now accepts volume pairs in the idle counter
+  // (bit 15, 7 bits per channel). Validate the pair and native scene, store
+  // both original settings, and apply music through the Sound dialog's
+  // original cdecl helper only on change. Then run the existing demo gate.
+  const audioWrapper = hex(`
+    0f b7 05 e4 58 49 00 66 3d 00 80 72 57 66 3d 64 b2 77 51
+    66 c7 05 e4 58 49 00 58 02 89 c2 83 e0 7f 83 f8 64 77 3e
+    c1 ea 07 83 e2 7f 83 fa 64 77 33 66 83 3d 80 e4 4a 00 04
+    75 29 80 3d 6c e8 4a 00 00 75 20 a3 48 6b 4d 00 3b 15 44
+    6b 4d 00 74 13 89 15 44 6b 4d 00 68 38 6b 4d 00 e8 4f 15
+    fb ff 83 c4 04 e9 77 91 f8 ff`);
+  const callTitleTick = hex('e8 bf 42 06 00');
   // This tail of the disabled idle routine has no live original entry.
   // Only Cancel calls it. A nonlocal provider keeps the entire original wait.
   // The local receive function always returns 0. Clear the callback and
@@ -163,6 +185,7 @@
       mapped.set(original.address, await mapRange(wine, original.address, original.bytes.length));
     }
     const returnCodeOffset = await mapRange(wine, fastReturnCode, fastReturnCodeLength);
+    const audioCodeOffset = await mapRange(wine, audioCode, audioWrapper.length);
     const requestOffset = await mapRange(wine, idleCounter, 2);
     const memory = new Uint8Array(wine.memory.buffer);
     for (const {address, bytes} of originals) {
@@ -171,13 +194,18 @@
         throw new Error('Исходный код главного меню BNE не совпал по адресу 0x' + address.toString(16));
       }
     }
-    if (memory.subarray(returnCodeOffset, returnCodeOffset + fastReturnCodeLength).some(byte => byte !== 0)) {
-      throw new Error('Исходный код главного меню BNE не совпал по адресу 0x' + fastReturnCode.toString(16));
+    for (const [address, start, length] of [
+      [fastReturnCode, returnCodeOffset, fastReturnCodeLength], [audioCode, audioCodeOffset, audioWrapper.length],
+    ]) {
+      if (memory.subarray(start, start + length).some(byte => byte !== 0)) {
+        throw new Error('Исходный код главного меню BNE не совпал по адресу 0x' + address.toString(16));
+      }
     }
     // No writes until all guards agree. The caller installs before first run.
     memory.set(entryAndWrapper, mapped.get(idle));
     memory.set(demoWrapper, mapped.get(demoTick));
-    memory.set(callDemoWrapper, mapped.get(menuTickCall));
+    memory.set(audioWrapper, audioCodeOffset);
+    memory.set(callTitleTick, mapped.get(menuTickCall));
     memory.set(callWrapper, mapped.get(0x42aa6f) + menuLoadCall - 0x42aa6f);
     memory.set(cancelWaitWrapper, mapped.get(fastCancelWrapper));
     for (const {offset, bytes} of fastReturnWrappers) memory.set(bytes, returnCodeOffset + offset);
@@ -197,23 +225,60 @@
     return isMapped(start, end, length, memory.byteLength) ? new DataView(memory, start, length) : null;
   }
 
-  function requestDemo(wine) {
+  function titleCounter(wine) {
     const offset = installed.get(wine);
-    if (offset === undefined || !wine.running || wine.guestWorker) return false;
+    if (offset === undefined || !wine.running || wine.guestWorker) return null;
     if (nativeView(wine, gameState, 2)?.getUint16(0, true) !== 4 ||
-        nativeView(wine, inGame, 1)?.getUint8(0) !== 0) return false;
+        nativeView(wine, inGame, 1)?.getUint8(0) !== 0) return null;
     const scene = nativeView(wine, titleScene, 20);
-    if (!scene?.getUint8(0) || scene.getUint32(16, true) !== 0x405400) return false;
+    if (!scene?.getUint8(0) || scene.getUint32(16, true) !== 0x405400) return null;
     const dialog = nativeView(wine, scene.getUint32(12, true), 0x2e);
-    if (dialog?.getUint16(0x20, true) !== 5 || dialog.getUint32(0x2a, true) !== 0x42adc0) return false;
-    const request = new DataView(wine.memory.buffer, offset, 2);
+    if (dialog?.getUint16(0x20, true) !== 5 || dialog.getUint32(0x2a, true) !== 0x42adc0) return null;
+    return new DataView(wine.memory.buffer, offset, 2);
+  }
+
+  function requestDemo(wine) {
+    const request = titleCounter(wine);
+    if (!request) return false;
     const counter = request.getUint16(0, true);
     if (counter !== 600 && counter !== 0) return false;
     request.setUint16(0, demoRequest, true);
     return true;
   }
 
-  const api = Object.freeze({install, requestDemo, controls});
+  const validVolume = value => Number.isInteger(value) && value >= 0 && value <= 100;
+  function readVolumePair(wine, counter) {
+    const request = counter.getUint16(0, true);
+    const queued = request >= volumeRequest && request <= 0xb264;
+    const sound = queued ? request & 127 : nativeView(wine, volumeOptions.sound.address, 4)?.getInt32(0, true);
+    const music = queued ? (request >> 7) & 127 : nativeView(wine, volumeOptions.music.address, 4)?.getInt32(0, true);
+    return validVolume(sound) && validVolume(music) ? {sound, music} : null;
+  }
+
+  function volume(wine, channel) {
+    const counter = titleCounter(wine);
+    return counter && readVolumePair(wine, counter)?.[channel];
+  }
+
+  function setVolume(wine, channel, value) {
+    if (!Object.hasOwn(volumeOptions, channel) || !validVolume(value)) return false;
+    const counter = titleCounter(wine);
+    if (!counter) return false;
+    const request = counter.getUint16(0, true);
+    if (request !== 0 && request !== 600 && (request < volumeRequest || request > 0xb264)) return false;
+    const pair = readVolumePair(wine, counter);
+    if (!pair) return false;
+    if (pair[channel] === value) return true;
+    const storage = global.StorageImports;
+    if (!storage?.setRegValue) return false;
+    try { storage.setRegValue(volumeKey, volumeOptions[channel].registry, 4, value); }
+    catch (_) { return false; }
+    pair[channel] = value;
+    counter.setUint16(0, volumeRequest | pair.sound | (pair.music << 7), true);
+    return true;
+  }
+
+  const api = Object.freeze({install, requestDemo, controls, volume, setVolume});
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WarcraftAssemblyMenuPolicy = api;
 })(globalThis);

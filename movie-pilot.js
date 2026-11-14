@@ -53,8 +53,12 @@
     if (compact?.manifest && typeof compact.blob === 'function') {
       const movies = mediaList(compact.manifest.media);
       if (movies.size !== names.length) throw new Error('В компактных данных отсутствуют ролики Warcraft II');
+      const language = window.WarcraftCompactLanguage?.pack;
+      for (const [id, record] of mediaList(language?.audio?.movies ?? [])) movies.set(id, record);
       return {movies, compact: true, source: async record => {
-        const blob = await compact.blob(record.path, 'video/mp4');
+        const blob = record.path.startsWith('ru/')
+          ? new Blob([await language.read(record)], {type: 'video/mp4'})
+          : await compact.blob(record.path, 'video/mp4');
         if (!(blob instanceof Blob) || blob.size !== record.bytes) throw new Error('Неверный файл ролика Warcraft II');
         return {url: URL.createObjectURL(blob), object: true};
       }};

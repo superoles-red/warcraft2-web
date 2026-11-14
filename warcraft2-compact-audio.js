@@ -102,9 +102,9 @@
     return pcm;
   }
 
-  function create({manifest, readAsset, decode = decodeAac}) {
+  function create({manifest, readAsset, decode = decodeAac, maxWaves = 256}) {
     if (typeof readAsset !== 'function' || !Array.isArray(manifest?.audioWaves) ||
-        manifest.audioWaves.length === 0 || manifest.audioWaves.length > 256) {
+        manifest.audioWaves.length === 0 || manifest.audioWaves.length > maxWaves) {
       throw new Error('Нет таблицы дорожек компактного Install.mpq');
     }
     let offset = manifest.audioWaves[0].offset;
@@ -112,7 +112,7 @@
     const start = offset;
     const paths = new Set();
     const waves = manifest.audioWaves.map(wave => {
-      if (wave.offset !== offset || !/^(?:music|speech)\/\d+\.m4a$/.test(wave.path) ||
+      if (wave.offset !== offset || !/^(?:music|speech|ru)\/\d+\.m4a$/.test(wave.path) ||
           paths.has(wave.path) || !/^[a-f0-9]{64}$/.test(wave.sha256) ||
           !Number.isSafeInteger(wave.sampleFrames) || wave.sampleFrames <= 0 ||
           !Number.isSafeInteger(wave.sampleRate) || wave.sampleRate < 8000 || wave.sampleRate > 48000 ||

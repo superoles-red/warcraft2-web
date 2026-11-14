@@ -4,7 +4,8 @@
   const WORLD = Object.freeze({left: 176, top: 16, right: 624, bottom: 464});
   const ORIGINAL_GEOMETRY = Object.freeze({width:640, height:480, world:WORLD});
   const THRESHOLD = 8; // CSS pixels, as in Dune's MapGestures.
-  const DOUBLE_TAP_MS = 280;
+  const DOUBLE_TAP_MS = 300;
+  const SELECTION_WAIT_MS = 100;
   const DOUBLE_TAP_RADIUS = 24; // CSS pixels.
   const TILE = 32;     // Original Warcraft camera tile, in native pixels.
   const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
@@ -33,6 +34,7 @@
     const state = () => api.state() || {};
     const commandMode = () => api.commandSelectionV15 === true;
     const explicitBuilding = api.explicitBuildingPlacement === true;
+    const retainedTouchSelection = () => api.retainsTouchSelection?.() === true;
     const now = () => typeof api.now === 'function' ? api.now() : Date.now();
     const eventTime = event => Number.isFinite(event?.timeStamp) ? event.timeStamp : now();
     const token = value => typeof value === 'string' && value.length ? value :
@@ -277,26 +279,30 @@
     }
     function clearTouchTap() {
       const tap = touchTap;
-      if (tap) (api.clearSchedule || global.clearTimeout)(tap.timer);
+      if (tap?.timer != null) (api.clearSchedule || global.clearTimeout)(tap.timer);
       touchTap = null;
       return tap;
     }
     function commitTouchTap(tap) {
+      if (tap.committed) return;
       const current = state();
       if (!enabled || destroyed || !startAllowed(current) || current.targetPending || current.buildingPending) return;
       const p = point(tap.point, geometry(), false);
       if (!inWorld(p) || !sameGeometry(p.geometry,tap.point.geometry) || !sameCanvas(p.canvasRect,tap.point.canvasRect)) return;
+      if (tap.retainSelection) api.rememberTouchSelection();
       press(0,p); release(0,p);
       api.clearSelectionIfEmpty?.();
+      tap.committed = true;
     }
     function deferTouchTap(p, timeStamp) {
-      const tap = {point:p,timeStamp,timer:null};
+      const tap = {point:p,timeStamp,timer:null,retainSelection:retainedTouchSelection(),committed:false};
       touchTap = tap;
       tap.timer = (api.schedule || global.setTimeout)(() => {
         if (touchTap !== tap) return;
-        touchTap = null;
+        tap.timer = null;
+        if (!tap.retainSelection) touchTap = null;
         commitTouchTap(tap);
-      }, DOUBLE_TAP_MS);
+      }, tap.retainSelection ? SELECTION_WAIT_MS : DOUBLE_TAP_MS);
     }
     function cancel() {
       // Only release buttons owned by this adapter, never unrelated native UI input.
@@ -338,7 +344,7 @@
       const current=state(),building=current.buildingPending===true;
       const touch = commandMode() && event.pointerType === 'touch';
       const startedAt = eventTime(event);
-      let doubleTap = false;
+      let doubleTap = false, restoreTouchSelection = false;
       if (previousTap) {
         if (touch && !building && !current.targetPending) {
           const elapsed = startedAt - previousTap.timeStamp;
@@ -347,13 +353,15 @@
             sameGeometry(p.geometry,previous.geometry) && sameCanvas(p.canvasRect,previous.canvasRect) &&
             Math.hypot(p.clientX-previous.clientX,p.clientY-previous.clientY) <= DOUBLE_TAP_RADIUS;
         }
+        restoreTouchSelection = doubleTap && previousTap.committed;
         if (!doubleTap) commitTouchTap(previousTap);
       }
       if(commandMode())selectCommand(null);
       gesture = {id: idOf(event), button: event.button,
         mode:building?(explicitBuilding?(event.button===0?'building-aim':'building-cancel'):
           (event.button===0?'placement':'placement-cancel')):'pending', origin: p, last: p,
-        remainderX: 0, remainderY: 0, startedAt, touch, doubleTap, targetPendingAtStart: current.targetPending===true,
+        remainderX: 0, remainderY: 0, startedAt, touch, doubleTap, restoreTouchSelection,
+        targetPendingAtStart: current.targetPending===true,
         placementLastValid:building?p:null,geometry:p.geometry};
       if(building&&!explicitBuilding)moveNative(p);
       // Deliberately no native button down until tap release or right-box threshold.
@@ -453,7 +461,12 @@
             if (g.targetPendingAtStart || current.targetPending) {
               if (current.targetPending) { press(0,tap); release(0,tap); }
             } else if (g.doubleTap) {
-              press(1,tap); release(1,tap);
+              if (g.restoreTouchSelection) {
+                const {x,y} = nativePoint(tap);
+                api.orderWithTouchSelection(x,y);
+              } else {
+                press(1,tap); release(1,tap);
+              }
             } else {
               deferTouchTap(tap,eventTime(event));
             }

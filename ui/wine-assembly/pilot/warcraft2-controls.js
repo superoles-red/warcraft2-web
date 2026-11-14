@@ -68,7 +68,7 @@
 
     function command(scan) {
       const current = target();
-      if (!current || !Number.isInteger(scan) || scan < 62 || scan > 69) return false;
+      if (!current || !Number.isInteger(scan) || scan < 62 || scan > 71) return false;
       const hwnd = current.window.hwnd >>> 0;
       if (!hwnd) return false;
       // Use the same FIFO as the preceding native button release. A separate
@@ -82,7 +82,7 @@
       return true;
     }
 
-    return Object.freeze({move, button, command});
+    return Object.freeze({move, button, command, touchSelection:true});
   }
 
   const api = Object.freeze({create});

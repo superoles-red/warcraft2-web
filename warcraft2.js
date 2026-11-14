@@ -125,7 +125,7 @@
     const movieMedia = window.WarcraftCompactPlan ? await moviePilot.prepareMedia() : undefined;
     const installBridge = window.WarcraftAssemblyV16 && await window.WarcraftAssemblyV16.prepare({
       ...viewport,
-      sha256: 'b1ad7afb19b88bd680536ba7ebbfcf9cf39e76127b25aa65990f4bf9fd57a311',
+      sha256: '78d6dddcd58d4672f380ae12a26337fbf1fe230030b9c38f80b4f43ebfc2971b',
       ...moviePilot?.bridge,
     });
 

@@ -4,6 +4,7 @@
   let installed=false,routerInstalled=false,chart=null,visible=false,lastNative=null;
   let output,source,display,input,frame,container,copier,context,foregroundPainter,buildConfirm;
   let hudInsets=Object.freeze({left:4,right:4,bottom:4});
+  const confirmSize=Object.freeze({width:116,height:48});
   let keepNativeUntilReady=false;
   const foregroundVersion=new URLSearchParams(location.search).get('bridge');
   const enhancedHud=['v15','v16'].includes(foregroundVersion);
@@ -97,39 +98,50 @@
     const {left,right,bottom}=hudInsets,rightEdge=width-right;
     const hudWidth=rightEdge-left,lowerEdge=height-bottom;
     const scale=Math.min(1.25,Math.max(1,Math.min((hudWidth+8)/720,height/600)));
-    const gridTop=lowerEdge-140*scale;
-    const commands=global.WarcraftHudLayout.createV14CommandRegions(packet,
-      {left,top:gridTop,scale,separateCancel:true,cancelRight:rightEdge,cancelBottom:lowerEdge});
-    if(!commands)return null;
     const fields=foreground.fields.map(field=>({id:field.id,
       compact:{source:global.WarcraftHudForeground.contentRect(field)||field.source}}));
+    const compact=cameraPilot&&hudWidth<480;
     const header=global.WarcraftHudLayout.createCompactHeaderLayout(fields,
-      {width:hudWidth,left,top:2,menuScale:1.8,resourceScale:1.5,gap:6,reserveWidth:42});
+      {width:hudWidth,left,top:2,menuScale:cameraPilot?1.9:1.8,resourceScale:cameraPilot?1.65:1.5,
+        gap:compact?3:6,reserveWidth:compact?40:42});
+    const sideTop=header.height+8;
+    // Reserve the whole native 166px command bank plus the 54px Cancel.
+    const commandScale=cameraPilot?Math.max(.1,Math.min(scale*1.1,(hudWidth-6)/220,(lowerEdge-sideTop)/140)):scale;
+    const gridTop=lowerEdge-140*commandScale;
+    const commands=global.WarcraftHudLayout.createV14CommandRegions(packet,
+      {left,top:gridTop,scale:commandScale,separateCancel:true,cancelRight:rightEdge,cancelBottom:lowerEdge});
+    if(!commands)return null;
     const result=header.regions.map(region=>{
       if(region.id==='menu')return region;
       const id=Number(region.id.split('-')[1]),native=foreground.layers.find(f=>f.id===id);
       return {...region,layer:'native-hud-'+id,visualSource:{left:region.source.left-native.source.left,
         top:region.source.top-native.source.top,width:region.source.width,height:region.source.height}};
     });
-    const sideTop=header.height+8,miniSize=Math.max(144,128*scale);
+    const miniSize=Math.max(144,128*scale);
     result.push(global.WarcraftHudLayout.createMinimapRegion({left:rightEdge-miniSize,top:sideTop,size:miniSize}));
     const info=foreground.layers.find(layer=>layer.id===100);
     if(state.selectionCount>0&&info?.captured&&info.nativeVisible){
       const commandsTop=Math.min(lowerEdge,...commands.filter(region=>!region.isCancel).map(region=>region.target.top),
-        state.buildingPending?lowerEdge-44:lowerEdge);
-      const infoScale=bottom>4?Math.min(scale,(commandsTop-4-sideTop)/info.source.height):scale;
-      if(infoScale>0)result.push({id:'info',source:info.source,layer:'native-hud-100',
-        visualSource:{left:0,top:0,width:info.source.width,height:info.source.height},
-        target:{left,top:sideTop,width:info.source.width*infoScale,height:info.source.height*infoScale}});
+        state.buildingPending?lowerEdge-confirmSize.height:lowerEdge);
+      if(cameraPilot){
+        const region=global.WarcraftHudLayout.createInfoRegion(info,
+          {left,top:sideTop,scale:scale*1.15,right:rightEdge-miniSize-6,bottom:commandsTop-4});
+        if(region)result.push(region);
+      }else{
+        result.push({id:'info',source:info.source,layer:'native-hud-100',
+          visualSource:{left:0,top:0,width:info.source.width,height:info.source.height},
+          target:{left,top:sideTop,width:info.source.width*scale,height:info.source.height*scale}});
+      }
     }
     const status=foreground.layers.find(layer=>layer.id===101);
     const statusFields=global.WarcraftHudForeground.statusFields(status);
     if(cameraPilot){
-      const cancel={left:rightEdge-54*scale,top:lowerEdge-46*scale,width:54*scale,height:46*scale};
+      const cancel={left:rightEdge-54*commandScale,top:lowerEdge-46*commandScale,
+        width:54*commandScale,height:46*commandScale};
       const statusCommands=state.buildingPending?[...commands,
-        {target:{left,top:lowerEdge-44,width:106,height:44}}]:commands;
+        {target:{left,top:lowerEdge-confirmSize.height,...confirmSize}}]:commands;
       const statusLayout=global.WarcraftHudLayout.createGapStatusLayout(statusFields,
-        {width,height,commands:statusCommands,cancel,bottomMargin:bottom,leftMargin:left,rightMargin:right,
+        {width,height,commands:statusCommands,cancel,bottomMargin:bottom,leftMargin:left,rightMargin:right,maxScale:1.38,
           obstacles:result.map(region=>region.target)});
       result.push(...statusLayout.regions);
     }else if(statusFields.length){
@@ -616,6 +628,8 @@
     if(cameraPilot?.explicitBuilding){
       buildConfirm=document.createElement('button');
       buildConfirm.type='button';buildConfirm.id='warcraft-build-confirm';
+      buildConfirm.style.width=confirmSize.width+'px';
+      buildConfirm.style.minHeight=confirmSize.height+'px';
       buildConfirm.setAttribute('aria-label','Подтвердить строительство');
       buildConfirm.hidden=buildConfirm.disabled=true;
       const art=document.createElement('img');
