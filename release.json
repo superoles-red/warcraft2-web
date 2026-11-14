@@ -1,5 +1,5 @@
 {
-  "version": "2afa8bb04a90fa5068414d46",
+  "version": "d9fbec8775e1bfe71a614a8d",
   "files": [
     {
       "path": "LICENSE.wine-assembly",
@@ -108,8 +108,8 @@
     },
     {
       "path": "game.html",
-      "bytes": 184358,
-      "sha256": "f4f6dca62cd318ff8b1d3decb4b831f7f31c86b22d6bd94ba8e62292afe042cf"
+      "bytes": 184447,
+      "sha256": "cc7fc4abca2dd8efede8df33fe3147db87e7294c7709847ef23c1ddf960008aa"
     },
     {
       "path": "host.js",
@@ -813,13 +813,13 @@
     },
     {
       "path": "ui/boxedwine/dune-controls.js",
-      "bytes": 29849,
-      "sha256": "58c1667c47cb04eaee00791add907b01290b7cc4011cf013cbc0e61d2b0838e1"
+      "bytes": 33270,
+      "sha256": "dc90c97664bfbedbd15ff3e95145edfebe84b69fafa6c0cdad7a48a4c63d6524"
     },
     {
       "path": "ui/boxedwine/full-map-runtime.js",
-      "bytes": 39580,
-      "sha256": "2be544245c08e7308ef3202541999679f7390469b79508b06768bfa5ac49d50a"
+      "bytes": 40824,
+      "sha256": "1a130ceba86de5a4dc8c865b72c7cd047311a5eed39f2d6e7ce2877aceaa51d8"
     },
     {
       "path": "ui/boxedwine/input-fence.js",
@@ -853,8 +853,8 @@
     },
     {
       "path": "ui/viewport/hud-layout.js",
-      "bytes": 15898,
-      "sha256": "fba539a604b2ed3bf5bf561cdffca8661e1f361050d64f55205af8df5497b8a7"
+      "bytes": 15989,
+      "sha256": "5d3dc8b41c6579e5b0359e7941d75a32a90a2bdbd48347083ecc5789216e2bf9"
     },
     {
       "path": "ui/viewport/independent-camera-pilot.js",
@@ -948,8 +948,8 @@
     },
     {
       "path": "warcraft2-v16.css",
-      "bytes": 2644,
-      "sha256": "8db4b6a103830cb791c578f83ba1fd4d0bad60bdceab5cf96bf8a944731fbf5e"
+      "bytes": 3151,
+      "sha256": "213f86cab9c28be20e5ab04a793faa85a3abdbdda4f7c3bf9c8dd65f7ad91fc9"
     },
     {
       "path": "warcraft2.js",
@@ -957,5 +957,5 @@
       "sha256": "129460b35ffe37800ad7fd15d6afaf21ad7441449ca925623382dbd770d6c4e1"
     }
   ],
-  "workerSha256": "8d108473d1ee18c07110409970981c029b9a986ddf5cc26855bedd6c7113d41c"
+  "workerSha256": "b0952756043bfac3dc29ce84a0b7b01f550bf154e96b92f8cd669c89df2678d9"
 }

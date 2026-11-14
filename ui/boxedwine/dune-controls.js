@@ -4,6 +4,8 @@
   const WORLD = Object.freeze({left: 176, top: 16, right: 624, bottom: 464});
   const ORIGINAL_GEOMETRY = Object.freeze({width:640, height:480, world:WORLD});
   const THRESHOLD = 8; // CSS pixels, as in Dune's MapGestures.
+  const DOUBLE_TAP_MS = 280;
+  const DOUBLE_TAP_RADIUS = 24; // CSS pixels.
   const TILE = 32;     // Original Warcraft camera tile, in native pixels.
   const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 
@@ -24,6 +26,7 @@
     if (typeof getCanvasRect !== 'function') throw new TypeError('Missing canvas geometry callback');
     let enabled = false, destroyed = false, gesture = null;
     let selectedCommand = null, commandTimer = null, buildingTarget = null;
+    let touchTap = null;
     const held = new Set();
     let lastNative = {x: 320, y: 240};
     const idOf = event => event.id ?? event.pointerId ?? 'mouse';
@@ -52,6 +55,7 @@
     }
     const sameGeometry = (a,b) => a && b && a.width === b.width && a.height === b.height &&
       ['left','top','right','bottom'].every(key => a.world[key] === b.world[key]);
+    const sameCanvas = (a,b) => ['left','top','width','height'].every(key => a[key] === b[key]);
     function point(event, nativeGeometry = geometry(), captured = !!gesture) {
       let rect;
       try { rect = getCanvasRect(); } catch (_) { return null; }
@@ -271,8 +275,32 @@
       try { (api.nativeWorldButton || api.nativeButton)(0, button, n.x, n.y); }
       finally { held.delete(button); }
     }
+    function clearTouchTap() {
+      const tap = touchTap;
+      if (tap) (api.clearSchedule || global.clearTimeout)(tap.timer);
+      touchTap = null;
+      return tap;
+    }
+    function commitTouchTap(tap) {
+      const current = state();
+      if (!enabled || destroyed || !startAllowed(current) || current.targetPending || current.buildingPending) return;
+      const p = point(tap.point, geometry(), false);
+      if (!inWorld(p) || !sameGeometry(p.geometry,tap.point.geometry) || !sameCanvas(p.canvasRect,tap.point.canvasRect)) return;
+      press(0,p); release(0,p);
+      api.clearSelectionIfEmpty?.();
+    }
+    function deferTouchTap(p, timeStamp) {
+      const tap = {point:p,timeStamp,timer:null};
+      touchTap = tap;
+      tap.timer = (api.schedule || global.setTimeout)(() => {
+        if (touchTap !== tap) return;
+        touchTap = null;
+        commitTouchTap(tap);
+      }, DOUBLE_TAP_MS);
+    }
     function cancel() {
       // Only release buttons owned by this adapter, never unrelated native UI input.
+      clearTouchTap();
       finishGesture({clearCommand:true});
     }
     function cancelPlacementProjection() {
@@ -294,19 +322,38 @@
     function down(event) {
       if(commandMode())api.stopPan?.();
       if (gesture) return event.button === 0 || event.button === 2;
+      const previousTap = clearTouchTap();
       if(commandMode() && event.button===0 && enabled && !destroyed) {
         const command=rawCommand(event);
-        if(command!==null)return downCommand(event,startAllowed(state())?command:{blocked:true});
+        if(command!==null){
+          if (previousTap) commitTouchTap(previousTap);
+          return downCommand(event,startAllowed(state())?command:{blocked:true});
+        }
       }
-      if (!canStart(event)) return false;
-      const p = point(event);
-      if (!p || !inWorld(p)) return false;
+      const p = (event.button === 0 || event.button === 2) && point(event);
+      if (!enabled || destroyed || !startAllowed(state()) || !inWorld(p)) {
+        if (previousTap) commitTouchTap(previousTap);
+        return false;
+      }
       const current=state(),building=current.buildingPending===true;
+      const touch = commandMode() && event.pointerType === 'touch';
+      const startedAt = eventTime(event);
+      let doubleTap = false;
+      if (previousTap) {
+        if (touch && !building && !current.targetPending) {
+          const elapsed = startedAt - previousTap.timeStamp;
+          const previous = previousTap.point;
+          doubleTap = elapsed >= 0 && elapsed <= DOUBLE_TAP_MS &&
+            sameGeometry(p.geometry,previous.geometry) && sameCanvas(p.canvasRect,previous.canvasRect) &&
+            Math.hypot(p.clientX-previous.clientX,p.clientY-previous.clientY) <= DOUBLE_TAP_RADIUS;
+        }
+        if (!doubleTap) commitTouchTap(previousTap);
+      }
       if(commandMode())selectCommand(null);
       gesture = {id: idOf(event), button: event.button,
         mode:building?(explicitBuilding?(event.button===0?'building-aim':'building-cancel'):
           (event.button===0?'placement':'placement-cancel')):'pending', origin: p, last: p,
-        remainderX: 0, remainderY: 0, startedAt: eventTime(event), targetPendingAtStart: current.targetPending===true,
+        remainderX: 0, remainderY: 0, startedAt, touch, doubleTap, targetPendingAtStart: current.targetPending===true,
         placementLastValid:building?p:null,geometry:p.geometry};
       if(building&&!explicitBuilding)moveNative(p);
       // Deliberately no native button down until tap release or right-box threshold.
@@ -323,7 +370,7 @@
       if (!sameGeometry(geometry(),g.geometry)) { cancel(); return true; }
       const p = point(event,g.geometry);
       if (!p) { cancel(); return true; }
-      if (!['left','top','width','height'].every(key => p.canvasRect[key] === g.origin.canvasRect[key])) {
+      if (!sameCanvas(p.canvasRect,g.origin.canvasRect)) {
         cancel(); return true;
       }
       // Gate only gesture START. Our native box changes the game's input callback
@@ -334,7 +381,7 @@
       }
       if (g.mode === 'building-aim' || g.mode === 'building-cancel') return true;
       if (g.mode === 'pending' && Math.hypot(p.clientX - g.origin.clientX, p.clientY - g.origin.clientY) > THRESHOLD) {
-        g.mode = g.button === 0 ? 'pan' : 'box';
+        g.mode = g.button === 2 || g.doubleTap ? 'box' : 'pan';
         if (g.mode === 'box') {
           const origin=commandMode()?point(g.origin,g.geometry,true):g.origin;
           if(!origin){cancel();return true;}
@@ -400,6 +447,18 @@
           const last=g.placementLastValid||g.origin;press(1,last);release(1,last);
         }else if (g.mode === 'pending') {
           const current = state();
+          if (g.touch) {
+            const tap = point(event,g.geometry,false);
+            if (!inWorld(tap) || !startAllowed(current) || current.buildingPending) return true;
+            if (g.targetPendingAtStart || current.targetPending) {
+              if (current.targetPending) { press(0,tap); release(0,tap); }
+            } else if (g.doubleTap) {
+              press(1,tap); release(1,tap);
+            } else {
+              deferTouchTap(tap,eventTime(event));
+            }
+            return true;
+          }
           // Original handlers select, order and confirm/cancel targets. A separate
           // native hit query adds the requested empty-map clear to ordinary taps.
           const button = g.button === 2 ? 1 : 0;
@@ -470,8 +529,12 @@
         }
         return; // Keep compatibility mousedown; desktop handling lives below.
       }
+      if (api.commandSelectionV15===true && capture && event.pointerType==='touch' && event.pointerId!==capture.id) {
+        stop(event);
+        return;
+      }
       if (inScope(event) && machine.down({...event, clientX: event.clientX, clientY: event.clientY,
-        pointerId: event.pointerId, button: 0, timeStamp:event.timeStamp})) {
+        pointerId: event.pointerId, pointerType:event.pointerType, button: 0, timeStamp:event.timeStamp})) {
         stop(event); focus(); capture = {target: event.target, id: event.pointerId};
         try { event.target.setPointerCapture?.(event.pointerId); } catch (_) {}
       }
@@ -481,7 +544,8 @@
     });
     listen('pointerup', event => {
       if (event.pointerType !== 'mouse' && machine.up({...event, clientX: event.clientX,
-        clientY: event.clientY, pointerId: event.pointerId, button: 0, timeStamp:event.timeStamp})) { stop(event); releaseCapture(); }
+        clientY: event.clientY, pointerId: event.pointerId, pointerType:event.pointerType,
+        button: 0, timeStamp:event.timeStamp})) { stop(event); releaseCapture(); }
     });
     listen('mousedown', event => {
       if ((machine.active || inScope(event)) && machine.down(event)) { stop(event); focus(); }
@@ -489,6 +553,7 @@
     listen('mousemove', event => { if (machine.move(event)) stop(event); });
     listen('mouseup', event => { if (machine.up(event)) { stop(event); releaseCapture(); } });
     listen('pointercancel', event => {
+      if(api.commandSelectionV15===true && capture && event.pointerType==='touch' && event.pointerId!==capture.id)return;
       if(machine.debug().mode.startsWith('hud-')){cancelOwnedV15();stop(event);return;}
       if(['placement','placement-cancel'].includes(machine.debug().mode)){
         api.cancelPendingInput?.();machine.cancelPlacementProjection();stop(event);releaseCapture();return;
@@ -500,6 +565,7 @@
       // A normal mouse pointerup can release capture before compatibility mouseup.
       // Our explicit release can also precede an asynchronous placement ack.
       if(!capture && api.commandSelectionV15===true)return;
+      if(api.commandSelectionV15===true && event.pointerType==='touch' && event.pointerId!==capture.id)return;
       if (machine.active && (event.pointerType !== 'mouse' || event.buttons)) {
         if(api.commandSelectionV15===true || machine.debug().mode.startsWith('hud-'))cancelOwnedV15();
         else{machine.cancel();api.cancelPendingInput?.();}
@@ -519,8 +585,13 @@
     };
     listen('keydown',event=>{if(event.key==='Escape'||event.code==='Escape')cancelPlacement();});
     listen('resize',cancelPlacement);
+    const overGame = event => machine.enabled && inScope(event) && api.state()?.inGame && !api.allowNativeTouch?.();
     listen('contextmenu', event => {
-      if (machine.active || machine.canStart({clientX: event.clientX, clientY: event.clientY, button: 2})) stop(event);
+      if (machine.active || (inScope(event) && machine.canStart({clientX: event.clientX, clientY: event.clientY, button: 2})) ||
+          (api.commandSelectionV15===true && overGame(event))) stop(event);
+    });
+    for (const name of ['gesturestart','gesturechange','gestureend']) listen(name,event => {
+      if (api.commandSelectionV15===true && machine.enabled && (capture || overGame(event))) stop(event);
     });
     return {
       enable() { machine.enable(); return this; },

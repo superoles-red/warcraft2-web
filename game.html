@@ -9,6 +9,7 @@ html.warcraft-page body,
 html.warcraft-page body #screen-wrap { background: #161513; }
 
 .warcraft-page #shell { margin: 0; border: 0; background: transparent; }
+.warcraft-page #touch-controls .tc-key { display: none !important; }
 .warcraft-page :is(#titlebar, #toolbar, #log, #debug-peek, #taskbar, #start-menu,
   #desktop-icons, #readme-window, #build-stamp, #compile-status,
   #browser-fullscreen-consent, #wine-launch-window) { display: none !important; }
@@ -28,7 +29,7 @@ html.warcraft-page body #screen-wrap { background: #161513; }
   pointer-events: none;
 }
 </style>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <script>
     // A direct link (?app=ID) is a request for that program, not for the
     // desktop. Marked here, before the first paint, so CSS can keep the

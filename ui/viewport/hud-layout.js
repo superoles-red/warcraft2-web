@@ -198,9 +198,10 @@
    * above the bank if that admits a more legible scale.
    */
   function createGapStatusLayout(fields, {width, height, commands = [], cancel,
-      obstacles = [], margin = 4, gap = 6, maxScale = 1.25} = {}) {
+      obstacles = [], margin = 4, bottomMargin = margin, gap = 6, maxScale = 1.25} = {}) {
     if (!positive(width) || !positive(height) || !positive(maxScale) ||
         !Number.isFinite(margin) || margin < 0 || !Number.isFinite(gap) || gap < 0 ||
+        !Number.isFinite(bottomMargin) || bottomMargin < 0 ||
         !Array.isArray(fields) || !Array.isArray(commands) || !Array.isArray(obstacles))
       throw new TypeError('Invalid tooltip geometry');
     if (!fields.length) return {regions: [], bounds: null};
@@ -215,7 +216,7 @@
     const bank = commands.filter(command => !command.isCancel).map(command => command.target);
     const left = Math.max(margin, ...bank.map(rect => rect.left + rect.width + gap));
     const right = Math.min(width - margin, cancel ? cancel.left - gap : width - margin);
-    const bottom = height - margin;
+    const bottom = height - bottomMargin;
     const fullWidth = width - 2 * margin;
     const rowGap = rows.length > 1 ? Math.min(3, gap) : 0;
     const heightOfRows = rows.reduce((total, row) => total + row.height, 0);
