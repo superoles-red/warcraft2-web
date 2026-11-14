@@ -33,7 +33,7 @@
     const u16=n=>d.getUint16(n,true),s16=n=>d.getInt16(n,true),u32=n=>d.getUint32(n,true);
     const flags=u32(12),screen={width:u16(16),height:u16(18)},size=d.byteLength;
     if(size<256+1024||size>134016||u32(4)!==size||(flags&~15)||u16(20)!==6||u16(22)!==32||
-       u32(44)!==256||u32(56)||u32(60)||screen.width<640||screen.width>1920||
+       u32(44)!==256||u32(56)>=290||u32(60)||screen.width<640||screen.width>1920||
        screen.height<480||screen.height>1536||screen.width%32||screen.height%32)
       throw new RangeError('Invalid WHF3 header');
     const view=new Uint8Array(d.buffer,d.byteOffset,size),layers=[];let offset=256;
@@ -48,7 +48,9 @@
         throw new RangeError('Invalid WHF3 layer');
       const alpha=view.subarray(offset,offset+n),indices=view.subarray(offset+n,offset+2*n);
       if(alpha.some(a=>a!==0&&a!==255))throw new RangeError('Invalid native opacity mask');
-      layers.push(Object.freeze({id,captured:!!(f&1),nativeVisible:!!(f&2),root:u32(p+24),callbackCount:u32(p+28),
+      const hotkeyStart=id===101?u32(56):0;
+      if(hotkeyStart>=width)throw new RangeError('Invalid WHF3 status shortcut boundary');
+      layers.push(Object.freeze({id,captured:!!(f&1),nativeVisible:!!(f&2),root:u32(p+24),callbackCount:u32(p+28),hotkeyStart,
         source:Object.freeze({left,top,right,bottom,width,height}),alpha,indices}));
       offset+=n*2;
     }
@@ -74,10 +76,10 @@
   }
   // WHF3 layer 101 captures the original textbox.bin scene. Description
   // occupies child 5; food child 4 shares the first native cost slot.
-  function statusFields(layer) {
+  function statusFields(layer, {hideHotkeys=false}={}) {
     if (layer?.id !== 101 || !layer.captured || !layer.nativeVisible) return [];
     const slots = [
-      ['description', 'status-text', 0, 290],
+      ['description', 'status-text', 0, (hideHotkeys && layer.hotkeyStart) || 290],
       ['cost', 'status-cost-1', 290, 52],
       ['cost', 'status-cost-2', 342, 52],
       ['cost', 'status-cost-3', 394, 52],

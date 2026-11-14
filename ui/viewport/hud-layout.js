@@ -7,6 +7,10 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
   const MINIMAP = Object.freeze({left:24, top:26, width:128, height:128});
+  const INFO_SIZE = 176;
+  const COMMAND_BANK_WIDTH = 166;
+  const COMMAND_BANK_HEIGHT = 140;
+  const CANCEL_WIDTH = 54;
   const MENU = Object.freeze({left:0, top:0, width:88, height:24});
   // Original rez/stat_f10.bin child2; inclusive4,2..83,21. Keep V13 MENU above.
   const MENU_BUTTON = Object.freeze({left:4, top:2, width:80, height:20});
@@ -153,6 +157,28 @@
       layer: 'native-hud-100', visualSource: {left: 0, top: 0, width, height: visibleHeight},
       target: {left, top, width: width * fitted, height: visibleHeight * fitted}};
   }
+  function createAdaptiveBoardLayout(layer, {left, right, top, bottom, scale, portrait}) {
+    placement(left, top, scale);
+    if (![right, bottom].every(Number.isFinite) || right <= left || bottom <= top)
+      throw new TypeError('Invalid bounds for adaptive HUD');
+    const gap = Math.min(8, (right - left) / 8, (bottom - top) / 8);
+    const width = right - left - gap;
+    const height = bottom - top - gap;
+    // Reserve the full native info panel so selection changes never move
+    // the minimap or the commands. Tall displays can spend more on buttons.
+    const panelWidth = Math.min(width / 2, INFO_SIZE * scale * 1.15);
+    const preferred = scale * (portrait ? 1.42 : 1.2);
+    const panelShare = Math.min(panelWidth, height * .42);
+    const commandScale = Math.min(preferred,
+      width / (COMMAND_BANK_WIDTH + CANCEL_WIDTH),
+      (height - panelShare) / COMMAND_BANK_HEIGHT);
+    const gridTop = bottom - COMMAND_BANK_HEIGHT * commandScale;
+    const size = Math.min(panelWidth, gridTop - top - gap);
+    const minimap = createMinimapRegion({left:right - size, top, size});
+    const info = createInfoRegion(layer, {left, top, scale:size / INFO_SIZE,
+      right:left + size, bottom:top + size});
+    return {info, minimap, commandScale, gridTop};
+  }
   /** V14: exactly one header row. Caller supplies native alpha bounds through
    * field.compact.source. Reserved native widths stabilize short counters without
    * cropping larger ones. All glyph pixels and source coordinates remain native.
@@ -218,7 +244,7 @@
    */
   function createGapStatusLayout(fields, {width, height, commands = [], cancel,
       obstacles = [], margin = 4, bottomMargin = margin, leftMargin = margin,
-      rightMargin = margin, gap = 6, maxScale = 1.25} = {}) {
+      rightMargin = margin, gap = 6, maxScale = 1.25, preferAbove = false} = {}) {
     if (!positive(width) || !positive(height) || !positive(maxScale) ||
         !Number.isFinite(margin) || margin < 0 || !Number.isFinite(gap) || gap < 0 ||
         ![bottomMargin,leftMargin,rightMargin].every(value=>Number.isFinite(value)&&value>=0) ||
@@ -252,7 +278,8 @@
     }
     let box = {left, right, bottom};
     let scale = fit(right - left, bottom - clearFrom(left, right, bottom));
-    if (scale < Math.min(1, maxScale)) {
+    const readableGapScale = preferAbove ? Math.max(1, maxScale * .85) : 1;
+    if (scale < Math.min(readableGapScale, maxScale)) {
       const above = Math.min(bottom, ...bank.map(rect => rect.top - gap),
         cancel ? cancel.top - gap : bottom);
       const alternate = fit(fullWidth, above - clearFrom(leftMargin, rightEdge, above));
@@ -285,6 +312,6 @@
     return {regions, bounds, scale};
   }
   return Object.freeze({createCommandRegions,createMinimapRegion,createHeaderLayout,
-    createV14CommandRegions,createInfoRegion,createCompactHeaderLayout,createStatusLayout,createGapStatusLayout,
+    createV14CommandRegions,createInfoRegion,createAdaptiveBoardLayout,createCompactHeaderLayout,createStatusLayout,createGapStatusLayout,
     nativeMinimap:MINIMAP,nativeMenu:MENU,nativeMenuButton:MENU_BUTTON});
 });

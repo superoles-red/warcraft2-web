@@ -6,6 +6,7 @@
   const LOAD_GAME = 0x43c540;
   const CUSTOM_GAME_SETUP = 0x415640;
   const SELECT_SCENARIO = 0x41d490;
+  const SOUND_OPTIONS = 0x441940;
   const AUTHORED_OR_CINEMATIC = new Set([0x42adc0, 0x441cc0, 0x434a00, 0x429580, 0x42fef0]);
 
   // Both native dialogs register a 640x480 root with a transparent upper
@@ -31,6 +32,7 @@
       [224, 274, 144, 22], [224, 324, 144, 22], [404, 274, 180, 22]]],
     [SELECT_SCENARIO, [[22, 136, 320, 112], [138, 36, 204, 22],
       [138, 84, 204, 22], [22, 110, 240, 22]]],
+    [SOUND_OPTIONS, [[32, 40, 212, 18], [32, 88, 212, 18]]],
   ]);
 
   // Original Custom Game Setup children. Rectangles are absolute native

@@ -20,6 +20,7 @@
   let cropX=0,cropY=0,cropKey='';
   let minimapDrag=false;
   const held=new Set();
+  let infoPress=false;
   const telemetry={frames:0,mode:'native',errors:[],geometry:null};
   const nativeButton=button=>button===2?1:button===1?2:button;
   const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
@@ -105,9 +106,11 @@
       {width:hudWidth,left,top:2,menuScale:cameraPilot?1.9:1.8,resourceScale:cameraPilot?1.65:1.5,
         gap:compact?3:6,reserveWidth:compact?40:42});
     const sideTop=header.height+8;
-    // Reserve the whole native 166px command bank plus the 54px Cancel.
-    const commandScale=cameraPilot?Math.max(.1,Math.min(scale*1.1,(hudWidth-6)/220,(lowerEdge-sideTop)/140)):scale;
-    const gridTop=lowerEdge-140*commandScale;
+    const info=foreground.layers.find(layer=>layer.id===100);
+    const board=cameraPilot&&global.WarcraftHudLayout.createAdaptiveBoardLayout(
+      state.selectionCount>0?info:null,{left,right:rightEdge,top:sideTop,bottom:lowerEdge,scale,portrait:height>width});
+    const commandScale=board?board.commandScale:scale;
+    const gridTop=board?board.gridTop:lowerEdge-140*commandScale;
     const commands=global.WarcraftHudLayout.createV14CommandRegions(packet,
       {left,top:gridTop,scale:commandScale,separateCancel:true,cancelRight:rightEdge,cancelBottom:lowerEdge});
     if(!commands)return null;
@@ -118,32 +121,29 @@
         top:region.source.top-native.source.top,width:region.source.width,height:region.source.height}};
     });
     const miniSize=Math.max(144,128*scale);
-    result.push(global.WarcraftHudLayout.createMinimapRegion({left:rightEdge-miniSize,top:sideTop,size:miniSize}));
-    const info=foreground.layers.find(layer=>layer.id===100);
-    if(state.selectionCount>0&&info?.captured&&info.nativeVisible){
-      const commandsTop=Math.min(lowerEdge,...commands.filter(region=>!region.isCancel).map(region=>region.target.top),
-        state.buildingPending?lowerEdge-confirmSize.height:lowerEdge);
-      if(cameraPilot){
-        const region=global.WarcraftHudLayout.createInfoRegion(info,
-          {left,top:sideTop,scale:scale*1.15,right:rightEdge-miniSize-6,bottom:commandsTop-4});
-        if(region)result.push(region);
-      }else{
-        result.push({id:'info',source:info.source,layer:'native-hud-100',
-          visualSource:{left:0,top:0,width:info.source.width,height:info.source.height},
-          target:{left,top:sideTop,width:info.source.width*scale,height:info.source.height*scale}});
-      }
+    result.push(board?board.minimap:
+      global.WarcraftHudLayout.createMinimapRegion({left:rightEdge-miniSize,top:sideTop,size:miniSize}));
+    if(board?.info){
+      const box=board.info.source,hitRects=infoButtons?.(info)??[];
+      result.push({...board.info,hitRects:hitRects.filter(hit=>
+        hit.left>=box.left&&hit.top>=box.top&&hit.left+hit.width<=box.left+box.width&&
+        hit.top+hit.height<=box.top+box.height)});
+    }else if(!board&&state.selectionCount>0&&info?.captured&&info.nativeVisible){
+      result.push({id:'info',source:info.source,layer:'native-hud-100',
+        visualSource:{left:0,top:0,width:info.source.width,height:info.source.height},
+        target:{left,top:sideTop,width:info.source.width*scale,height:info.source.height*scale}});
     }
     const status=foreground.layers.find(layer=>layer.id===101);
-    const statusFields=global.WarcraftHudForeground.statusFields(status);
+    const statusFields=global.WarcraftHudForeground.statusFields(status,{hideHotkeys:touchOnly});
     if(cameraPilot){
       const cancel={left:rightEdge-54*commandScale,top:lowerEdge-46*commandScale,
         width:54*commandScale,height:46*commandScale};
       const statusCommands=state.buildingPending?[...commands,
         {target:{left,top:lowerEdge-confirmSize.height,...confirmSize}}]:commands;
       const statusLayout=global.WarcraftHudLayout.createGapStatusLayout(statusFields,
-        {width,height,commands:statusCommands,cancel,bottomMargin:bottom,leftMargin:left,rightMargin:right,maxScale:1.38,
+        {width,height,commands:statusCommands,cancel,bottomMargin:bottom,leftMargin:left,rightMargin:right,maxScale:1.58,preferAbove:true,
           obstacles:result.map(region=>region.target)});
-      result.push(...statusLayout.regions);
+      result.push(...statusLayout.regions.map(region=>({...region,hitRects:[]})));
     }else if(statusFields.length){
       const gap=6,total=statusFields.reduce((n,field)=>n+field.source.width,0);
       const s=Math.min(1.25,(width-8-gap*(statusFields.length-1))/total);
@@ -510,6 +510,7 @@
   }
   function cancelButtons() {
     minimapDrag=false;
+    infoPress=false;
     if(!held.size)return;
     const g=nativeGeometry(),point=g?{x:g.width-1,y:g.height-1}:lastNative;
     if(point)moveNative(point);
@@ -560,6 +561,7 @@
       if(event.button===0&&moveByMinimap(event)){minimapDrag=true;stop(event);return;}
       const point=pick(event,input.getBoundingClientRect());stop(event);
       if(!point||point.kind==='blocked')return;
+      infoPress=touchOnly&&event.button===0&&point.regionId==='info';
       input.focus({preventScroll:true});moveNative(point);
       const button=nativeButton(event.button);held.add(button);
       global.WarcraftUiBridge.nativeButton(1,button,lastNative.x,lastNative.y);
@@ -571,6 +573,16 @@
       if(point&&point.kind!=='blocked')moveNative(point);
       else {const g=nativeGeometry();if(g)moveNative({x:g.width-1,y:g.height-1});}
       global.WarcraftUiBridge.nativeButton(0,button,lastNative.x,lastNative.y);held.delete(button);stop(event);
+      if(infoPress&&button===0){
+        infoPress=false;
+        const info=chart?.regions.find(region=>region.id==='info');
+        const commands=global.WarcraftUiBridge.uiRects?.();
+        const below=info&&info.source.bottom;
+        // Leave the portrait in its own native move, so its hover-exit cannot
+        // clear the next command's tooltip during the same native dispatch.
+        if(point?.regionId==='info'&&commands?.usable&&commands.root.native.top>below)
+          moveNative({x:info.source.left+info.source.width/2,y:(below+commands.root.native.top)/2});
+      }
     },{capture:true,passive:false});
     global.addEventListener('blur',event=>{if(event.target===global)cancelButtons();},{capture:true});
     global.addEventListener('pointercancel',()=>cancelButtons(),{capture:true});
@@ -579,11 +591,13 @@
     },{capture:true});
     global.addEventListener('contextmenu',event=>{if(visible&&inScope(event))stop(event);},{capture:true,passive:false});
   }
-  let cameraPilot,hostPresentation,modalTexture;
+  let cameraPilot,hostPresentation,modalTexture,infoButtons,touchOnly=false;
   function install(host) {
     if(installed)return;
     keepNativeUntilReady=!!host;
     cameraPilot=coherentFrames?host?.independentCamera:null;
+    infoButtons=host?.infoButtons;
+    touchOnly=global.matchMedia?.('(pointer: coarse)').matches===true;
     source=host?.source || document.getElementById('boxedwine-webgl-canvas-0');
     display=host?.display || source;
     input=host?.input || document.getElementById('canvas');

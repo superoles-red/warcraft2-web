@@ -168,15 +168,44 @@
     return verified;
   }
 
-  async function select(language, progress) {
+  async function select(language, {download = false, progress} = {}) {
     if (!available(language)) throw new Error('Этот язык пока недоступен.');
     if (language === selected && !needsDownload(language)) return;
     if (selection) throw new Error('Подождите, пока язык загрузится.');
     selection = language;
     try {
-      if (language === 'ru') await loadRussian({download: true, progress});
+      if (language === 'ru') {
+        const loaded = await loadRussian({download, progress});
+        if (hasAudio(language) && !loaded.audio) throw new Error('Сначала скачайте русский язык.');
+      }
       localStorage.setItem(preference, language);
       location.reload();
+    } finally {
+      selection = null;
+    }
+  }
+
+  async function status(language) {
+    if (language === 'en') return {installed: true, stored: true};
+    if (!available(language)) throw new Error('Этот язык пока недоступен.');
+    const audio = await readManifest();
+    const files = audio ? [text, ...audio.chunks] : [text];
+    if (!await caches.has(cacheName)) return {installed: false, stored: false};
+    const cache = await caches.open(cacheName);
+    const stored = (await cache.keys()).length > 0;
+    const installed = await Promise.all(files.map(file =>
+      ensureFile(cache, file, false).then(() => true, () => false)));
+    return {installed: installed.every(Boolean) && !needsDownload(language), stored};
+  }
+
+  async function remove(language) {
+    if (language !== 'ru' || !available(language)) throw new Error('Этот язык всегда доступен.');
+    if (selection) throw new Error('Подождите, пока язык загрузится.');
+    selection = language;
+    try {
+      if (selected === language) localStorage.removeItem(preference);
+      await caches.delete(cacheName);
+      if (selected === language) location.reload();
     } finally {
       selection = null;
     }
@@ -207,6 +236,6 @@
 
   const hasAudio = language => language === 'ru' && descriptor.audio === 'true';
   const needsDownload = language => hasAudio(language) && selected === 'ru' && !pack?.audio;
-  window.WarcraftLanguage = Object.freeze({current: () => selected, available, select, hasAudio, needsDownload});
+  window.WarcraftLanguage = Object.freeze({current: () => selected, available, select, status, remove, hasAudio, needsDownload});
   window.WarcraftCompactLanguage = Object.freeze({patch, fallback, fallbackAudio, get pack() { return pack; }});
 })();

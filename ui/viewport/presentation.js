@@ -32,7 +32,7 @@
     const mode=options.mode||'world';
     if(mode!=='world'&&mode!=='native-ui')throw new TypeError('Unknown chart mode');
     const regions=[],ids=new Set();
-    function add(id,sourceRect,targetRect,fit,z,kind,interactive,layer,visualSource){
+    function add(id,sourceRect,targetRect,fit,z,kind,interactive,layer,visualSource,hitRects){
       if(typeof id!=='string'||ids.has(id))throw new TypeError('Unique string region id required');
       ids.add(id);
       const s=rectangle(sourceRect,'region source'),target=rectangle(targetRect,'region target');
@@ -41,7 +41,13 @@
       const transform=affine(s,target,fit),clip=intersection(target,bounds);
       if(layer!==undefined&&(typeof layer!=='string'||!layer.length))throw new TypeError('Invalid native visual layer');
       const visual=visualSource?rectangle(visualSource,'native visual source'):s;
-      regions.push(Object.freeze({id,kind,source:s,visualSource:visual,target,fit,z,index:regions.length,interactive:interactive!==false,layer,
+      const hits=hitRects===undefined?null:Object.freeze(hitRects.map(value=>{
+        const hit=rectangle(value,'native hit');
+        if(hit.left<s.left||hit.top<s.top||hit.right>s.right||hit.bottom>s.bottom)
+          throw new RangeError('Hit rectangle outside region: '+id);
+        return hit;
+      }));
+      regions.push(Object.freeze({id,kind,source:s,visualSource:visual,target,fit,z,index:regions.length,interactive:interactive!==false,layer,hits,
         transform,visible:clip&&intersection(clip,transform.painted)}));
     }
     if(mode==='native-ui'){
@@ -49,7 +55,7 @@
     }else{
       const world=rectangle(options.world,'native world');
       add('map',world,options.map?.target||bounds,options.map?.fit||'contain',0,'world',true,options.map?.layer);
-      for(const item of options.regions||[])add(item.id,item.source,item.target,item.fit||'contain',item.z??10,'native-ui',item.interactive,item.layer,item.visualSource);
+      for(const item of options.regions||[])add(item.id,item.source,item.target,item.fit||'contain',item.z??10,'native-ui',item.interactive,item.layer,item.visualSource,item.hitRects);
     }
     regions.sort((a,b)=>a.z-b.z||a.index-b.index);
     const byId=new Map(regions.map(r=>[r.id,r]));
@@ -62,8 +68,9 @@
       if(!Number.isFinite(x)||!Number.isFinite(y)||!inside(bounds,x,y))return null;
       for(let i=regions.length-1;i>=0;i--){
         const r=regions[i];if(!r.visible||!inside(r.visible,x,y))continue;
-        if(!r.interactive)return {regionId:r.id,kind:'blocked'}; // Visible panel never leaks through to map.
         const nativeX=(x-r.transform.tx)/r.transform.scale,nativeY=(y-r.transform.ty)/r.transform.scale;
+        if(r.hits&&!r.hits.some(hit=>inside(hit,nativeX,nativeY)))continue;
+        if(!r.interactive)return {regionId:r.id,kind:'blocked'};
         if(inside(r.source,nativeX,nativeY))return {regionId:r.id,kind:r.kind,x:nativeX,y:nativeY};
       }
       return null;

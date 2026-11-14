@@ -3,6 +3,40 @@
   'use strict';
   const nativePath = name => 'c:\\' + name.replaceAll('/', '\\');
 
+  function infoButtons(wine, layer) {
+    const translate = wine.instance?.exports?.guest_to_wasm;
+    const memory = wine.memory?.buffer;
+    if (!translate || !memory || !layer.root || wine.guestWorker) return [];
+    function view(address, length) {
+      if (address < 0x10000 || address + length > 0x100000000) return null;
+      const start = translate(address) >>> 0;
+      const end = translate(address + length - 1) >>> 0;
+      return start > 0xf0 && end === start + length - 1 && end < memory.byteLength
+        ? new DataView(memory, start, length) : null;
+    }
+    if (view(0x4bdcd0, 4)?.getUint32(0, true) !== layer.root) return [];
+    const root = view(layer.root, 0x4a);
+    if (root?.getUint16(0x20, true) !== 15 || root.getUint16(0x22, true) !== 0 ||
+        root.getUint32(0x2a, true) !== 0x44ab20 || root.getUint16(0x36, true) !== layer.source.width ||
+        root.getUint16(0x38, true) !== layer.source.height) return [];
+    const rects = [];
+    let node = root.getUint32(0x46, true);
+    // Scene 15 also contains inert labels, bars and production graphics.
+    // Only the original portrait handler responds to a click.
+    for (let count = 0; node && count < 32; count++) {
+      const child = view(node, 0x36);
+      if (!child || child.getUint32(0x32, true) !== layer.root) return [];
+      node = child.getUint32(0, true);
+      if (!(child.getUint32(0x18, true) & 8) || child.getUint16(0x20, true) > 8 ||
+          child.getUint16(0x22, true) !== 2 || child.getUint32(0x2a, true) !== 0x44aff0 ||
+          child.getUint32(0x2e, true) !== 0x445370) continue;
+      const x = child.getInt16(4, true), y = child.getInt16(6, true);
+      const width = child.getInt16(8, true) - x + 1, height = child.getInt16(10, true) - y + 1;
+      if (width > 0 && height > 0) rects.push({left: layer.source.left + x, top: layer.source.top + y, width, height});
+    }
+    return node ? [] : rects;
+  }
+
   function attach(wine, renderer, {onTitlePrepared} = {}) {
     const vfs = wine._helpCtx.vfs;
     const surface = document.getElementById('screen');
@@ -71,6 +105,7 @@
       onUnavailable: onTitlePrepared ? () => hold('map') : undefined,
       acceptsInput: onTitlePrepared
         ? () => presented === 'map' && !('warcraftTransition' in frame.dataset) : undefined,
+      infoButtons: layer => infoButtons(wine, layer),
       modalBack: window.WarcraftAssemblyMenuNavigation?.createModalBack?.(wine),
       modalTexture() {
         if (!textures || !window.WarcraftUiBridge.state().inGame) return null;

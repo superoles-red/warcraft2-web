@@ -6,6 +6,7 @@
   // Original dialog handlers registered through 405720. The scene-7 IMAGE
   // and 4886F0 painter are the undecorated TitleMenu_BNE.pcx loaded at 44F36F.
   const TITLE_HANDLERS = new Map([[0x42adc0, 'title'], [0x441cc0, 'single'], [0x434a00, 'campaign']]);
+  const SOUND_OPTIONS = 0x441940;
   const MISSION_BRIEFING_CALLBACK = 0x42fef0;
   const ACT_INTERLUDE = 0x429580;
   const CREDITS = 0x417d00;
@@ -159,6 +160,10 @@
       }
       scenes.push(scene);
     }
+    const sound = scenes.find(scene => scene.handler === SOUND_OPTIONS);
+    // The original Sound Options popup is centered in the expanded guest
+    // raster, unlike the authored title, which stays in its 640×480 plane.
+    if (sound) return {mode:'menu', art:ART, scenes, sound:true, controls:[]};
     const dialogs = scenes.filter(scene => scene.handler && scene.x + scene.w <= ART.w &&
       scene.y + scene.h <= ART.h);
     if (dialogs.length) {
@@ -352,7 +357,8 @@
       const left = insets?.left > 4 ? insets.left : 0;
       const right = insets?.right > 4 ? insets.right : 0;
       const contentWidth = rect.width - left - right;
-      const params = {width: contentWidth, height: rect.height, art: current.art, scenes: current.scenes, wine,
+      const dialogArt = current.sound ? area(0, 0, image.width, image.height) : current.art;
+      const params = {width: contentWidth, height: rect.height, art: dialogArt, scenes: current.scenes, wine,
         backTarget: dialogBack?.naturalWidth && global.WarcraftAssemblyMenuNavigation.backBox(contentWidth, rect.height)};
       const nativeDialog = authored && bottomButtonLayout(wine, current, contentWidth, rect.height) ||
         (current.mode === 'menu' && global.WarcraftAssemblyDialogLayout?.layout(params));
@@ -448,7 +454,7 @@
       if (menu) return {x: originX + Math.floor(menu.x), y: originY + Math.floor(menu.y)};
       // A held native button must be released even if the pointer leaves the
       // art. The native client outside its 640x480 menu has no menu control.
-      if (this._mouseButtonsMask) return {x: originX + 640, y: originY + 480};
+      if (this._mouseButtonsMask) return {x: originX + chart.art.w, y: originY + chart.art.h};
       return {outside: true};
     }
 

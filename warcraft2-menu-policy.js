@@ -25,6 +25,9 @@
     music: {address: 0x4d6b44, registry: 'music'},
   });
   const volumeKey = 'HKCU\\Software\\Blizzard Entertainment\\Warcraft II BNE';
+  const soundDialogEntry = 0x441b90;
+  const deferredDialog = 0x4ab8e4;
+  const soundSwitches = Object.freeze({unitspeech:1, unitnoise:2, bldgnoise:4, dispmsgs:0x40000});
   const installed = new WeakMap();
   const controls = Object.freeze({
     single: Object.freeze({id: 1, x: 320, y: 254}),
@@ -86,6 +89,12 @@
     [0x4409e0, 'a1 5c db 4b 00 85 c0 0f 84 d3 00 00 00 8b 44 24 04 8b 40 0c 85 c0 74 75 8b 04 85 84 0c 49 00'],
     [0x4aa56c, `70 a9 4a 00 00 00 00 00 64 00 00 00 4b 00 00 00 44 6b 4d 00 01 00 00 00
       6c a9 4a 00 00 00 00 00 64 00 00 00 64 00 00 00 48 6b 4d 00`],
+    // The Win32 handler already schedules the standalone Sound Options
+    // dialog from the title through the original deferred-dialog callback.
+    [0x45fa77, 'a1 e4 b8 4a 00 85 c0 0f 85 70 02 00 00 5f 5e 5d c7 05 e4 b8 4a 00 90 1b 44 00'],
+    [soundDialogEntry, `68 40 19 44 00 6a 02 68 14 03 00 00 68 94 1b 4a 00 68 80 2e 46 00
+      68 10 2c 46 00 68 84 1b 4a 00 c7 05 e4 b8 4a 00 00 00 00 00 c7 05 94 db 4b 00 01 00 00 00
+      e8 07 31 fc ff 83 c4 14 50 e8 4e 3b fc ff 83 c4 0c c3`],
   ].map(([address, bytes]) => ({address, bytes: hex(bytes)}));
 
   // Entry: return false from the idle timer. The remaining now-unreachable
@@ -246,6 +255,36 @@
     return true;
   }
 
+  function requestSoundOptions(wine) {
+    const counter = titleCounter(wine);
+    if (!counter || ![0, 600].includes(counter.getUint16(0, true))) return null;
+    const slot = nativeView(wine, deferredDialog, 4);
+    const settings = readSoundSettings(wine, counter);
+    if (!settings || slot?.getUint32(0, true) !== 0) return null;
+    slot.setUint32(0, soundDialogEntry, true);
+    return settings;
+  }
+
+  function readSoundSettings(wine, counter) {
+    const pair = readVolumePair(wine, counter);
+    const flags = nativeView(wine, 0x4d6b50, 4)?.getUint32(0, true);
+    if (!pair || flags === undefined) return null;
+    return {sfx:pair.sound, music:pair.music,
+      ...Object.fromEntries(Object.entries(soundSwitches).map(([name, mask]) => [name, flags & mask]))};
+  }
+
+  function persistSoundOptions(wine, before) {
+    const counter = titleCounter(wine);
+    if (!counter || !before) return;
+    const settings = readSoundSettings(wine, counter);
+    if (!settings || !global.StorageImports?.setRegValue) return;
+    for (const [name, value] of Object.entries(settings)) {
+      // Original Cancel restores the original seven DWORDs, so it has
+      // nothing to persist. Write confirmed changes before a browser exit.
+      if (value !== before[name]) global.StorageImports.setRegValue(volumeKey, name, 4, value);
+    }
+  }
+
   const validVolume = value => Number.isInteger(value) && value >= 0 && value <= 100;
   function readVolumePair(wine, counter) {
     const request = counter.getUint16(0, true);
@@ -278,7 +317,7 @@
     return true;
   }
 
-  const api = Object.freeze({install, requestDemo, controls, volume, setVolume});
+  const api = Object.freeze({install, requestDemo, requestSoundOptions, persistSoundOptions, controls, volume, setVolume});
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WarcraftAssemblyMenuPolicy = api;
 })(globalThis);
