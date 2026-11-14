@@ -198,10 +198,11 @@
    * above the bank if that admits a more legible scale.
    */
   function createGapStatusLayout(fields, {width, height, commands = [], cancel,
-      obstacles = [], margin = 4, bottomMargin = margin, gap = 6, maxScale = 1.25} = {}) {
+      obstacles = [], margin = 4, bottomMargin = margin, leftMargin = margin,
+      rightMargin = margin, gap = 6, maxScale = 1.25} = {}) {
     if (!positive(width) || !positive(height) || !positive(maxScale) ||
         !Number.isFinite(margin) || margin < 0 || !Number.isFinite(gap) || gap < 0 ||
-        !Number.isFinite(bottomMargin) || bottomMargin < 0 ||
+        ![bottomMargin,leftMargin,rightMargin].every(value=>Number.isFinite(value)&&value>=0) ||
         !Array.isArray(fields) || !Array.isArray(commands) || !Array.isArray(obstacles))
       throw new TypeError('Invalid tooltip geometry');
     if (!fields.length) return {regions: [], bounds: null};
@@ -214,10 +215,11 @@
       }));
     if (!rows.length) return {regions: [], bounds: null};
     const bank = commands.filter(command => !command.isCancel).map(command => command.target);
-    const left = Math.max(margin, ...bank.map(rect => rect.left + rect.width + gap));
-    const right = Math.min(width - margin, cancel ? cancel.left - gap : width - margin);
+    const rightEdge = width - rightMargin;
+    const left = Math.max(leftMargin, ...bank.map(rect => rect.left + rect.width + gap));
+    const right = Math.min(rightEdge, cancel ? cancel.left - gap : rightEdge);
     const bottom = height - bottomMargin;
-    const fullWidth = width - 2 * margin;
+    const fullWidth = rightEdge - leftMargin;
     const rowGap = rows.length > 1 ? Math.min(3, gap) : 0;
     const heightOfRows = rows.reduce((total, row) => total + row.height, 0);
     function fit(availableWidth, availableHeight) {
@@ -234,9 +236,9 @@
     if (scale < Math.min(1, maxScale)) {
       const above = Math.min(bottom, ...bank.map(rect => rect.top - gap),
         cancel ? cancel.top - gap : bottom);
-      const alternate = fit(fullWidth, above - clearFrom(margin, width - margin, above));
+      const alternate = fit(fullWidth, above - clearFrom(leftMargin, rightEdge, above));
       if (alternate > scale) {
-        box = {left: margin, right: width - margin, bottom: above};
+        box = {left: leftMargin, right: rightEdge, bottom: above};
         scale = alternate;
       }
     }

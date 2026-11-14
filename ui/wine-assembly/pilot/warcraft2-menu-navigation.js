@@ -204,7 +204,7 @@
     }
 
     let presented = null;
-    function paint(context, image, backdrop, scene, width, height, foreground) {
+    function paint(context, image, backdrop, scene, width, height, foreground, leftInset=0, rightInset=0) {
       if (!backdrop || !['title', 'single', 'campaign'].includes(scene.mode)) {
         hide();
         return false;
@@ -219,7 +219,11 @@
         'Orc: Beyond the Dark Portal', 'Human: Beyond the Dark Portal'];
       const items = campaign ? originals.slice(0, 4).map((source, i) => ({label: campaignLabels[i], source}))
         : scene.mode === 'single' ? single : page === 'options' ? options : title;
-      const {picture, boxes: slots, back, scale} = place(width, height);
+      const contentWidth = width - leftInset - rightInset;
+      const {picture, boxes: slots, back, scale} = place(contentWidth, height);
+      picture.x += leftInset;
+      back.x += leftInset;
+      for (const slot of slots) slot.x += leftInset;
       const boxes = slots.slice(0, items.length);
       if (!campaign && boxes[2]) boxes[2].y = boxes[1].y + (boxes[1].y - boxes[0].y);
       active = true;
@@ -235,7 +239,8 @@
           if (!nextButton) return;
           const trimmed = {...source, h: Math.min(source.h, nextButton.y - source.y - 2)};
           const w = trimmed.w * scale, h = trimmed.h * scale;
-          if (h > 0) foreground(image, {source: trimmed, target: {x: (width - w) / 2, y: slot.y - h - 5, w, h}});
+          if (h > 0) foreground(image, {source: trimmed,
+            target: {x: leftInset + (contentWidth - w) / 2, y: slot.y - h - 5, w, h}});
         });
       }
       items.forEach((item, i) => drawButton(context, image, item, boxes[i]));

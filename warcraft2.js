@@ -3,11 +3,14 @@
   const originalExe = 'warcraft ii bne.exe';
   const originalHash = 'c3d83429aa0c2200ad3f6ac141da8ae7213a7b196d1f70d4d84a6e607bd504bd';
   const ownsPresentation = document.documentElement.classList.contains('warcraft-page');
+  const autoLaunch = !!(window.WarcraftCompactPlan || window.WarcraftLocalMedia);
   const panel = document.createElement('main');
   panel.id = 'war2-launch-cover';
   panel.style.cssText = [
     'position:fixed;inset:0;z-index:2147483647;display:grid;place-content:center',
-    'gap:16px;padding:24px;text-align:center;background:#161513;color:#f2e6ca',
+    'gap:16px;box-sizing:border-box;text-align:center;background:#161513;color:#f2e6ca',
+    'padding:max(24px,env(safe-area-inset-top,0px)) max(24px,env(safe-area-inset-right,0px)) ' +
+      'max(24px,env(safe-area-inset-bottom,0px)) max(24px,env(safe-area-inset-left,0px))',
     'font:16px system-ui,sans-serif',
   ].join(';');
   const heading = document.createElement('h1');
@@ -21,7 +24,8 @@
   start.textContent = 'Запустить Warcraft II';
   start.style.cssText = 'font:inherit;padding:10px 16px;justify-self:center';
   start.disabled = true;
-  panel.append(heading, status, start);
+  panel.append(heading, status);
+  if (!autoLaunch) panel.append(start);
   document.body.append(panel);
   document.title = heading.textContent;
 
@@ -54,6 +58,29 @@
       name: 'play-game.zip',
       mountOptions: {root: 'C:\\Warcraft2', unwrap: false},
     });
+  }
+
+  function activateGameAudioOnInput(wine) {
+    const resume = event => {
+      if (!event.isTrusted || !wine.running ||
+          (event.type !== 'keydown' && !event.target?.closest?.('#screen-wrap'))) return;
+      if ((event.type === 'pointerdown' && event.pointerType !== 'mouse') ||
+          (event.type === 'pointerup' && event.pointerType === 'mouse')) return;
+      try {
+        const context = wine._audioCtx;
+        if (context?.state === 'suspended') {
+          window.claimAudioSession?.();
+          wine.wakeAudio();
+        } else if (context?.state !== 'running') {
+          wine.primeAudio();
+        }
+      } catch (_) {}
+    };
+    // Capture sees the user's gesture before the authored menus and map
+    // consume it. Never wait on browser audio permission before entering BNE.
+    for (const type of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) {
+      window.addEventListener(type, resume, {capture: true, passive: true});
+    }
   }
 
   async function prepare() {
@@ -102,43 +129,43 @@
       ...moviePilot?.bridge,
     });
 
-    start.addEventListener('click', async () => {
+    async function launch() {
       start.disabled = true;
       status.textContent = 'Запускаю игру…';
       let imageLoaded = false;
       let titlePrepared;
       const firstTitle = ownsPresentation && new Promise(resolve => { titlePrepared = resolve; });
-      try {
-        const shell = window.wineShell;
-        await shell.launchApp(plan.id, {hidden: ownsPresentation, async beforeRun(wine) {
-          if (installBridge) {
-            await installBridge(wine);
-            await window.WarcraftAssemblyMenuPolicy?.install(wine);
-            window.attachWarcraftAssemblyV16(wine, shell.renderer, {onTitlePrepared: titlePrepared});
-            moviePilot?.attach(wine, movieMedia);
-          }
-          imageLoaded = true;
-        }});
-        // The upstream shell handles its own boot errors and may resolve on failure.
-        if (exeError) throw exeError;
-        if (!imageLoaded || !shell.runningApps.some(entry => entry.name === plan.id)) {
-          throw new Error('Среда не запустила оригинальную программу');
+      const shell = window.wineShell;
+      await shell.launchApp(plan.id, {hidden: ownsPresentation, async beforeRun(wine) {
+        if (autoLaunch) activateGameAudioOnInput(wine);
+        if (installBridge) {
+          await installBridge(wine);
+          await window.WarcraftAssemblyMenuPolicy?.install(wine);
+          window.attachWarcraftAssemblyV16(wine, shell.renderer, {onTitlePrepared: titlePrepared});
+          moviePilot?.attach(wine, movieMedia);
         }
-        if (firstTitle) {
-          let timer;
-          try {
-            await Promise.race([firstTitle, new Promise((resolve, reject) => {
-              timer = setTimeout(() => reject(new Error('Главное меню Warcraft II не появилось')), 30000);
-            })]);
-          } finally {
-            clearTimeout(timer);
-          }
-        }
-        panel.remove();
-      } catch (error) {
-        showError(error);
+        imageLoaded = true;
+      }});
+      // The upstream shell handles its own boot errors and may resolve on failure.
+      if (exeError) throw exeError;
+      if (!imageLoaded || !shell.runningApps.some(entry => entry.name === plan.id)) {
+        throw new Error('Среда не запустила оригинальную программу');
       }
-    }, {once: true});
+      if (firstTitle) {
+        let timer;
+        try {
+          await Promise.race([firstTitle, new Promise((resolve, reject) => {
+            timer = setTimeout(() => reject(new Error('Главное меню Warcraft II не появилось')), 30000);
+          })]);
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+      panel.remove();
+    }
+
+    if (autoLaunch) return launch();
+    start.addEventListener('click', () => launch().catch(showError), {once: true});
     status.textContent = 'Локальный архив готов к запуску.';
     start.disabled = false;
   }
@@ -147,7 +174,6 @@
     const local = window.WarcraftLocalMedia;
     if (await local.installed()) return prepare();
     status.textContent = 'Выбери ZIP с оригинальной Warcraft II Battle.net Edition.';
-    start.hidden = true;
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.zip,application/zip';
@@ -162,14 +188,14 @@
         await local.install(file, ({loaded, total}) => {
           status.textContent = 'Копирую игру на устройство… ' + Math.floor(100 * loaded / total) + '%';
         });
-        input.remove();
-        start.hidden = false;
-        await prepare();
       } catch (error) {
         input.value = '';
         input.disabled = false;
         status.textContent = error.message;
+        return;
       }
+      input.remove();
+      await prepare().catch(showError);
     });
   }
 
@@ -185,10 +211,9 @@
   if (window.WarcraftCompactPlan) {
     prepareCompact().catch(error => {
       showError(error);
-      start.hidden = true;
       const retry = document.createElement('a');
       retry.href = location.href;
-      retry.textContent = 'Продолжить загрузку';
+      retry.textContent = 'Повторить запуск';
       retry.style.color = 'inherit';
       panel.append(retry);
     });

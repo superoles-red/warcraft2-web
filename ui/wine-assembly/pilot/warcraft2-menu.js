@@ -348,12 +348,16 @@
       } else {
         backdrop = null;
       }
-      const params = {width: rect.width, height: rect.height, art: current.art, scenes: current.scenes, wine,
-        backTarget: dialogBack?.naturalWidth && global.WarcraftAssemblyMenuNavigation.backBox(rect.width, rect.height)};
-      const nativeDialog = authored && bottomButtonLayout(wine, current, rect.width, rect.height) ||
+      const insets = authored && current.mode !== 'video' && global.WarcraftFullMap?.hudInsets;
+      const left = insets?.left > 4 ? insets.left : 0;
+      const right = insets?.right > 4 ? insets.right : 0;
+      const contentWidth = rect.width - left - right;
+      const params = {width: contentWidth, height: rect.height, art: current.art, scenes: current.scenes, wine,
+        backTarget: dialogBack?.naturalWidth && global.WarcraftAssemblyMenuNavigation.backBox(contentWidth, rect.height)};
+      const nativeDialog = authored && bottomButtonLayout(wine, current, contentWidth, rect.height) ||
         (current.mode === 'menu' && global.WarcraftAssemblyDialogLayout?.layout(params));
       const briefing = current.mode === 'briefing' && global.WarcraftAssemblyBriefingLayout?.layout(params);
-      let next = briefing || nativeDialog || layout(rect.width, rect.height, current.mode, current.art,
+      let next = briefing || nativeDialog || layout(contentWidth, rect.height, current.mode, current.art,
         backdrop ? current.controls : []);
       if (!next) {
         hide();
@@ -384,26 +388,38 @@
         }
         context.fillStyle = borderColor;
       }
-      context.fillRect(0, 0, next.width, next.height);
+      context.fillRect(0, 0, rect.width, rect.height);
       if (nativeDialog || (authored && current.cinematic)) {
-        global.WarcraftAssemblyMenuNavigation?.paintTexture(context, dialogTexture, next.width, next.height);
+        global.WarcraftAssemblyMenuNavigation?.paintTexture(context, dialogTexture, rect.width, rect.height);
       }
       const foreground = (sourceImage, region) => drawForeground(context, sourceImage, region, backdrop, scratch);
-      const authoredPaint = navigation?.paint(context, image, backdrop, current, next.width, next.height, foreground);
-      const briefingPaint = briefing && global.WarcraftAssemblyBriefingLayout.paint({wine, context, image, chart: briefing});
-      if (!authoredPaint && !briefingPaint) {
-        if (briefing) next = layout(rect.width, rect.height, current.mode, current.art);
-        if (backdrop && next.artwork) drawTitle(context, image, next, backdrop, scratch);
-        else for (const region of next.paintRegions || next.regions) {
-          if (region.decoration === 'back') {
-            const {x, y, w, h} = region.target;
-            const size = Math.round(w * .9), height = size * .95;
-            context.drawImage(dialogBack, x + (w - size) / 2, y + (h - height) / 2, size, height);
-          } else if (region.foreground && backdrop) foreground(image, region);
-          else draw(context, image, region.source, region.target);
+      const authoredPaint = navigation?.paint(context, image, backdrop, current,
+        rect.width, rect.height, foreground, left, right);
+      if (!authoredPaint) {
+        context.save();
+        try {
+          context.translate(left, 0);
+          const briefingPaint = briefing &&
+            global.WarcraftAssemblyBriefingLayout.paint({wine, context, image, chart: briefing,
+              backgroundLeft:-left,backgroundWidth:rect.width});
+          if (!briefingPaint) {
+            if (briefing) next = layout(contentWidth, rect.height, current.mode, current.art);
+            if (backdrop && next.artwork) drawTitle(context, image, next, backdrop, scratch);
+            else for (const region of next.paintRegions || next.regions) {
+              if (region.decoration === 'back') {
+                const {x, y, w, h} = region.target;
+                const size = Math.round(w * .9), height = size * .95;
+                context.drawImage(dialogBack, x + (w - size) / 2, y + (h - height) / 2, size, height);
+              } else if (region.foreground && backdrop) foreground(image, region);
+              else draw(context, image, region.source, region.target);
+            }
+          }
+        } finally {
+          context.restore();
         }
       }
-      chart = next;
+      chart = left || right ? {...next, width:rect.width,
+        regions:next.regions.map(region=>({...region,target:{...region.target,x:region.target.x+left}}))} : next;
       scene = current;
       last = image;
       originX = transform.srcX;
@@ -454,6 +470,7 @@
 
     const resize = new ResizeObserver(repaint);
     resize.observe(frame);
+    frame.addEventListener('warcraft-hud-insets-change', repaint);
     renderer._mapExclusiveInputPoint = map;
     renderer._unmapExclusiveInputPoint = unmap;
     if (authored) renderer.touchWantsImmediatePress = immediatePress;
@@ -482,6 +499,7 @@
       },
       destroy() {
         resize.disconnect();
+        frame.removeEventListener('warcraft-hud-insets-change', repaint);
         if (raf) global.cancelAnimationFrame(raf);
         if (renderer._mapExclusiveInputPoint === map) renderer._mapExclusiveInputPoint = originalMap;
         if (renderer._unmapExclusiveInputPoint === unmap) renderer._unmapExclusiveInputPoint = originalUnmap;

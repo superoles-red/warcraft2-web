@@ -1,82 +1,76 @@
 'use strict';
 
 const status = document.getElementById('status');
-const openGame = document.getElementById('open');
+const install = document.getElementById('install');
 const retry = document.getElementById('retry');
 const version = document.getElementById('version');
 const workers = navigator.serviceWorker;
+const updates = window.WarcraftAppUpdate;
 const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
-const compact = document.documentElement.hasAttribute('data-compact');
-document.getElementById('iphone').hidden = standalone || !/iPhone|iPad/.test(navigator.userAgent);
-retry.addEventListener('click', () => location.reload());
+const updateRequested = new URLSearchParams(location.search).has('wc2-update');
+const iphone = document.getElementById('iphone');
+let downloading = false;
 
-function checkPackage(worker) {
-  return new Promise(resolve => {
-    if (!worker) return resolve(false);
-    const channel = new MessageChannel();
-    const timeout = setTimeout(() => { channel.port1.close(); resolve(false); }, 5000);
-    channel.port1.onmessage = event => {
-      clearTimeout(timeout);
-      channel.port1.close();
-      const ready = event.data?.ready === true;
-      if (version) {
-        const visible = ready && /^[a-f0-9]{24}$/.test(event.data.version || '');
-        version.hidden = !visible;
-        version.textContent = visible ? 'Версия ' + event.data.version : '';
-      }
-      resolve(ready);
-    };
-    worker.postMessage({type: 'WC2_OFFLINE_STATUS'}, [channel.port2]);
-  });
-}
-
-async function prepare() {
-  if (!workers) throw Error('Для установки нужен браузер с поддержкой офлайн-приложений.');
-  const errorText = 'Загрузка прервалась. Подключись к интернету и повтори.';
-  let registration;
-  const reportReady = async () => {
-    if (!await checkPackage(workers.controller)) return false;
-    status.textContent = registration?.waiting
-      ? 'Обновление загружено. Оно применится после закрытия игры.'
-      : compact ? 'При первом запуске игра скачает данные для работы без интернета.'
-        : 'Приложение готово. Игровой архив выбирается один раз.';
-    openGame.hidden = false;
-    retry.hidden = true;
-    return true;
-  };
-
-  workers.addEventListener('message', event => {
-    const message = event.data;
-    if (message?.type === 'WC2_OFFLINE_PROGRESS' && openGame.hidden && message.total > 0) {
-      status.textContent = 'Загружаю приложение… ' + Math.floor(100 * message.loaded / message.total) + '%';
-    }
-  });
-  workers.addEventListener('controllerchange', () => reportReady());
-  const oldPackageReady = await reportReady();
-  try {
-    registration = await workers.register('./service-worker.js', {scope: './', updateViaCache: 'none'});
-  } catch {
-    if (!oldPackageReady) throw Error(errorText);
-    return;
-  }
-
-  const watch = worker => worker?.addEventListener('statechange', async () => {
-    if (worker.state === 'redundant' && openGame.hidden && !await reportReady()) showError(errorText);
-    if (worker.state === 'installed' && !openGame.hidden && registration.waiting) {
-      status.textContent = 'Обновление загружено. Оно применится после закрытия игры.';
-    }
-  });
-  registration.addEventListener('updatefound', () => watch(registration.installing));
-  watch(registration.installing);
-  if (oldPackageReady && !registration.installing && !registration.waiting) {
-    registration.update().catch(() => {});
-  }
-  if (!await reportReady() && !registration.installing && !registration.active) showError(errorText);
-}
-
-function showError(message) {
-  status.textContent = message;
+function showError(error) {
+  status.textContent = error.message;
   retry.hidden = false;
 }
 
-prepare().catch(error => showError(error.message));
+function launch() {
+  const url = new URL('./game.html', location.href);
+  if (new URLSearchParams(location.search).has('movie-mute')) url.searchParams.set('movie-mute', '');
+  location.replace(url);
+}
+
+async function prepare() {
+  if (!workers) throw new Error('Для установки нужен браузер с поддержкой офлайн-приложений.');
+  if (new URLSearchParams(location.search).has('wc2-runtime-error')) {
+    throw new Error('Браузер не подготовил среду игры.');
+  }
+  const current = await updates.status();
+  if (current) {
+    status.textContent = updateRequested ? 'Применяю обновление…' : 'Запускаю Warcraft II…';
+    version.textContent = 'Версия ' + current.version;
+    version.hidden = false;
+    if (navigator.onLine !== false) {
+      const registration = await workers.getRegistration('./').catch(() => null);
+      if (registration?.waiting) await updates.apply(registration, current);
+    }
+    launch();
+    return;
+  }
+
+  status.textContent = 'Установи файлы игры для запуска без интернета.';
+  install.hidden = false;
+  iphone.hidden = standalone || !/iPhone|iPad/.test(navigator.userAgent);
+}
+
+install.addEventListener('click', async () => {
+  downloading = true;
+  install.hidden = true;
+  iphone.hidden = true;
+  status.textContent = 'Загружаю приложение…';
+  navigator.storage?.persist?.().catch(() => {});
+  try {
+    const registration = await workers.register('./service-worker.js', {scope: './', updateViaCache: 'none'});
+    const controller = await updates.waitForControl(registration.installing || registration.waiting, 300000);
+    if (!await updates.status(controller)) throw new Error('Загрузка приложения прервалась.');
+    launch();
+  } catch (error) {
+    showError(error);
+  } finally {
+    downloading = false;
+  }
+});
+
+workers?.addEventListener('message', ({data}) => {
+  if (data?.type === 'WC2_OFFLINE_PROGRESS' && downloading && data.total > 0) {
+    status.textContent = 'Загружаю приложение… ' + Math.floor(100 * data.loaded / data.total) + '%';
+  }
+});
+retry.addEventListener('click', () => {
+  const url = new URL(location.href);
+  url.searchParams.delete('wc2-runtime-error');
+  location.replace(url);
+});
+prepare().catch(showError);

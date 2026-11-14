@@ -3,7 +3,7 @@
   'use strict';
   let installed=false,routerInstalled=false,chart=null,visible=false,lastNative=null;
   let output,source,display,input,frame,container,copier,context,foregroundPainter,buildConfirm;
-  let hudBottom=4;
+  let hudInsets=Object.freeze({left:4,right:4,bottom:4});
   let keepNativeUntilReady=false;
   const foregroundVersion=new URLSearchParams(location.search).get('bridge');
   const enhancedHud=['v15','v16'].includes(foregroundVersion);
@@ -14,7 +14,7 @@
   let bootstrapCanvas,onPresented,onUnavailable,acceptsInput,modalBack;
   let bootstrapInUse=false,bootstrapPaletteKey=null;
   let cleanWorldReady=false,commandHighlight,lastWorldPaint=null,frozenWorld=null;
-  let modalBackgroundWidth=0,modalBackgroundHeight=0,modalBackgroundDpr=0,modalBackgroundHudBottom=0;
+  let modalBackgroundWidth=0,modalBackgroundHeight=0,modalBackgroundDpr=0,modalBackgroundInsets=null;
   const performanceStats={reusedWorldFrames:0};
   let cropX=0,cropY=0,cropKey='';
   let minimapDrag=false;
@@ -94,15 +94,17 @@
     return {regions:result,header,commandCount:commands.length};
   }
   function balancedRegions(width,height,g,packet,foreground,state){
-    const scale=Math.min(1.25,Math.max(1,Math.min(width/720,height/600)));
-    const lowerEdge=height-hudBottom,gridTop=lowerEdge-140*scale;
+    const {left,right,bottom}=hudInsets,rightEdge=width-right;
+    const hudWidth=rightEdge-left,lowerEdge=height-bottom;
+    const scale=Math.min(1.25,Math.max(1,Math.min((hudWidth+8)/720,height/600)));
+    const gridTop=lowerEdge-140*scale;
     const commands=global.WarcraftHudLayout.createV14CommandRegions(packet,
-      {left:4,top:gridTop,scale,separateCancel:true,cancelRight:width-4,cancelBottom:lowerEdge});
+      {left,top:gridTop,scale,separateCancel:true,cancelRight:rightEdge,cancelBottom:lowerEdge});
     if(!commands)return null;
     const fields=foreground.fields.map(field=>({id:field.id,
       compact:{source:global.WarcraftHudForeground.contentRect(field)||field.source}}));
     const header=global.WarcraftHudLayout.createCompactHeaderLayout(fields,
-      {width:width-8,left:4,top:2,menuScale:1.8,resourceScale:1.5,gap:6,reserveWidth:42});
+      {width:hudWidth,left,top:2,menuScale:1.8,resourceScale:1.5,gap:6,reserveWidth:42});
     const result=header.regions.map(region=>{
       if(region.id==='menu')return region;
       const id=Number(region.id.split('-')[1]),native=foreground.layers.find(f=>f.id===id);
@@ -110,24 +112,24 @@
         top:region.source.top-native.source.top,width:region.source.width,height:region.source.height}};
     });
     const sideTop=header.height+8,miniSize=Math.max(144,128*scale);
-    result.push(global.WarcraftHudLayout.createMinimapRegion({left:width-miniSize-4,top:sideTop,size:miniSize}));
+    result.push(global.WarcraftHudLayout.createMinimapRegion({left:rightEdge-miniSize,top:sideTop,size:miniSize}));
     const info=foreground.layers.find(layer=>layer.id===100);
     if(state.selectionCount>0&&info?.captured&&info.nativeVisible){
       const commandsTop=Math.min(lowerEdge,...commands.filter(region=>!region.isCancel).map(region=>region.target.top),
         state.buildingPending?lowerEdge-44:lowerEdge);
-      const infoScale=hudBottom>4?Math.min(scale,(commandsTop-4-sideTop)/info.source.height):scale;
+      const infoScale=bottom>4?Math.min(scale,(commandsTop-4-sideTop)/info.source.height):scale;
       if(infoScale>0)result.push({id:'info',source:info.source,layer:'native-hud-100',
         visualSource:{left:0,top:0,width:info.source.width,height:info.source.height},
-        target:{left:4,top:sideTop,width:info.source.width*infoScale,height:info.source.height*infoScale}});
+        target:{left,top:sideTop,width:info.source.width*infoScale,height:info.source.height*infoScale}});
     }
     const status=foreground.layers.find(layer=>layer.id===101);
     const statusFields=global.WarcraftHudForeground.statusFields(status);
     if(cameraPilot){
-      const cancel={left:width-4-54*scale,top:lowerEdge-46*scale,width:54*scale,height:46*scale};
+      const cancel={left:rightEdge-54*scale,top:lowerEdge-46*scale,width:54*scale,height:46*scale};
       const statusCommands=state.buildingPending?[...commands,
-        {target:{left:4,top:lowerEdge-44,width:106,height:44}}]:commands;
+        {target:{left,top:lowerEdge-44,width:106,height:44}}]:commands;
       const statusLayout=global.WarcraftHudLayout.createGapStatusLayout(statusFields,
-        {width,height,commands:statusCommands,cancel,bottomMargin:hudBottom,
+        {width,height,commands:statusCommands,cancel,bottomMargin:bottom,leftMargin:left,rightMargin:right,
           obstacles:result.map(region=>region.target)});
       result.push(...statusLayout.regions);
     }else if(statusFields.length){
@@ -203,7 +205,7 @@
     if(!live?.usable||live.sceneEpoch!==packet.sceneEpoch)return false;
     // The original first fade can legitimately be black. Freeze only the
     // pre-dialog indices; palette changes must follow the completed native frame.
-    const paletteKey=[container.clientWidth,container.clientHeight,global.devicePixelRatio,hudBottom,
+    const paletteKey=[container.clientWidth,container.clientHeight,global.devicePixelRatio,...Object.values(hudInsets),
       ...live.palette].join(',');
     if(bootstrapInUse&&bootstrapPaletteKey===paletteKey&&modalPresenter.hasBackground)return true;
     const pixels=bootstrapPainter.paint({...packet,palette:live.palette,paletteRevision:paletteKey});if(!pixels)return false;
@@ -225,7 +227,7 @@
   }
   function resizeFrozenWorld(width,height,dpr) {
     if(!frozenWorld||(modalBackgroundWidth===width&&modalBackgroundHeight===height&&modalBackgroundDpr===dpr&&
-      modalBackgroundHudBottom===hudBottom))return;
+      modalBackgroundInsets===hudInsets))return;
     const {g,world,ui,foreground,state,packet,partialFrame}=frozenWorld;
     const extent=g.world;
     const span=Math.max(world.width,world.height);
@@ -246,7 +248,7 @@
     layout.render(ctx,pixels,{layers:foregroundPainter.capture(foreground)});
     drawMapOutlines(ctx,layout,crop,g,dpr,partialFrame);
     modalPresenter.captureBackground(canvas,{inGame:true,dialogOpen:false});
-    modalBackgroundWidth=width;modalBackgroundHeight=height;modalBackgroundDpr=dpr;modalBackgroundHudBottom=hudBottom;
+    modalBackgroundWidth=width;modalBackgroundHeight=height;modalBackgroundDpr=dpr;modalBackgroundInsets=hudInsets;
   }
   function render(captureNative=true) {
     if(!installed)return;
@@ -295,7 +297,7 @@
         modalBackgroundWidth=frozenWorld?.width;
         modalBackgroundHeight=frozenWorld?.height;
         modalBackgroundDpr=frozenWorld?.dpr;
-        modalBackgroundHudBottom=frozenWorld?.hudBottom;
+        modalBackgroundInsets=frozenWorld?.hudInsets;
         cleanWorldReady=false;
         lastWorldPaint=null;
       }
@@ -317,7 +319,8 @@
       if(cameraPilot)resizeFrozenWorld(width,height,dpr);
       const framePixels=coherentFrames?nativeFramePainter.paint(lastScene.frame):lastScene.frame;
       const modal={inGame:true,dialogOpen:true,packet:view?.modal,panelTexture:modalTexture?.(),
-        back:modalBack?.(view?.modal),fillBackground:!!onPresented};
+        back:modalBack?.(view?.modal),fillBackground:!!onPresented,
+        leftInset:hudInsets.left>4?hudInsets.left*dpr:0,rightInset:hudInsets.right>4?hudInsets.right*dpr:0};
       if(onPresented&&modalPresenter.plan(framePixels,{...modal,width:Math.round(width*dpr),
         height:Math.round(height*dpr)}).mode!=='modal'){waitForNativeFrame();return;}
       setVisible(true);
@@ -347,7 +350,7 @@
       if(coherentFrames&&!world){waitForNativeFrame();return;}
       if(cameraPilot){
         const key=[lastScene.packet.sequence,ui.revision,foreground.revision,state.selectionCount,
-          state.buildingPending,width,height,dpr,hudBottom,world.left,world.top,world.width,world.height];
+          state.buildingPending,width,height,dpr,hudInsets,world.left,world.top,world.width,world.height];
         if(telemetry.mode==='world'&&chart&&lastWorldPaint?.every((value,index)=>value===key[index])){
           updateBuildConfirm(state,'world');
           updateCommandHighlight();
@@ -384,7 +387,7 @@
       if(enhancedHud){
         if(cameraPilot){
           cleanWorldReady=true;
-          frozenWorld={g,world,ui,foreground,state,width,height,dpr,hudBottom,
+          frozenWorld={g,world,ui,foreground,state,width,height,dpr,hudInsets,
             packet:lastScene.packet,partialFrame:lastScene.partialFrame};
           updateCommandHighlight();
         }else{
@@ -583,18 +586,25 @@
     output=document.createElement('canvas');output.id='warcraft-map-canvas';output.hidden=true;
     output.style.cssText='z-index:2;pointer-events:none;';frame.append(output);
     if(cameraPilot){
-      const probe=document.createElement('div');
-      probe.setAttribute('aria-hidden','true');
-      probe.style.cssText='position:absolute;visibility:hidden;pointer-events:none;width:0;' +
-        'height:var(--warcraft-hud-bottom,4px);';
-      frame.append(probe);
-      hudBottom=Math.max(4,probe.getBoundingClientRect().height);
-      new global.ResizeObserver(([entry])=>{
-        const next=Math.max(4,entry.contentRect.height);
-        if(next===hudBottom)return;
-        hudBottom=next;
+      const probes=Object.fromEntries(['left','right','bottom'].map(side=>{
+        const probe=document.createElement('div');
+        probe.setAttribute('aria-hidden','true');
+        probe.style.cssText='position:absolute;visibility:hidden;pointer-events:none;height:0;' +
+          `width:var(--warcraft-hud-${side},4px);`;
+        frame.append(probe);
+        return [side,probe];
+      }));
+      function measureInsets(){
+        const next=Object.fromEntries(Object.entries(probes).map(([side,probe])=>
+          [side,Math.max(4,probe.getBoundingClientRect().width)]));
+        if(Object.keys(next).every(side=>next[side]===hudInsets[side]))return;
+        hudInsets=Object.freeze(next);
+        frame.dispatchEvent(new Event('warcraft-hud-insets-change'));
         if(installed&&lastScene)scheduleAnimation(true);
-      }).observe(probe);
+      }
+      measureInsets();
+      const insetObserver=new global.ResizeObserver(measureInsets);
+      for(const probe of Object.values(probes))insetObserver.observe(probe);
       commandHighlight=document.createElement('div');
       commandHighlight.id='warcraft-command-highlight';
       commandHighlight.setAttribute('aria-hidden','true');
@@ -677,5 +687,5 @@
       return {x:x-c.x*32+g.world.left,y:y-c.y*32+g.world.top};
     },
     cameraDebug:()=>camera?.debug(),modalDebug:()=>modalPresenter?.debug(),
-    get active(){return visible;},get chart(){return chart;},telemetry};
+    get active(){return visible;},get chart(){return chart;},get hudInsets(){return hudInsets;},telemetry};
 })(window);

@@ -184,7 +184,7 @@
     }
   }
 
-  function paint({wine, context, image, chart}) {
+  function paint({wine, context, image, chart, backgroundLeft = 0, backgroundWidth = chart.width}) {
     let state = states.get(wine);
     if (!state) {
       state = {scratch: makeCanvas(480, 200, true).canvas};
@@ -192,13 +192,13 @@
     }
     const background = cleanArtwork(wine, image, chart, state);
     if (!background) return false;
-    const {width, height, art, artwork, textScale, source, targets} = chart;
-    const cover = Math.max(width / BACKDROP.w, height / BACKDROP.h);
+    const {height, art, artwork, textScale, source, targets} = chart;
+    const cover = Math.max(backgroundWidth / BACKDROP.w, height / BACKDROP.h);
     const coverW = BACKDROP.w * cover, coverH = BACKDROP.h * cover;
     draw(context, background.canvas, BACKDROP,
-      area((width - coverW) / 2, (height - coverH) / 2, coverW, coverH));
+      area(backgroundLeft + (backgroundWidth - coverW) / 2, (height - coverH) / 2, coverW, coverH));
     context.fillStyle = 'rgba(0,0,0,.8)';
-    context.fillRect(0, 0, width, height);
+    context.fillRect(backgroundLeft, 0, backgroundWidth, height);
     draw(context, background.canvas, art, artwork);
     const scratch = state.scratch.getContext('2d');
     paintText(context, image, scratch, background, source.heading, targets.heading, textScale);

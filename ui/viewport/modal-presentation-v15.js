@@ -9,10 +9,10 @@
   const finite=Number.isFinite,positive=n=>finite(n)&&n>0;
   const freezeRect=r=>Object.freeze({...r,right:r.left+r.width,bottom:r.top+r.height});
   function inside(r,x,y){return x>=r.left&&y>=r.top&&x<r.right&&y<r.bottom;}
-  function contain(source,width,height,maxScale=Infinity,margin=0){
-    const scale=Math.min(maxScale,(width-margin*2)/source.width,(height-margin*2)/source.height);
+  function contain(source,width,height,maxScale=Infinity,margin=0,left=margin,right=margin){
+    const scale=Math.min(maxScale,(width-left-right)/source.width,(height-margin*2)/source.height);
     if(!positive(scale))return null;
-    return freezeRect({left:(width-source.width*scale)/2,top:(height-source.height*scale)/2,
+    return freezeRect({left:left+(width-left-right-source.width*scale)/2,top:(height-source.height*scale)/2,
       width:source.width*scale,height:source.height*scale,scale});
   }
   function defaultCanvas(width,height){
@@ -89,17 +89,20 @@
       }finally{baseContext.restore();}
       counters.backgroundCaptures++;return true;
     }
-    function plan(frame,{inGame=false,dialogOpen=false,packet=null,expectedToken,width,height,back,fillBackground=false}={}){
+    function plan(frame,{inGame=false,dialogOpen=false,packet=null,expectedToken,width,height,back,
+        fillBackground=false,leftInset=0,rightInset=0}={}){
       if(!inGame){reset();return layout;}
       if(!dialogOpen){layout=Object.freeze({active:false,mode:'world'});return layout;}
       if(!base){layout=Object.freeze({active:false,mode:'native-fallback',reason:'no-clean-background'});return layout;}
-      if(!positive(width)||!positive(height))throw new TypeError('Positive modal presentation dimensions required');
+      if(!positive(width)||!positive(height)||![leftInset,rightInset].every(n=>finite(n)&&n>=0))
+        throw new TypeError('Positive modal dimensions and nonnegative side insets required');
       const background=fillBackground?(() => {
         const scale=Math.max(width/base.width,height/base.height);
         return freezeRect({left:(width-base.width*scale)/2,top:(height-base.height*scale)/2,
           width:base.width*scale,height:base.height*scale,scale});
       })():contain(base,width,height),native=nativeLayers(packet,frame,expectedToken);
-      const unionTarget=native?contain(native.union,width,height,maxScale,margin):null;
+      const unionTarget=native?contain(native.union,width,height,maxScale,margin,
+        Math.max(margin,leftInset),Math.max(margin,rightInset)):null;
       const mapRect=source=>freezeRect({left:unionTarget.left+(source.left-native.union.left)*unionTarget.scale,
         top:unionTarget.top+(source.top-native.union.top)*unionTarget.scale,
         width:source.width*unionTarget.scale,height:source.height*unionTarget.scale,scale:unionTarget.scale});
@@ -109,9 +112,10 @@
       let backControl=null;
       if(ready&&back?.image?.naturalWidth&&backSource&&inside(native.source,backSource.left,backSource.top)&&
           inside(native.source,backSource.right-1,backSource.bottom-1)){
-        const size=Math.min(80*backScale,width*.23,height*.25),inset=Math.min(12*backScale,size/6);
+        const size=Math.min(80*backScale,(width-leftInset-rightInset)*.23,height*.25);
+        const inset=Math.min(12*backScale,size/6);
         backControl={source:backSource, oldTarget:mapRect(backSource),
-          target:freezeRect({left:width-size-inset,top:height-size-inset,width:size,height:size})};
+          target:freezeRect({left:width-size-Math.max(inset,rightInset),top:height-size-inset,width:size,height:size})};
       }
       layout=Object.freeze({active:true,mode:ready?'modal':'waiting-native-dialog',
         width,height,background,source:ready?native.source:null,target:ready?mapRect(native.source):null,
