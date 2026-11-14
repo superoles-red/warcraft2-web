@@ -300,7 +300,8 @@
     return chart;
   }
 
-  const api = Object.freeze({layout, wantsImmediatePress});
+  const isAdaptedHandler = handler => HELD_CONTROLS.has(handler);
+  const api = Object.freeze({layout, wantsImmediatePress, isAdaptedHandler});
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WarcraftAssemblyDialogLayout = api;
 })(globalThis);

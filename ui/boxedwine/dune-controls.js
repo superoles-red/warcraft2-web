@@ -74,11 +74,13 @@
       if (![panScaleX,panScaleY].every(value => Number.isFinite(value) && value > 0)) return null;
       return {x:nativePoint.x, y:nativePoint.y,
         clientX: event.clientX, clientY: event.clientY, geometry:nativeGeometry,
-        panScaleX,panScaleY,
+        panScaleX,panScaleY,padding:nativePoint.padding===true,
         canvasRect:{left:rect.left,top:rect.top,width:rect.width,height:rect.height}};
     }
-    const inWorld = p => p && p.x >= p.geometry.world.left && p.x < p.geometry.world.right &&
+    const inWorld = p => p && !p.padding && p.x >= p.geometry.world.left && p.x < p.geometry.world.right &&
       p.y >= p.geometry.world.top && p.y < p.geometry.world.bottom;
+    const canPanFromPadding = (event,p,current) => p?.padding && event.pointerType==='touch' &&
+      event.button===0 && !current.targetPending && !current.buildingPending;
     function nativePoint(p, inset = 0) {
       const world = p.geometry.world;
       const ix = Math.min(inset, (world.right - world.left - 1) / 2);
@@ -322,8 +324,9 @@
     function canStart(event) {
       if(commandMode() && event.button===0 && rawCommand(event)!==null)
         return enabled && !destroyed;
-      return enabled && !destroyed && (event.button === 0 || event.button === 2) &&
-        startAllowed(state()) && inWorld(point(event));
+      if(!enabled||destroyed||(event.button!==0&&event.button!==2))return false;
+      const current=state(),p=point(event);
+      return startAllowed(current)&&(inWorld(p)||canPanFromPadding(event,p,current));
     }
     function down(event) {
       if(commandMode())api.stopPan?.();
@@ -337,16 +340,17 @@
         }
       }
       const p = (event.button === 0 || event.button === 2) && point(event);
-      if (!enabled || destroyed || !startAllowed(state()) || !inWorld(p)) {
+      const current=state();
+      if (!enabled || destroyed || !startAllowed(current) || (!inWorld(p)&&!canPanFromPadding(event,p,current))) {
         if (previousTap) commitTouchTap(previousTap);
         return false;
       }
-      const current=state(),building=current.buildingPending===true;
+      const building=current.buildingPending===true;
       const touch = commandMode() && event.pointerType === 'touch';
       const startedAt = eventTime(event);
       let doubleTap = false, restoreTouchSelection = false;
       if (previousTap) {
-        if (touch && !building && !current.targetPending) {
+        if (touch && !p.padding && !building && !current.targetPending) {
           const elapsed = startedAt - previousTap.timeStamp;
           const previous = previousTap.point;
           doubleTap = elapsed >= 0 && elapsed <= DOUBLE_TAP_MS &&
@@ -456,6 +460,7 @@
         }else if (g.mode === 'pending') {
           const current = state();
           if (g.touch) {
+            if(g.origin.padding)return true;
             const tap = point(event,g.geometry,false);
             if (!inWorld(tap) || !startAllowed(current) || current.buildingPending) return true;
             if (g.targetPendingAtStart || current.targetPending) {

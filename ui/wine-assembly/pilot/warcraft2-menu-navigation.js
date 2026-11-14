@@ -98,10 +98,11 @@
     return packet => {
       if (!arrow.naturalWidth) return null;
       const dialog = packet?.stack?.find(scene => scene.root === packet.currentDialog && scene.nativeVisible);
-      if (!dialog || dialog.handlerAddress !== 0x435b70) return null;
+      if (!dialog || ![0x435b70, 0x441940].includes(dialog.handlerAddress)) return null;
       const root = view(dialog.root, 0x4a);
       if (root?.getUint32(0x2a, true) !== dialog.handlerAddress ||
           root.getUint16(0x20, true) !== dialog.scene) return null;
+      const settings = dialog.handlerAddress === 0x441940;
       // The generic handler is shared. The active native continuation and
       // button geometry distinguish Pause and End Scenario from confirmation dialogs.
       const continuation = dialog.handlerAddress === 0x435b70 && view(0x4b4a14, 4)?.getUint32(0, true);
@@ -119,6 +120,10 @@
         const [left, top, right, bottom] = [4, 6, 8, 10].map(offset => child.getInt16(offset, true));
         const flags = child.getUint32(0x18, true);
         if (id === -3 && !pause) {
+          if (settings) return kind === 2 && (flags & 10) === 8 &&
+            left === 12 && top === 256 && right === 117 && bottom === 283
+            ? {source: {left: dialog.rect.left + left, top: dialog.rect.top + top, width: 106, height: 28},
+              image: arrow, align: 'left'} : null;
           if ((kind !== 1 && kind !== 2) || (flags & 10) !== 8 || left !== 16 || top !== 248 ||
               right !== 239 || bottom !== 275) return null;
           if (!compact && !previousPrefixes.some(prefix => {
@@ -126,7 +131,7 @@
             return label && prefix.every((value, index) => label.getUint8(index) === value);
           })) return null;
           previous = {source: {left: dialog.rect.left + 16, top: dialog.rect.top + 248, width: 224, height: 28},
-            image: arrow, marginScale: Math.max(1, Math.min(3, window.devicePixelRatio || 1))};
+            image: arrow};
           if (!compact) return previous;
         }
         if (compact && (flags & 8) && (kind === 1 || kind === 2)) {
@@ -146,7 +151,7 @@
     };
   }
 
-  function create({wine, renderer, frame, activate, repaint}) {
+  function create({wine, renderer, frame, activate, repaint, initialPage}) {
     const layer = document.createElement('div');
     layer.id = 'warcraft-menu-navigation';
     layer.dataset.winePageDialog = '';
@@ -309,9 +314,8 @@
 
     function labelImage(item) {
       const glyph = item.glyph;
-      const translated = language()?.current?.() === 'ru' && localizedGlyphs.has(glyph)
-        ? images[`label-ru-${glyph}`] : null;
-      return translated?.naturalWidth ? translated : images[`label-${glyph}`];
+      return language()?.current?.() === 'ru' && localizedGlyphs.has(glyph)
+        ? images[`label-ru-${glyph}`] : images[`label-${glyph}`];
     }
 
     function drawLabel(context, item, box, scale) {
@@ -340,21 +344,9 @@
     function drawButton(context, image, item, box) {
       if (item.source && !item.glyph) return drawImage(context, image, box, item.source);
       const base = images[pressed === item.label ? 'title-button-pressed' : 'title-button'];
-      if (!drawImage(context, base, box)) {
-        drawImage(context, image, box, {x: 208, y: 240, w: 34, h: 28});
-      }
+      drawImage(context, base, box);
       const glyph = labelImage(item);
-      if (glyph?.naturalWidth) {
-        const scale = Math.min(box.h / 28, box.w / (glyph.naturalWidth + 40));
-        const w = glyph.naturalWidth * scale, h = glyph.naturalHeight * scale;
-        drawImage(context, glyph, {x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h});
-      } else {
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
-        context.fillStyle = '#f4d343';
-        context.font = `${Math.max(11, box.h * .52)}px serif`;
-        context.fillText(item.label, box.x + box.w / 2, box.y + box.h / 2);
-      }
+      drawLabel(context, item, box, Math.min(box.h / 28, box.w / (glyph.naturalWidth + 40)));
       if (item.language) {
         const state = item.language === (language()?.current?.() || 'en') ? 'selected' :
           (item.language === 'ru' && !language()?.available?.('ru')) ? 'disabled' : 'unselected';
@@ -377,7 +369,12 @@
       }
       const root = scene.scenes.find(s => s.handler)?.root;
       const identity = `${scene.mode}:${root}`;
-      if (owner !== identity) { owner = identity; clearPending(); page = 'title'; }
+      if (owner !== identity) {
+        owner = identity;
+        clearPending();
+        page = scene.mode === 'title' && initialPage ? initialPage : 'title';
+        initialPage = null;
+      }
       if (soundOptions?.opened && scene.mode === 'title') {
         window.WarcraftAssemblyMenuPolicy.persistSoundOptions(wine, soundOptions.before);
         soundOptions = null;
@@ -391,6 +388,19 @@
       const languageMenu = page.startsWith('language');
       const items = campaign ? originals.slice(0, 4).map((source, i) => ({label: campaignLabels[i], source}))
         : scene.mode === 'single' ? single : languageMenu ? languagePage() : optionPages[page] || title;
+      const heading = !languageMenu ? null : page === 'language-pack' ? 'russian' :
+        page === 'language-download' ? 'download-language' : page === 'language-delete' ? 'delete-language' : null;
+      const hasBack = !['language-download', 'language-delete'].includes(page) &&
+        (parentPage[page] || scene.mode === 'single' || campaign);
+      if (!images['orc-texture'].naturalWidth ||
+          (items.some(item => item.glyph) && (!images['title-button'].naturalWidth ||
+            !images['title-button-pressed'].naturalWidth)) ||
+          items.some(item => item.glyph && !labelImage(item)?.naturalWidth) ||
+          (heading && !labelImage({glyph: heading})?.naturalWidth) ||
+          (hasBack && (!images['orc-back'].naturalWidth || !images['orc-back-pressed'].naturalWidth))) {
+        layer.hidden = true;
+        return null;
+      }
       const contentWidth = width - leftInset - rightInset;
       const {picture, boxes: slots, back, scale} = place(contentWidth, height);
       picture.x += leftInset;
@@ -420,8 +430,6 @@
         message.style.cssText = `position:absolute;left:${last.x}px;width:${last.w}px;` +
           `top:${last.y + last.h + 8}px;margin:0;text-align:center;color:#f4d343;font:14px/1.2 system-ui`;
         const first = boxes[0];
-        const heading = page === 'language-pack' ? 'russian' :
-          page === 'language-download' ? 'download-language' : page === 'language-delete' ? 'delete-language' : null;
         if (heading) {
           const h = Math.max(22, first.h), y = Math.max(4, first.y - h - 6);
           drawLabel(context, {glyph: heading}, {...first, y, h}, scale);
@@ -429,18 +437,14 @@
       }
       items.forEach((item, i) => drawButton(context, image, item, boxes[i]));
       const controls = [...items];
-      if (!['language-download', 'language-delete'].includes(page) &&
-          (parentPage[page] || scene.mode === 'single' || campaign)) {
+      if (hasBack) {
         controls.push({label: 'Back', source: parentPage[page] ? null :
           campaign ? originals[4] : nativeButton(348, 'Back').source});
         boxes.push(back);
         const arrow = images[pressed === 'Back' ? 'orc-back-pressed' : 'orc-back'];
         const size = Math.round(back.w * .9);
-        if (!drawImage(context, arrow, {x: back.x + (back.w - size) / 2,
-          y: back.y + (back.h - size * .95) / 2, w: size, h: size * .95})) {
-          context.textAlign = 'center';context.textBaseline = 'middle';context.fillStyle = '#f4d343';
-          context.font = `${size * .75}px serif`;context.fillText('←', back.x + back.w / 2, back.y + back.h / 2);
-        }
+        drawImage(context, arrow, {x: back.x + (back.w - size) / 2,
+          y: back.y + (back.h - size * .95) / 2, w: size, h: size * .95});
       }
       presented = {picture, controls, boxes, page};
       setButtons(controls, boxes);

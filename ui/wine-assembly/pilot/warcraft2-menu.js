@@ -265,7 +265,7 @@
     }
   }
 
-  function install({wine, renderer, source, frame, onPrepared, onUnavailable}) {
+  function install({wine, renderer, source, frame, initialPage, onPrepared, onUnavailable}) {
     const canvas = document.createElement('canvas');
     canvas.id = 'warcraft-menu-canvas';
     canvas.setAttribute('aria-hidden', 'true');
@@ -291,7 +291,7 @@
     if (dialogTexture) { dialogTexture.src = './menu-art/orc-texture.png'; dialogTexture.onload = repaint; }
     const dialogBack = authored ? new Image() : null;
     if (dialogBack) { dialogBack.onload = repaint; dialogBack.src = './menu-art/orc-back.png'; }
-    const navigation = global.WarcraftAssemblyMenuNavigation?.create({wine, renderer, frame, activate, repaint});
+    const navigation = global.WarcraftAssemblyMenuNavigation?.create({wine, renderer, frame, activate, repaint, initialPage});
 
     function dialogStillActive() {
       if (!chart?.dialog) return true;
@@ -363,6 +363,11 @@
       const nativeDialog = authored && bottomButtonLayout(wine, current, contentWidth, rect.height) ||
         (current.mode === 'menu' && global.WarcraftAssemblyDialogLayout?.layout(params));
       const briefing = current.mode === 'briefing' && global.WarcraftAssemblyBriefingLayout?.layout(params);
+      if (authored && current.mode === 'menu' && !nativeDialog &&
+          current.scenes.some(scene => scene.handler && global.WarcraftAssemblyDialogLayout?.isAdaptedHandler?.(scene.handler))) {
+        waitForScene();
+        return;
+      }
       let next = briefing || nativeDialog || layout(contentWidth, rect.height, current.mode, current.art,
         backdrop ? current.controls : []);
       if (!next) {
@@ -382,26 +387,33 @@
       if (canvas.height !== height) canvas.height = height;
       context.setTransform(width / rect.width, 0, 0, height / rect.height, 0, 0);
       context.imageSmoothingEnabled = false;
-      if (current.mode === 'video') {
-        context.fillStyle = '#000';
-      } else {
-        if (current.mode !== scene?.mode || backdrop || current.mode === 'briefing') {
-          // The mission briefing draws a wooden desk near the lower edge.
-          // Use its original color only outside the complete centered frame.
-          const sample = current.mode === 'briefing' ? [8, 474] : [0, 0];
-          borderColor = backdrop ? rgb(backdrop.data) :
-            rgb(image.getContext('2d').getImageData(...sample, 1, 1).data);
-        }
-        context.fillStyle = borderColor;
-      }
-      context.fillRect(0, 0, rect.width, rect.height);
-      if (nativeDialog || (authored && current.cinematic)) {
-        global.WarcraftAssemblyMenuNavigation?.paintTexture(context, dialogTexture, rect.width, rect.height);
-      }
       const foreground = (sourceImage, region) => drawForeground(context, sourceImage, region, backdrop, scratch);
       const authoredPaint = navigation?.paint(context, image, backdrop, current,
         rect.width, rect.height, foreground, left, right);
+      if (authoredPaint === null) {
+        last = image;
+        chart = null;
+        transitioning = true;
+        onUnavailable?.();
+        return;
+      }
       if (!authoredPaint) {
+        if (current.mode === 'video') {
+          context.fillStyle = '#000';
+        } else {
+          if (current.mode !== scene?.mode || backdrop || current.mode === 'briefing') {
+            // The mission briefing draws a wooden desk near the lower edge.
+            // Use its original color only outside the complete centered frame.
+            const sample = current.mode === 'briefing' ? [8, 474] : [0, 0];
+            borderColor = backdrop ? rgb(backdrop.data) :
+              rgb(image.getContext('2d').getImageData(...sample, 1, 1).data);
+          }
+          context.fillStyle = borderColor;
+        }
+        context.fillRect(0, 0, rect.width, rect.height);
+        if (nativeDialog || (authored && current.cinematic)) {
+          global.WarcraftAssemblyMenuNavigation?.paintTexture(context, dialogTexture, rect.width, rect.height);
+        }
         context.save();
         try {
           context.translate(left, 0);

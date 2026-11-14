@@ -37,23 +37,32 @@
   display: block;
   object-fit: contain;
   height: 1em;
-  max-width: calc(100% - 1.45em);
+  max-width: calc(100% - 1.12em);
   image-rendering: pixelated;
 }
-#warcraft-objectives-at-start input {
+.warcraft-native-checkbox {
   appearance: none;
   flex: 0 0 auto;
-  width: 1.2em;
-  height: 1.2em;
+  font: inherit;
+  width: .9em;
+  height: 1.05em;
   margin: 0;
-  background: url("./menu-art/language-unselected.png") center / contain no-repeat;
+  padding: 0;
+  border: 0;
+  background: url("./menu-art/human-checkbox.png") center / contain no-repeat;
   image-rendering: pixelated;
   cursor: pointer;
 }
-#warcraft-objectives-at-start input:checked {
-  background-image: url("./menu-art/language-selected.png");
+.warcraft-native-checkbox:checked {
+  background-image: url("./menu-art/human-checkbox-checked.png");
 }
-#warcraft-objectives-at-start input:focus-visible { outline: 2px solid #f4d343; }
+[data-warcraft-modal-faction="orc"] .warcraft-native-checkbox {
+  background-image: url("./menu-art/orc-checkbox.png");
+}
+[data-warcraft-modal-faction="orc"] .warcraft-native-checkbox:checked {
+  background-image: url("./menu-art/orc-checkbox-checked.png");
+}
+.warcraft-native-checkbox:focus-visible { outline: 2px solid #f4d343; }
 .warcraft-page #screen-canvas-stack {
   --warcraft-hud-left: 4px;
   --warcraft-hud-right: 4px;
@@ -136,15 +145,8 @@
   touch-action: manipulation;
 }
 #warcraft-match-settings input {
-  appearance: none;
-  width: var(--settings-glyph);
-  height: var(--settings-glyph);
-  margin: 0;
-  background: url("./menu-art/language-unselected.png") center / contain no-repeat;
-  image-rendering: pixelated;
-}
-#warcraft-match-settings input:checked {
-  background-image: url("./menu-art/language-selected.png");
+  width: calc(var(--settings-glyph) * .9);
+  height: calc(var(--settings-glyph) * 1.05);
 }
 #warcraft-match-settings img { height: var(--settings-glyph); image-rendering: pixelated; }
 #warcraft-match-settings section { display: grid; gap: 3px; }

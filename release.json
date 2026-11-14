@@ -1,5 +1,5 @@
 {
-  "version": "ba66ae89cc57e8726f8995f8",
+  "version": "cecc7d69f5938dfe9a24e895",
   "files": [
     {
       "path": "LICENSE.wine-assembly",
@@ -58,8 +58,8 @@
     },
     {
       "path": "compact-language.js",
-      "bytes": 10883,
-      "sha256": "d14c8ccaf9980a65555d63177b041c17e85645c71d4904408e4012d7b33ebc4c"
+      "bytes": 11371,
+      "sha256": "8d948cd6ec8569df5b184ad10604f6b725e55199d05f85aa2dbc9d4b182977ea"
     },
     {
       "path": "compact-language.json",
@@ -73,8 +73,8 @@
     },
     {
       "path": "compact-plan.js",
-      "bytes": 6839,
-      "sha256": "6606ada023a58494e71fd7346ca3d550b8de31affafc36b61be9a78c1ffd27a7"
+      "bytes": 8538,
+      "sha256": "5c7c8bdc3f8dc79130ac9f220bd0cbaf070a0c3bc23b101514eef8445e9a6217"
     },
     {
       "path": "fonts/Courier.fon",
@@ -128,8 +128,8 @@
     },
     {
       "path": "host.js",
-      "bytes": 387926,
-      "sha256": "3991b8cffebb5704dd805d218b76bbb4c9a11ed4328acd44fc261bd2a9dc1b43"
+      "bytes": 387989,
+      "sha256": "4394ae214a91e73a5d94bc5b836348f2b1bcacc8cee2965b35173f7eddd9df1d"
     },
     {
       "path": "icons/apple-touch-icon.png",
@@ -473,8 +473,8 @@
     },
     {
       "path": "lib/host-window.js",
-      "bytes": 64233,
-      "sha256": "5866d86cd38e1d5a86bdb6bebe24816efeb7246f5c632e2613a8d5fdcee4a39b"
+      "bytes": 64246,
+      "sha256": "7bc05d2ab75458c5e614751741ca3700e45e229fb8053e3efe699aa2536b1c05"
     },
     {
       "path": "lib/installed-shortcuts.js",
@@ -767,6 +767,16 @@
       "sha256": "8dc94ccd734a3654fa021d10873826755e16642928091c0a96e024603b368cdb"
     },
     {
+      "path": "menu-art/human-checkbox-checked.png",
+      "bytes": 493,
+      "sha256": "a5f584d23d5892b22dcdcbb9afafbbaf887e796d9ebff163cd6d7032bf46a1a8"
+    },
+    {
+      "path": "menu-art/human-checkbox.png",
+      "bytes": 431,
+      "sha256": "62c68238265b7bac6821f795062c69abed3a5101a58cd1f46a9f523e08bbe1e8"
+    },
+    {
       "path": "menu-art/human-texture.png",
       "bytes": 11647,
       "sha256": "3c1dcab8b19b3d7f7a9770aba284695bd1b5016c584776a949fa4751d77b33aa"
@@ -838,13 +848,13 @@
     },
     {
       "path": "menu-art/label-ru-delete-language.png",
-      "bytes": 1023,
-      "sha256": "76fd46ef2beb3376117d9382981e376c7ae94539ba753998d8b402316e6e6c03"
+      "bytes": 1034,
+      "sha256": "9172ee69929ae3a1bae4fafd9430dafe6eec138d96947acfdae895d16a8bd814"
     },
     {
       "path": "menu-art/label-ru-delete.png",
-      "bytes": 661,
-      "sha256": "51ff94769158e3c3098c7d825e0acbf39aa0771876af0d023969d6799bb8c9c0"
+      "bytes": 644,
+      "sha256": "b4ddfb6569d56c89b71ef8f36851f710a550ac579d6ff9f9835c2867e6c53b3f"
     },
     {
       "path": "menu-art/label-ru-download-language.png",
@@ -883,8 +893,8 @@
     },
     {
       "path": "menu-art/label-ru-replay-demo.png",
-      "bytes": 500,
-      "sha256": "c82bd0fc05a7f1e5e667b121fb083db6a1c4b32d09e863ae11d2846317c94267"
+      "bytes": 559,
+      "sha256": "2b93a78e65427f5eaa897fc77e187b670f883ac376eb308b418ea879b96294d7"
     },
     {
       "path": "menu-art/label-ru-settings.png",
@@ -893,8 +903,8 @@
     },
     {
       "path": "menu-art/label-ru-show-objectives.png",
-      "bytes": 1200,
-      "sha256": "c9f6ab4efeeb20441458d6208180924cd6e89af8795491eef3261aa44736e386"
+      "bytes": 1294,
+      "sha256": "431b011dbd77d3222a87e74cadba823ee79b84692af6c78ddd0aecfe82f1de08"
     },
     {
       "path": "menu-art/label-ru-sound.png",
@@ -903,8 +913,8 @@
     },
     {
       "path": "menu-art/label-ru-speed-faster.png",
-      "bytes": 591,
-      "sha256": "3e2a1b41db204e215584360872eb4904f99cf2b15bd346cf514a75e2d7751246"
+      "bytes": 566,
+      "sha256": "e629dbce5446a499bb71c2cea56563afbbecacf1bf1bbffcd6bd215fa4dfb54f"
     },
     {
       "path": "menu-art/label-ru-speed-max.png",
@@ -913,8 +923,8 @@
     },
     {
       "path": "menu-art/label-ru-speed-normal.png",
-      "bytes": 680,
-      "sha256": "75d716a4db0aec8a89339608dc8939d7d9730fa6c6c53bcf14d030fae249869d"
+      "bytes": 702,
+      "sha256": "b13098b046bdc2f2a3e5637284ea0a5a050670a7ca3d39b485ac671dcccadbce"
     },
     {
       "path": "menu-art/label-ru-story.png",
@@ -943,8 +953,8 @@
     },
     {
       "path": "menu-art/label-show-objectives.png",
-      "bytes": 845,
-      "sha256": "18219ecae69e9b919c75cc25923401bb7d92ab3332444a9a28f1bfaa3aa83710"
+      "bytes": 1124,
+      "sha256": "ab8551ddaea1ca39e51020db132c3dcce28a59f39a72afed6a9243789f1fbf48"
     },
     {
       "path": "menu-art/label-sound.png",
@@ -1002,6 +1012,16 @@
       "sha256": "7292773883b05b33d4f00cd4429b7909b93a3e9eb2655d417388fd3b9d90e919"
     },
     {
+      "path": "menu-art/orc-checkbox-checked.png",
+      "bytes": 472,
+      "sha256": "a78466b88e31dca3bfd5bf91c8db8164c3d0c88425379364f622d275128846e4"
+    },
+    {
+      "path": "menu-art/orc-checkbox.png",
+      "bytes": 398,
+      "sha256": "5140bcf288495aedcc8353c4452e09b23c1af1f799a77e08fe55dafaa3760a15"
+    },
+    {
       "path": "menu-art/orc-texture.png",
       "bytes": 7191,
       "sha256": "16a1a95f718104606880e1ab387ed2ba24b2840f23ce71d97455492869843f45"
@@ -1022,6 +1042,11 @@
       "sha256": "b5ee239fb35d6a2efdf695e04c891cf8ae7b2aebe9fc70753f5055b2ad6980b7"
     },
     {
+      "path": "ru-font-overlay.bin",
+      "bytes": 135989,
+      "sha256": "2878059b2130e54a4b1bdf8009b3b3224d35d214c253a3580d159e1bc3759876"
+    },
+    {
       "path": "src/api_table.json",
       "bytes": 722844,
       "sha256": "0b97e8e3eda7e19a24a022208deddf03ee414cfef3cc6eb1b07689ad65ae2123"
@@ -1033,13 +1058,13 @@
     },
     {
       "path": "ui/boxedwine/dune-controls.js",
-      "bytes": 35839,
-      "sha256": "4fa3f98a38aa9a16247176e2e06402fc0b06f3ff274d59cddfb59af72109968e"
+      "bytes": 36244,
+      "sha256": "58733bbfc55da92d67e7c11f40efe0819591950b65f9bec17e19f7c8500a59ec"
     },
     {
       "path": "ui/boxedwine/full-map-runtime.js",
-      "bytes": 45372,
-      "sha256": "e46b7c8e3b11a575ba62cff8252d495fa03d0fe21facaaf0f7a838c33cd9eee2"
+      "bytes": 48511,
+      "sha256": "5a727e1463753b057f4079c368e7a76175e1bb9c53377859344bc7a5dda64bf0"
     },
     {
       "path": "ui/boxedwine/input-fence.js",
@@ -1048,8 +1073,8 @@
     },
     {
       "path": "ui/boxedwine/ui-bridge-runtime.js",
-      "bytes": 22971,
-      "sha256": "6ee87b124e1ceb483b459b0201835715823cc69bb8e75b9a1d3ab1437dc7cf05"
+      "bytes": 23406,
+      "sha256": "5dffe8b68034c18c6862d5a079ece0706fda2726b1b05597040e8526259eed61"
     },
     {
       "path": "ui/boxedwine/viewport-runtime.js",
@@ -1078,13 +1103,13 @@
     },
     {
       "path": "ui/viewport/independent-camera-pilot.js",
-      "bytes": 7775,
-      "sha256": "1b0b271fb351f8414c5d2fce1f28a36684f444d3ef7a9b1a0b359c33d10108fe"
+      "bytes": 8164,
+      "sha256": "4e548944b469a919cbb01822c92419cdd30c54c043370ebea306956420188d76"
     },
     {
       "path": "ui/viewport/modal-presentation-v15.js",
-      "bytes": 21154,
-      "sha256": "52df0fa1daf7d5e8a1a83abef62ed1f0f23e865550feb7134ccdec5400ff665f"
+      "bytes": 21268,
+      "sha256": "4246edc759bca13425b8099da08dd4be2bf9c254552bc948c8ac168012cc9117"
     },
     {
       "path": "ui/viewport/native-frame-v16.js",
@@ -1093,13 +1118,13 @@
     },
     {
       "path": "ui/viewport/presentation.js",
-      "bytes": 9321,
-      "sha256": "b670aad0e39b505305d092084017a3c0d9e88be386ec98e08ec3d2e7e233f317"
+      "bytes": 10222,
+      "sha256": "649ed69d14ccf314843585fdf4b5dc8e0cd7d0317f00a72c25f1914536b0fac4"
     },
     {
       "path": "ui/viewport/smooth-camera.js",
-      "bytes": 21037,
-      "sha256": "7ddc03e46f08452b4bf2d4c166902e354eb9373d02e46661ec1351a22128df77"
+      "bytes": 22163,
+      "sha256": "bbe3f4de9a97d5b4e51b512143bf930e9aafdd23377c974908b241b93899c18c"
     },
     {
       "path": "ui/viewport/ui-rects.js",
@@ -1123,28 +1148,28 @@
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-dialog-layout.js",
-      "bytes": 15227,
-      "sha256": "8557441251251a90d905ba02d37ec5ca1f74dd195f5deecb12b98ae846867692"
+      "bytes": 15311,
+      "sha256": "d15dad6fc968fb6e5aa389a6d802821dd5776fc5d49022407458547e62e060ce"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-menu-navigation.js",
-      "bytes": 22522,
-      "sha256": "1ceeb3e8934a34263de95d91f18d903d9a728b8a4096e78e100fc82b303694e7"
+      "bytes": 22644,
+      "sha256": "5c3f8f7c4cd6ef2b3b0b7f9c38fd35c3854deca095026f1c7b73a473e55451cf"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-menu.js",
-      "bytes": 25417,
-      "sha256": "158eeca3fd36871ba7ed4d6d07bb0c1d08abdfc635a176f78cffdc34ee7a3bc8"
+      "bytes": 25881,
+      "sha256": "ace2bc893ae5b4c0f7504f1ee8413360f422e619ab8e77e5207bfb2f24754a38"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-preferences.js",
-      "bytes": 12187,
-      "sha256": "11a29696ec7914cf5c443f2c7c038fc57e35e3e81bb879031dc57bb3c04f097d"
+      "bytes": 12326,
+      "sha256": "ef455d95a6a5fc9a9d9ed8ee75f3ddc61bbb59a14873a7f50bd03b420c1488d5"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-v16.js",
-      "bytes": 12054,
-      "sha256": "16a7d29f3bfc538751a77b322c3a1a33863e1f3a65696507b6d21a52efa07643"
+      "bytes": 13193,
+      "sha256": "bede12231849b9fdab689650f1e8c2e61ed0970f78d2f1a0d06f7e77d3a4dbea"
     },
     {
       "path": "v16-bridge.dll",
@@ -1173,14 +1198,14 @@
     },
     {
       "path": "warcraft2-v16.css",
-      "bytes": 6222,
-      "sha256": "6ff16180f290996b24c28112350bee71601050eda33f369d3ca1e2bbba01e92b"
+      "bytes": 6269,
+      "sha256": "17d3784feae7fcb4a483c2b2dc81a3bba19a7086f65cd0de82f7e21284ef3132"
     },
     {
       "path": "warcraft2.js",
-      "bytes": 9506,
-      "sha256": "1ab0c1ef65b4894df9645dd5484323cc541a2034acbfe8ad4d58c1598daf695d"
+      "bytes": 11145,
+      "sha256": "bab8fd79a77a2ea1767afa5781914390b8d51323e089ba1e55804082e10e0bb7"
     }
   ],
-  "workerSha256": "5d13bc9ffd3a5f8b06b2ffc35e893689627e1a98e40dd796ab91f12d2654ddea"
+  "workerSha256": "cf38acd661b12c4eef6d07329e16ff824c66a2d171a84eada38d333ca82b34a4"
 }

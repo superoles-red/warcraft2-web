@@ -1916,6 +1916,7 @@ class WineAssembly {
       get sharedRenderWorkerEnabled() { return !!self.guestWorker; },
       apiTable: self.apiTable,
       get renderer() { return self.renderer; },
+      get retired() { return self._stopped && !self.memory; },
       get resourceJson() { return self.resourceJson; },
       get dllResources() { return self.dllResources; },
       get instance() {

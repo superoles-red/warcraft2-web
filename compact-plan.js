@@ -7,6 +7,35 @@
   const exePath = root.toLowerCase() + '\\warcraft ii bne.exe';
   const assets = window.WarcraftCompactAssets;
   const corePath = 'install-core.bin';
+  const russianPatchBytes = 479620;
+  const russianBlockTable = 477204;
+  const fontOverlayBytes = 135989;
+  const correctedPatchHash = '1d3e9b3a82c3ab85ef1f0aec8266f3b1ad8852e6a0777d45acbae6c2255dc331';
+
+  async function fixRussianGlyph(original) {
+    if (original.length !== russianPatchBytes) return original;
+    const header = new DataView(original.buffer, original.byteOffset, 32);
+    if (header.getUint32(0, true) !== 0x1a51504d || header.getUint32(8, true) !== russianPatchBytes ||
+        header.getUint16(12, true) !== 0 || header.getUint32(20, true) !== russianBlockTable) return original;
+    try {
+      const response = await fetch(new URL('ru-font-overlay.bin', location.href), {redirect: 'error'});
+      if (!response.ok) return original;
+      const overlay = new Uint8Array(await response.arrayBuffer());
+      if (overlay.length !== fontOverlayBytes) return original;
+      // Leave the verified language download alone. Only the five font members
+      // are replaced in the mounted copy via an updated block table and tail.
+      const patched = new Uint8Array(russianBlockTable + overlay.length);
+      patched.set(original.subarray(0, russianBlockTable));
+      patched.set(overlay, russianBlockTable);
+      new DataView(patched.buffer).setUint32(8, patched.length, true);
+      const hash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', patched)),
+        byte => byte.toString(16).padStart(2, '0')).join('');
+      return hash === correctedPatchHash ? patched : original;
+    } catch (_) {
+      return original;
+    }
+  }
+  let compactBase;
 
   async function getPlan() {
     const manifest = await assets.initialize();
@@ -28,7 +57,7 @@
     }
 
     const name = 'warcraft2-compact.zip';
-    const base = await window.mediaImport.analyze({
+    const base = compactBase ??= await window.mediaImport.analyze({
       name, size: manifest.filesByPath.get('base.zip').bytes,
       readRange: (offset, length) => assets.read('base.zip', offset, length),
     }, {name, mountOptions: {root, unwrap: false}});
@@ -36,7 +65,8 @@
       throw new Error('Игровые файлы Warcraft II не распознаны');
     }
     const language = window.WarcraftCompactLanguage;
-    const textPatch = await language?.patch();
+    const originalTextPatch = await language?.patch();
+    const textPatch = originalTextPatch && await fixRussianGlyph(originalTextPatch);
     let localized = null;
     try {
       localized = await prepareLocalizedMedia(language?.pack, virtualInstallSize);

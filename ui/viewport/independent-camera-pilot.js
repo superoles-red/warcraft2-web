@@ -11,7 +11,7 @@
   const explicitBuilding = document.currentScript?.hasAttribute('data-build-confirm') === true;
   const tile = 32;
   const coastMs = 185;
-  const clamp = (value, max) => Math.min(max, Math.max(0, value));
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
   function coversWorld(g) {
     return g?.active === true && g.width === viewport.width && g.height === viewport.height &&
@@ -32,12 +32,12 @@
     }
 
     function setPosition(x, y) {
-      position = {x: clamp(x, view.maxX), y: clamp(y, view.maxY)};
+      position = {x: clamp(x, view.minX, view.maxX), y: clamp(y, view.minY, view.maxY)};
       if (position.x !== x) velocityX = 0;
       if (position.y !== y) velocityY = 0;
     }
 
-    function frame(g, width, height, time = performance.now(), receipt) {
+    function frame(g, width, height, time = performance.now(), receipt, edgeRoom) {
       const supported = coversWorld(g);
       if (supported !== independent) {
         stop();
@@ -46,19 +46,24 @@
         independent = supported;
       }
       if (!independent) return fallback.frame(g, width, height, time, receipt,
-        g?.mapWidth > 32 || g?.mapHeight > 32);
+        g?.mapWidth > 32 || g?.mapHeight > 32, edgeRoom);
 
       const worldWidth = g.mapWidth * tile;
       const worldHeight = g.mapHeight * tile;
       // Use one scale for both axes. The shorter dimension depends on aspect.
       const scale = Math.max(width / 896, height / 896);
       const w = width / scale, h = height / scale;
+      const minX = -(edgeRoom?.(w) ?? 0), minY = -(edgeRoom?.(h) ?? 0);
+      const maxX = worldWidth - w - minX, maxY = worldHeight - h - minY;
       if (!view || view.w !== w || view.h !== h) {
         const cx = view ? position.x + view.w / 2 : worldWidth / 2;
         const cy = view ? position.y + view.h / 2 : worldHeight / 2;
-        view = {w, h, maxX: worldWidth - w, maxY: worldHeight - h};
+        view = {w, h, minX, minY, maxX, maxY};
         stop();
         setPosition(cx - w / 2, cy - h / 2);
+      } else if (view.minX !== minX || view.minY !== minY || view.maxX !== maxX || view.maxY !== maxY) {
+        Object.assign(view, {minX, minY, maxX, maxY});
+        setPosition(position.x, position.y);
       }
       const elapsed = time - lastFrame;
       lastFrame = time;
@@ -74,7 +79,7 @@
         }
       }
       return {left: g.world.left + position.x, top: g.world.top + position.y,
-        width: w, height: h, extraX: view.maxX, extraY: view.maxY,
+        width: w, height: h, extraX: worldWidth - w, extraY: worldHeight - h,
         sourceCamera: {x: 0, y: 0}, visibleGlobal: {...position}};
     }
 

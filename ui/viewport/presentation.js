@@ -23,6 +23,21 @@
     const painted=rectangle({left:source.left*scale+tx,top:source.top*scale+ty,width,height},'painted');
     return Object.freeze({scale,tx,ty,painted});
   }
+  function projectWorld(world, native, width, height) {
+    const view=rectangle(world,'camera view');
+    const source=intersection(view,rectangle(native,'native world'));
+    if(!source)throw new RangeError('Camera view has no native map pixels');
+    if(source.width===view.width&&source.height===view.height)
+      return {source,target:{left:0,top:0,width,height}};
+    const scale=width/view.width;
+    return {source,target:{left:(source.left-view.left)*scale,top:(source.top-view.top)*scale,
+      width:source.width*scale,height:source.height*scale}};
+  }
+  // Mobile camera may pass a real map edge by up to ten native tiles.
+  // Keep two tiles in view when the phone's aspect would otherwise hide them.
+  function mapEdgeRoom(span) {
+    return Math.max(0, Math.min(10 * 32, span - 2 * 32));
+  }
   function createChart(options){
     const width=options.width,height=options.height;
     if(!positive(width)||!positive(height))throw new TypeError('Positive chart width and height required');
@@ -91,7 +106,7 @@
       const p=sourceToPresentation(id,x,y),t=clientTransform(clientRect);if(!p||!t)return null;
       return {x:p.x*t.scale+t.tx,y:p.y*t.scale+t.ty,visible:p.visible};
     }
-    function render(context,frame,{clear=true,background='#000',layers={}}={}){
+    function render(context,frame,{clear=true,background='#000',layers={},afterMap}={}){
       if(!context||typeof context.drawImage!=='function')throw new TypeError('2D rendering context required');
       if(frame.width!==source.width||frame.height!==source.height)throw new RangeError('Frame/source geometry mismatch; wait for fresh native geometry');
       const output=context.canvas;
@@ -117,6 +132,7 @@
             const visual=r.visualSource;
             if(!pixels||visual.right>pixels.width||visual.bottom>pixels.height)throw new RangeError('Native visual layer not ready: '+r.id);
             context.drawImage(pixels,visual.left,visual.top,visual.width,visual.height,t.painted.left,t.painted.top,t.painted.width,t.painted.height);
+            if(r.id==='map')afterMap?.(context,t.painted);
           }finally{context.restore();}
         }
       }finally{context.restore();}
@@ -143,6 +159,6 @@
       return {frame:canvas,sequence,width:canvas.width,height:canvas.height};
     }});
   }
-  const api={createChart,createFrameCopier};
+  const api={createChart,createFrameCopier,projectWorld,mapEdgeRoom};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else global.WarcraftPresentation=api;
 })(typeof window!=='undefined'?window:globalThis);

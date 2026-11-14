@@ -3,6 +3,13 @@
   'use strict';
   const nativePath = name => 'c:\\' + name.replaceAll('/', '\\');
 
+  function modalFaction(wine) {
+    const offset = wine.instance?.exports?.guest_to_wasm?.(0x4abb7c) >>> 0;
+    const memory = wine.memory?.buffer;
+    if (!(offset > 0xf0 && offset < memory?.byteLength)) return null;
+    return new Uint8Array(memory, offset, 1)[0] === 0 ? 'human' : 'orc';
+  }
+
   function infoButtons(wine, layer) {
     const translate = wine.instance?.exports?.guest_to_wasm;
     const memory = wine.memory?.buffer;
@@ -43,10 +50,11 @@
     label.hidden = true;
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
+    checkbox.className = 'warcraft-native-checkbox';
     checkbox.dataset.winePageDialog = '';
     const russian = window.WarcraftLanguage?.current?.() === 'ru';
     const caption = document.createElement('img');
-    caption.alt = russian ? 'Показывать в начале' : 'Show at Start';
+    caption.alt = russian ? 'Показывать каждый раз' : 'Show Every Time';
     caption.src = `./menu-art/label-${russian ? 'ru-' : ''}show-objectives.png`;
     label.append(checkbox, caption);
     frame.append(label);
@@ -78,7 +86,7 @@
     };
   }
 
-  function attach(wine, renderer, {onTitlePrepared} = {}) {
+  function attach(wine, renderer, {onTitlePrepared, initialPage} = {}) {
     const vfs = wine._helpCtx.vfs;
     const surface = document.getElementById('screen');
     const display = document.getElementById('screen-present');
@@ -86,6 +94,13 @@
     const input = window.WarcraftAssemblyInput.create(wine, renderer);
     const objectivesCheckbox = onTitlePrepared && createObjectivesCheckbox(wine, frame, surface);
     const matchSettings = onTitlePrepared && window.WarcraftMatchPreferences?.create(wine, frame);
+    const restore = [];
+    function wrap(owner, name, handler) {
+      const original = owner[name];
+      const replacement = handler(original);
+      owner[name] = replacement;
+      restore.push(() => { if (owner[name] === replacement) owner[name] = original; });
+    }
     let presented = null;
     function show(owner, mode) {
       if (presented !== owner) {
@@ -103,15 +118,14 @@
     if (onTitlePrepared) {
       hold('menu');
       for (const name of ['handleKeyDown', 'handleKeyPress']) {
-        const handle = renderer[name];
-        if (typeof handle !== 'function') continue;
-        renderer[name] = function(...args) {
+        if (typeof renderer[name] !== 'function') continue;
+        wrap(renderer, name, handle => function(...args) {
           if (!('warcraftTransition' in frame.dataset)) return handle.apply(this, args);
-        };
+        });
       }
     }
     let menu, notifyMapFrame;
-    window.attachWarcraftUiTransport({
+    const detachTransport = window.attachWarcraftUiTransport({
       ...input,
       surface,
       input: surface,
@@ -126,7 +140,7 @@
       },
     });
     menu = window.WarcraftIndependentCameraPilot && window.WarcraftAssemblyMenu
-      ? window.WarcraftAssemblyMenu.install({wine, renderer, source: surface, frame,
+      ? window.WarcraftAssemblyMenu.install({wine, renderer, source: surface, frame, initialPage,
         onPrepared({mode, authored}) {
           if (!onTitlePrepared) return;
           show('menu', mode);
@@ -136,16 +150,20 @@
       })
       : null;
     if (menu) window.WarcraftAssemblyMenuDebug = menu.debug;
-    const textures = window.WarcraftAssemblyMenuNavigation && ['human', 'orc'].map(faction => {
+    const textures = window.WarcraftAssemblyMenuNavigation && Object.fromEntries(['human', 'orc'].map(faction => {
       const image = new Image();
       image.src = `./menu-art/${faction}-texture.png`;
-      return image;
-    });
-    window.WarcraftFullMap.install({
+      return [faction, image];
+    }));
+    const detachMap = window.WarcraftFullMap.install({
       source: surface, input: surface, display, frame, container: frame,
       independentCamera: window.WarcraftIndependentCameraPilot,
       onPresented: onTitlePrepared ? (mode, layout) => {
         show('map', mode);
+        if (mode === 'dialog') {
+          const faction = modalFaction(wine);
+          if (faction && frame.dataset.warcraftModalFaction !== faction) frame.dataset.warcraftModalFaction = faction;
+        }
         objectivesCheckbox(mode === 'dialog' ? layout : null);
         matchSettings?.(mode === 'dialog' ? layout : null);
       } : undefined,
@@ -161,10 +179,7 @@
       modalSlider: (layer, x, y) => window.WarcraftAssemblyMenuPolicy?.sliderAt(wine, layer, x, y),
       modalTexture() {
         if (!textures || !window.WarcraftUiBridge.state().inGame) return null;
-        const offset = wine.instance?.exports?.guest_to_wasm?.(0x4abb7c) >>> 0;
-        const memory = wine.memory?.buffer;
-        return offset > 0xf0 && offset < memory?.byteLength
-          ? textures[new Uint8Array(memory, offset, 1)[0] === 0 ? 0 : 1] : null;
+        return textures[modalFaction(wine)] ?? null;
       },
       setOriginalCursor(element, value) {
         // Wine owns the canvas cursor and may hide it for software-cursor games.
@@ -180,19 +195,15 @@
       },
       subscribeFrame(callback) {
         notifyMapFrame = callback;
-        const observe = renderer.observePresentationPublication;
-        renderer.observePresentationPublication = function(...args) {
+        wrap(renderer, 'observePresentationPublication', observe => function(...args) {
           observe.apply(this, args);
           callback();
           if (args[0]?.backend !== 'warcraft-map') menu?.onFrame(args[0]);
-        };
+        });
       },
     });
     if (onTitlePrepared && menu) {
       const gdi = wine.hostCtx.sharedGdi;
-      const upload = gdi.presentBestDxOffscreen;
-      const repaint = renderer._repaintOnce;
-      const scanout = renderer._presentDisplayCanvas;
       let mapRepaint = false, hiddenCopyDeferred = false, restoreScanout = false;
 
       function guestValue(address, bytes) {
@@ -224,7 +235,7 @@
       // The V16 canvas uses the completed indexed guest frame. Keep normal
       // DirectDraw timing and input bookkeeping but skip uploading a second,
       // hidden copy once the original world and our displayed owner agree.
-      gdi.presentBestDxOffscreen = function(...args) {
+      wrap(gdi, 'presentBestDxOffscreen', upload => function(...args) {
         if (restoreScanout || !ownsWorld()) {
           const uploaded = upload.apply(this, args);
           if (uploaded) hiddenCopyDeferred = false;
@@ -233,8 +244,8 @@
         hiddenCopyDeferred = true;
         notifyMapFrame();
         return 0;
-      };
-      renderer._repaintOnce = function(capture) {
+      });
+      wrap(renderer, '_repaintOnce', repaint => function(capture) {
         mapRepaint = !capture && ownsWorld();
         if (mapRepaint) return null;
         if (hiddenCopyDeferred && !wine._dxLockDeferred && wine.running) {
@@ -246,15 +257,28 @@
           finally { restoreScanout = false; }
         }
         return repaint.call(this, capture);
-      };
-      renderer._presentDisplayCanvas = function() {
+      });
+      wrap(renderer, '_presentDisplayCanvas', scanout => function() {
         if (!mapRepaint) return scanout.call(this);
         mapRepaint = false;
         return {source: null, output: this.canvas, backend: 'warcraft-map'};
-      };
+      });
     }
     window.installWarcraftDuneControls();
     window.WarcraftFullMap.installInputRouter();
+    return () => {
+      detachMap?.();
+      detachTransport();
+      menu?.destroy();
+      for (const release of restore.reverse()) release();
+      if (window.WarcraftAssemblyMenuDebug === menu?.debug) delete window.WarcraftAssemblyMenuDebug;
+      for (const id of ['warcraft-objectives-at-start', 'warcraft-match-settings', 'warcraft-match-settings-heading']) {
+        frame.querySelector('#' + id)?.remove();
+      }
+      delete frame.dataset.warcraftPresentation;
+      delete frame.dataset.warcraftMode;
+      delete frame.dataset.warcraftTransition;
+    };
   }
 
   window.attachWarcraftAssemblyV16 = attach;

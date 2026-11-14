@@ -16,6 +16,7 @@
   let selection;
   let pack;
   let pendingManifest;
+  let restartGame;
   const validFile = file => file && /^[a-f0-9]{64}$/.test(file.sha256) &&
     Number.isSafeInteger(file.bytes) && file.bytes > 0 && file.bytes < 16 * 1024 * 1024;
   const asset = file => new URL('compact-data/' + file.sha256 + '.bin', root);
@@ -174,12 +175,13 @@
     if (selection) throw new Error('Подождите, пока язык загрузится.');
     selection = language;
     try {
+      let loaded = null;
       if (language === 'ru') {
-        const loaded = await loadRussian({download, progress});
+        loaded = await loadRussian({download, progress});
         if (hasAudio(language) && !loaded.audio) throw new Error('Сначала скачайте русский язык.');
       }
       localStorage.setItem(preference, language);
-      location.reload();
+      await applyLanguage(language, loaded, download ? 'title' : 'language');
     } finally {
       selection = null;
     }
@@ -203,18 +205,34 @@
     if (selection) throw new Error('Подождите, пока язык загрузится.');
     selection = language;
     try {
-      if (selected === language) localStorage.removeItem(preference);
       await caches.delete(cacheName);
-      if (selected === language) location.reload();
+      if (selected === language) {
+        localStorage.removeItem(preference);
+        await applyLanguage('en', null, 'language');
+      }
     } finally {
       selection = null;
     }
   }
 
+  async function applyLanguage(language, nextPack, page) {
+    selected = language;
+    pack = nextPack;
+    if (restartGame) {
+      try {
+        await restartGame(page);
+        return;
+      } catch (error) {
+        console.warn('Warcraft II language restart failed:', error);
+      }
+    }
+    location.reload();
+  }
+
   async function patch() {
     if (selected !== 'ru') return null;
     try {
-      pack = await loadRussian({download: false});
+      pack ??= await loadRussian({download: false});
       return pack.textPatch;
     } catch (error) {
       fallback(error);
@@ -237,5 +255,6 @@
   const hasAudio = language => language === 'ru' && descriptor.audio === 'true';
   const needsDownload = language => hasAudio(language) && selected === 'ru' && !pack?.audio;
   window.WarcraftLanguage = Object.freeze({current: () => selected, available, select, status, remove, hasAudio, needsDownload});
-  window.WarcraftCompactLanguage = Object.freeze({patch, fallback, fallbackAudio, get pack() { return pack; }});
+  window.WarcraftCompactLanguage = Object.freeze({patch, fallback, fallbackAudio,
+    setRestart(handler) { restartGame = handler; }, get pack() { return pack; }});
 })();

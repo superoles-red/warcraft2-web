@@ -4,6 +4,7 @@
   const originalHash = 'c3d83429aa0c2200ad3f6ac141da8ae7213a7b196d1f70d4d84a6e607bd504bd';
   const ownsPresentation = document.documentElement.classList.contains('warcraft-page');
   const autoLaunch = !!(window.WarcraftCompactPlan || window.WarcraftLocalMedia);
+  let activeRun, bridgeReady;
   const panel = document.createElement('main');
   panel.id = 'war2-launch-cover';
   panel.style.cssText = [
@@ -61,6 +62,7 @@
   }
 
   function activateGameAudioOnInput(wine) {
+    const listeners = new AbortController();
     const resume = event => {
       if (!event.isTrusted || !wine.running ||
           (event.type !== 'keydown' && !event.target?.closest?.('#screen-wrap'))) return;
@@ -79,11 +81,12 @@
     // Capture sees the user's gesture before the authored menus and map
     // consume it. Never wait on browser audio permission before entering BNE.
     for (const type of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) {
-      window.addEventListener(type, resume, {capture: true, passive: true});
+      window.addEventListener(type, resume, {capture: true, passive: true, signal: listeners.signal});
     }
+    return () => listeners.abort();
   }
 
-  async function prepare() {
+  async function prepare(initialPage) {
     await waitForRuntime();
     const media = window.mediaImport;
     const plan = window.WarcraftCompactPlan
@@ -119,32 +122,55 @@
     // The native UI bridge and compositor read the cooperative VFS and
     // process memory. Keep this app on the verified Wine-Assembly path.
     if (ownsPresentation) app.threads = false;
-    window.wineApps.APPS[plan.id] = app;
     const viewport = window.WarcraftIndependentCameraPilot?.viewport ?? {width: 832, height: 608};
     const moviePilot = window.WarcraftCompressedMoviePilot;
     const movieMedia = window.WarcraftCompactPlan ? await moviePilot.prepareMedia() : undefined;
-    const installBridge = window.WarcraftAssemblyV16 && await window.WarcraftAssemblyV16.prepare({
+    bridgeReady ??= window.WarcraftAssemblyV16?.prepare({
       ...viewport,
       hideKeyboardHints: window.matchMedia('(pointer: coarse)').matches,
       ...moviePilot?.bridge,
     });
+    const installBridge = await bridgeReady;
 
     async function launch() {
       start.disabled = true;
-      status.textContent = 'Запускаю игру…';
       let imageLoaded = false;
       let titlePrepared;
       const firstTitle = ownsPresentation && new Promise(resolve => { titlePrepared = resolve; });
       const shell = window.wineShell;
-      await shell.launchApp(plan.id, {hidden: ownsPresentation, async beforeRun(wine) {
-        if (autoLaunch) activateGameAudioOnInput(wine);
+      const previous = activeRun;
+      if (previous) {
+        const running = shell.runningApps.find(entry => entry.wine === previous.wine);
+        if (!running || shell.runningApps.length !== 1 || window.WarcraftUiBridge.state().inGame) {
+          throw new Error('Язык можно переключить в главном меню');
+        }
+        await previous.wine._flushVfsOverlay?.('language switch');
+        app._sessionOverlayStore = previous.app._sessionOverlayStore;
+        previous.dispose();
+        previous.wine.stop({repaint: false, releaseNow: true});
+        activeRun = null;
+        if (previous.wine.memory) throw new Error('Старая сессия Warcraft II ещё завершается');
+      }
+
+      let releaseAudio, releaseV16, movie;
+      function dispose() {
+        releaseAudio?.();
+        releaseV16?.();
+        movie?.destroy();
+        releaseAudio = releaseV16 = movie = null;
+      }
+      window.wineApps.APPS[plan.id] = app;
+      await shell.launchApp(plan.id, {hidden: ownsPresentation, onExit: dispose, async beforeRun(wine) {
+        if (autoLaunch) releaseAudio = activateGameAudioOnInput(wine);
         if (installBridge) {
           await installBridge(wine);
           await window.WarcraftAssemblyMenuPolicy?.install(wine);
           window.WarcraftMatchPreferences?.install(wine);
-          window.attachWarcraftAssemblyV16(wine, shell.renderer, {onTitlePrepared: titlePrepared});
-          moviePilot?.attach(wine, movieMedia);
+          releaseV16 = window.attachWarcraftAssemblyV16(wine, shell.renderer,
+            {onTitlePrepared: titlePrepared, initialPage});
+          movie = moviePilot?.attach(wine, movieMedia);
         }
+        if (window.WarcraftCompactPlan) activeRun = {app, wine, dispose};
         imageLoaded = true;
       }});
       // The upstream shell handles its own boot errors and may resolve on failure.
@@ -165,7 +191,10 @@
       panel.remove();
     }
 
-    if (autoLaunch) return launch();
+    if (autoLaunch) {
+      if (!initialPage) status.textContent = 'Запускаю игру…';
+      return launch();
+    }
     start.addEventListener('click', () => launch().catch(showError), {once: true});
     status.textContent = 'Локальный архив готов к запуску.';
     start.disabled = false;
@@ -207,6 +236,12 @@
         Math.floor(100 * loaded / total) + '%';
     });
     await prepare();
+    window.WarcraftCompactLanguage?.setRestart(async page => {
+      status.textContent = window.WarcraftLanguage.current() === 'ru' ? 'Переключаю язык…' : 'Switching language…';
+      panel.style.background = '#161513 url("./menu-art/orc-texture.png") center / cover';
+      document.body.append(panel);
+      await prepare(page);
+    });
   }
 
   if (window.WarcraftCompactPlan) {

@@ -36,7 +36,8 @@
   function inside(r,x,y){return x>=r.left&&y>=r.top&&x<r.right&&y<r.bottom;}
   // Keep original full-width raster strips, including the frame and controls.
   // Leave six native pixels between the remaining rows.
-  const MENU_STRIPS={pause:[[0,104],[138,211],[245,288]],'two-actions':[[0,70],[104,141],[284,288]]};
+  const MENU_STRIPS={pause:[[0,104],[138,211],[245,288]],
+    'two-actions':[[0,70],[104,141],[198,248],[284,288]]};
   function contain(source,width,height,maxScale=Infinity,margin=0,left=margin,right=margin){
     const scale=Math.min(maxScale,(width-left-right)/source.width,(height-margin*2)/source.height);
     if(!positive(scale))return null;
@@ -188,14 +189,18 @@
         });
       }
       const backSource=back?.source&&freezeRect(back.source);
-      const backScale=back?.marginScale??1;
       let backControl=null;
       if(ready&&back?.image?.naturalWidth&&backSource&&inside(native.source,backSource.left,backSource.top)&&
           inside(native.source,backSource.right-1,backSource.bottom-1)){
-        const size=Math.min(80*backScale,(width-leftInset-rightInset)*.23,height*.25);
-        const inset=Math.min(12*backScale,size/6);
-        backControl={source:backSource, oldTarget:mapRect(backSource),
-          target:freezeRect({left:width-size-Math.max(inset,rightInset),top:height-size-inset,width:size,height:size})};
+        const panel=strips?unionTarget:mapRect(native.source);
+        const oldTarget=mapRect(backSource);
+        const size=(compact?38:28)*panel.scale, inset=8*panel.scale;
+        const leftAligned=back.align==='left';
+        const left=leftAligned?oldTarget.left+(oldTarget.width-size)/2:panel.right-size-inset;
+        const top=compact?panel.bottom-size-inset:oldTarget.top;
+        const target=freezeRect({left,top,width:size,height:size});
+        backControl={source:backSource,oldTarget,replaceButton:!compact,target,
+          hitTarget:leftAligned?oldTarget:target};
       }
       layout=Object.freeze({active:true,mode:ready?'modal':'waiting-native-dialog',
         width,height,background,source:ready?native.source:null,target:ready?(strips?unionTarget:mapRect(native.source)):null,
@@ -267,18 +272,14 @@
             }
           }
           if(p.back){
-            if(!p.strips){
+            if(p.back.replaceButton){
               const old=p.back.oldTarget;
               // Cover the original button using nearby original stone at the same scale.
               const s=p.back.source,t=p.target,extra=Math.ceil(2/t.scale);
               const patchW=s.width+extra*2,patchH=s.height+extra*2;
-              const sourceY=s.top-patchH-extra;
-              context.save();
-              context.translate(0,2*(old.top-2));
-              context.scale(1,-1);
+              const sourceY=p.preferencesBody?p.source.top+214:s.top-patchH-extra;
               context.drawImage(frame,s.left-extra,sourceY,patchW,patchH,
-                old.left-2,old.top-2-(old.height+4),old.width+4,old.height+4);
-              context.restore();
+                old.left-2,old.top-2,old.width+4,old.height+4);
             }
             const arrow=p.back.target;
             const size=arrow.width*.9;
@@ -301,9 +302,9 @@
       if(!layout.active||!finite(x)||!finite(y)||x<0||y<0||x>=layout.width||y>=layout.height)return null;
       if(layout.mode==='modal'&&layout.back){
         const back=layout.back;
-        if(inside(back.target,x,y))return {regionId:'native-modal-back',kind:'native-ui',
+        if(inside(back.hitTarget,x,y))return {regionId:'native-modal-back',kind:'native-ui',
           x:back.source.left+back.source.width/2,y:back.source.top+back.source.height/2,token:layout.token};
-        if(!layout.strips&&inside(back.oldTarget,x,y))return {regionId:'modal-blocker',kind:'blocked'};
+        if(back.replaceButton&&inside(back.oldTarget,x,y))return {regionId:'modal-blocker',kind:'blocked'};
       }
       if(layout.mode!=='modal'||!inside(layout.target,x,y))return {regionId:'modal-blocker',kind:'blocked'};
       const strip=layout.strips?.find(region=>inside(region.target,x,y));

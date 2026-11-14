@@ -33,7 +33,7 @@
       g.cameraX <= g.maxX && g.cameraY <= g.maxY;
   }
 
-  function dimensions(g, width, height, guard, viewport) {
+  function dimensions(g, width, height, guard, viewport, edgeRoom) {
     const nativeWidth = g.world.right - g.world.left;
     const nativeHeight = g.world.bottom - g.world.top;
     const reference = viewport?.width === g.width && viewport?.height === g.height ? viewport.reference : null;
@@ -44,13 +44,21 @@
     const aspect = width / height;
     const w = Math.min(availableWidth, availableHeight * aspect);
     const h = Math.min(availableHeight, availableWidth / aspect);
-    return { w, h, extraX: nativeWidth - w, extraY: nativeHeight - h,
-      maxX: Math.max(0, g.mapWidth * TILE - w), maxY: Math.max(0, g.mapHeight * TILE - h) };
+    const realMaxX = Math.max(0, g.mapWidth * TILE - w);
+    const realMaxY = Math.max(0, g.mapHeight * TILE - h);
+    const edgeX = edgeRoom?.(w) ?? 0, edgeY = edgeRoom?.(h) ?? 0;
+    return { w, h, extraX: nativeWidth - w, extraY: nativeHeight - h, realMaxX, realMaxY,
+      minX: -edgeX, minY: -edgeY, maxX: realMaxX + edgeX, maxY: realMaxY + edgeY };
   }
 
   function coverage(camera, d) {
     const left = camera.x * TILE, top = camera.y * TILE;
-    return { left, top, right: Math.min(left + d.extraX, d.maxX), bottom: Math.min(top + d.extraY, d.maxY) };
+    const right = left + d.extraX, bottom = top + d.extraY;
+    // The guest still needs to render all visible terrain. Widen coverage
+    // only on the four edges whose other side is genuinely outside the map.
+    return { left: left === 0 ? d.minX : left, top: top === 0 ? d.minY : top,
+      right: d.maxX===d.realMaxX ? Math.min(right,d.realMaxX) : right>=d.realMaxX-EPSILON ? d.maxX : right,
+      bottom: d.maxY===d.realMaxY ? Math.min(bottom,d.realMaxY) : bottom>=d.realMaxY-EPSILON ? d.maxY : bottom };
   }
 
   function intersection(a, b) {
@@ -153,19 +161,21 @@
         !!(desired && visible && Math.hypot(desired.x - visible.x, desired.y - visible.y) > .02);
     }
 
-    function frame(g, width, height, time = now(), receipt, travel = false) {
+    function frame(g, width, height, time = now(), receipt, travel = false, edgeRoom) {
       if (!validGeometry(g) || !Number.isFinite(time) || !(width > 0 && height > 0)) {
         reset();
         return null;
       }
       const d = dimensions(g, width, height, lookAhead ? 64 : 32,
-        lookAhead ? viewport ?? global.WARCRAFT_CAMERA_VIEWPORT : null);
+        lookAhead ? viewport ?? global.WARCRAFT_CAMERA_VIEWPORT : null, edgeRoom);
       const nextKey = [g.width, g.height, g.world.left, g.world.top, g.world.right,
-        g.world.bottom, g.mapWidth, g.mapHeight, g.maxX, g.maxY, travel].join(',');
+        g.world.bottom, g.mapWidth, g.mapHeight, g.maxX, g.maxY, travel, !!edgeRoom].join(',');
       retainDragTravel = lookAhead && travel;
       const native = { x: g.cameraX, y: g.cameraY };
       const liveBounds = coverage(native, d);
-      const center = () => fit({ x: liveBounds.left + d.extraX / 2, y: liveBounds.top + d.extraY / 2 }, liveBounds);
+      const center = () => fit({x:native.x*TILE+d.extraX/2,y:native.y*TILE+d.extraY/2},
+        {left:native.x*TILE,top:native.y*TILE,right:Math.min(native.x*TILE+d.extraX,d.realMaxX),
+          bottom:Math.min(native.y*TILE+d.extraY,d.realMaxY)});
       if (nextKey !== key) {
         reset();
         key = nextKey;
@@ -231,8 +241,8 @@
         travelDeadline = null;
       }
       if (!retainDragTravel && lookAhead && !tracking) {
-        if (visible.x === 0 && vx < 0 || visible.x === d.maxX && vx > 0) vx = 0;
-        if (visible.y === 0 && vy < 0 || visible.y === d.maxY && vy > 0) vy = 0;
+        if (visible.x === d.minX && vx < 0 || visible.x === d.maxX && vx > 0) vx = 0;
+        if (visible.y === d.minY && vy < 0 || visible.y === d.maxY && vy > 0) vy = 0;
         const speed = Math.hypot(vx, vy);
         const roomSpeed = speed && forwardRoom(visible, bounds, vx, vy, speed) / COAST_BRAKE_MS;
         // Keep the decaying flick velocity separate from what the current frame
@@ -262,10 +272,10 @@
         vy *= decay;
         if (Math.hypot(vx, vy) < .01) vx = vy = 0;
       }
-      desired.x = clamp(desired.x, 0, d.maxX);
-      desired.y = clamp(desired.y, 0, d.maxY);
-      if ((desired.x === 0 && vx < 0) || (desired.x === d.maxX && vx > 0)) vx = 0;
-      if ((desired.y === 0 && vy < 0) || (desired.y === d.maxY && vy > 0)) vy = 0;
+      desired.x = clamp(desired.x, d.minX, d.maxX);
+      desired.y = clamp(desired.y, d.minY, d.maxY);
+      if ((desired.x === d.minX && vx < 0) || (desired.x === d.maxX && vx > 0)) vx = 0;
+      if ((desired.y === d.minY && vy < 0) || (desired.y === d.maxY && vy > 0)) vy = 0;
 
       const target = fit(desired, bounds);
       const outside = !contains(bounds, desired);
@@ -311,18 +321,20 @@
       }
 
       if (!pending && moving()) {
-        const tileX = clamp(Math.round((desired.x - d.extraX / 2) / TILE), 0, g.maxX);
-        const tileY = clamp(Math.round((desired.y - d.extraY / 2) / TILE), 0, g.maxY);
+        const nativeDesired = {x:clamp(desired.x,0,d.realMaxX), y:clamp(desired.y,0,d.realMaxY)};
+        const nativeVisible = {x:clamp(visible.x,0,d.realMaxX), y:clamp(visible.y,0,d.realMaxY)};
+        const tileX = clamp(Math.round((nativeDesired.x - d.extraX / 2) / TILE), 0, g.maxX);
+        const tileY = clamp(Math.round((nativeDesired.y - d.extraY / 2) / TILE), 0, g.maxY);
         const leadTime = dragging && time - lastSample > 44 ? 0 : 80;
         const stepX = retainDragTravel
-          ? travelTile(desired.x, visible.x, native.x, d.extraX, g.maxX, leadTime ? vx : 0) - native.x
+          ? travelTile(nativeDesired.x, nativeVisible.x, native.x, d.extraX, g.maxX, leadTime ? vx : 0) - native.x
           : lookAhead
-          ? nextTile(desired.x, visible.x, native.x, d.extraX, g.maxX, clamp(vx * leadTime, -64, 64)) - native.x
+          ? nextTile(nativeDesired.x, nativeVisible.x, native.x, d.extraX, g.maxX, clamp(vx * leadTime, -64, 64)) - native.x
           : Math.sign(tileX - native.x);
         const stepY = retainDragTravel
-          ? travelTile(desired.y, visible.y, native.y, d.extraY, g.maxY, leadTime ? vy : 0) - native.y
+          ? travelTile(nativeDesired.y, nativeVisible.y, native.y, d.extraY, g.maxY, leadTime ? vy : 0) - native.y
           : lookAhead
-          ? nextTile(desired.y, visible.y, native.y, d.extraY, g.maxY, clamp(vy * leadTime, -64, 64)) - native.y
+          ? nextTile(nativeDesired.y, nativeVisible.y, native.y, d.extraY, g.maxY, clamp(vy * leadTime, -64, 64)) - native.y
           : Math.sign(tileY - native.y);
         if (stepX || stepY) {
           const to = { x: native.x + stepX, y: native.y + stepY };
@@ -339,8 +351,9 @@
         }
       }
 
-      return { left: g.world.left + clamp(visible.x - liveBounds.left, 0, d.extraX),
-        top: g.world.top + clamp(visible.y - liveBounds.top, 0, d.extraY),
+      const left = visible.x - native.x * TILE, top = visible.y - native.y * TILE;
+      return { left: g.world.left + (edgeRoom ? left : clamp(left,0,d.extraX)),
+        top: g.world.top + (edgeRoom ? top : clamp(top,0,d.extraY)),
         width: d.w, height: d.h, extraX: d.extraX, extraY: d.extraY,
         sourceCamera: native, visibleGlobal: { ...visible } };
     }

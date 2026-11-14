@@ -80,6 +80,7 @@
     redirect(0x42aa6f, [0xe8,0x6c,0x7e,0x04,0x00], 0x48f590);
 
     const start = machineCode(0x48f5b0);
+    // Apply before the first gameplay tick, including when startup goals are disabled.
     fixedSound(start);
     start.emit(0x83,0x3d); start.dword(0x4ae84c); start.emit(0);
     const savedOrReplay = start.skipIf(0x75);
@@ -92,9 +93,9 @@
     start.branch(0xe8, 0x4204f0); // Classic display 5, expansion display 7.
     start.emit(0x83,0xc4,0x04);
     savedOrReplay(); network(); demo();
-    start.branch(0xe9, 0x436bd0);
+    start.branch(0xe9, 0x437180);
     setCode(0x48f5b0, start);
-    redirect(0x420dab, [0xe8,0x20,0x5e,0x01,0x00], 0x48f5b0);
+    redirect(0x420b61, [0xe8,0x1a,0x66,0x01,0x00], 0x48f5b0);
 
     // Commit only on original OK. The native Sound close still applies
     // volumes and restores its snapshot on Cancel. Use native fog invalidation
@@ -195,6 +196,7 @@
     }
     const fog = document.createElement('label'), toggle = document.createElement('input');
     toggle.type = 'checkbox';
+    toggle.className = 'warcraft-native-checkbox';
     toggle.setAttribute('aria-label', ru ? 'Туман войны' : 'Fog of War');
     fog.append(toggle, glyph('fog-of-war'));
 

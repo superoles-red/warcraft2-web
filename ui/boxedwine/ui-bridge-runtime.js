@@ -12,6 +12,7 @@
     up:modernInput?63:67, down:68, poll:69, rememberTouch:70, restoreTouch:71};
   let root = null;
   let transport = null;
+  let transportGeneration = 0;
   const guestPath = path => root + '/home/username/.wine/drive_c/' + path;
   const guestReady = () => !!transport || !!root && typeof FS !== 'undefined';
   const readPacket = path => transport ? transport.read(path) : FS.readFile(guestPath(path));
@@ -41,10 +42,10 @@
       const header=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
       if(header.byteLength<16)return parser(bytes);
       const magic=header.getUint32(0,true),revision=header.getUint32(8,true);
-      if(previous?.magic===magic&&previous.revision===revision&&previous.length===bytes.byteLength)
+      if(previous?.generation===transportGeneration&&previous.magic===magic&&previous.revision===revision&&previous.length===bytes.byteLength)
         return previous.packet;
       const packet=parser(new Uint8Array(bytes));
-      previous={magic,revision,length:bytes.byteLength,packet};
+      previous={generation:transportGeneration,magic,revision,length:bytes.byteLength,packet};
       return packet;
     };
   }
@@ -315,8 +316,19 @@
     }
     if (!adapter.surface || !adapter.input) throw new TypeError('Missing Warcraft UI surfaces');
     transport=adapter;
+    transportGeneration++;
     viewportReader=global.WarcraftViewportProtocol.createViewportReader(() => readPacket('wc2-viewport.bin'));
     telemetry.prepared=true;
+    return () => {
+      if(transport!==adapter)return;
+      controller?.destroy();
+      controller=null;
+      global.WarcraftDuneControls=null;
+      backend.cancelPendingInput();
+      transport=viewportReader=completedFrameReader=null;
+      cameraSerial=0;
+      telemetry.prepared=false;
+    };
   };
   global.prepareWarcraftUiBridge = async ({root:targetRoot,variant,viewport,resizeWindow=true}) => {
     root = targetRoot;

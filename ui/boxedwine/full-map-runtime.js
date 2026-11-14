@@ -20,6 +20,7 @@
   let cropX=0,cropY=0,cropKey='';
   let minimapDrag=false;
   let sliderDrag=null;
+  let listeners,insetObserver,insetProbes;
   const held=new Set();
   let infoPress=false;
   const telemetry={frames:0,mode:'native',errors:[],geometry:null};
@@ -159,6 +160,12 @@
     result.push(...commands);
     return {regions:result,header,commandCount:commands.length,gridTop};
   }
+  const mobileEdgeRoom=()=>cameraPilot&&touchOnly?global.WarcraftPresentation.mapEdgeRoom:undefined;
+  function mapProjection(world,g,width,height){
+    return cameraPilot&&g.world
+      ? global.WarcraftPresentation.projectWorld(world,g.world,width,height)
+      : {source:world,target:{left:0,top:0,width,height}};
+  }
   function scheduleAnimation(force=false) {
     if(!enhancedHud||animation!==null||(!force&&(!camera?.active||telemetry.mode==='dialog')))return;
     animation=global.requestAnimationFrame(()=>{animation=null;render(coherentFrames);});
@@ -216,8 +223,10 @@
       foreground.screen.height!==g.height||packet.screen.width!==g.width||packet.screen.height!==g.height)return false;
     const live=scene.packet;
     if(!live?.usable||live.sceneEpoch!==packet.sceneEpoch)return false;
-    // The original first fade can legitimately be black. Freeze only the
-    // pre-dialog indices; palette changes must follow the completed native frame.
+    // The first complete native raster can still carry an entirely black fade
+    // palette. Hold the last finished screen until the native dialog can show.
+    if(!live.palette.some((value,index)=>(index&3)!==3&&value!==0))return false;
+    // Freeze only the pre-dialog indices; use the palette of the matching frame.
     const paletteKey=[container.clientWidth,container.clientHeight,global.devicePixelRatio,...Object.values(hudInsets),
       ...live.palette].join(',');
     if(bootstrapInUse&&bootstrapPaletteKey===paletteKey&&modalPresenter.hasBackground)return true;
@@ -225,15 +234,17 @@
     // A bootstrap is the dialog's background, not a completed presentation.
     const canvas=onPresented?(bootstrapCanvas??=document.createElement('canvas')):output;
     if(canvas===output)setVisible(true);
-    const {width,height}=sizeOutput(canvas);
+    const {width,height,dpr}=sizeOutput(canvas);
     const cleanG={...g,cameraX:packet.cameraX,cameraY:packet.cameraY,world:packet.world};
     const world=camera.frame(cleanG,width,height),
       hud=balancedRegions(width,height,cleanG,ui,foreground,state);
     if(!world||!hud)return false;
     const cleanChart=global.WarcraftPresentation.createChart({source:packet.screen,world,width,height,
       map:{fit:'contain'},regions:hud.regions});
-    cleanChart.render(canvas===output?context:canvas.getContext('2d'),pixels,
-      {layers:foregroundPainter.capture(foreground)});
+    const ctx=canvas===output?context:canvas.getContext('2d');
+    cleanChart.render(ctx,pixels,{layers:foregroundPainter.capture(foreground),
+      afterMap:cameraPilot?(ctx,map)=>drawWorldOutline(ctx,map,world,cleanG):undefined});
+    if(cameraPilot)drawMinimapOutline(ctx,cleanChart,world,cleanG,dpr,false);
     modalPresenter.captureBackground(canvas,{inGame:true,dialogOpen:false});
     bootstrapInUse=true;bootstrapPaletteKey=paletteKey;
     telemetry.bootstrapEpoch=packet.sceneEpoch;return true;
@@ -247,19 +258,28 @@
     const ratio=width/height;
     const w=Math.min(span*Math.min(1,ratio),extent.right-extent.left,(extent.bottom-extent.top)*ratio);
     const h=w/ratio;
-    const left=clamp(world.left+(world.width-w)/2,extent.left,extent.right-w);
-    const top=clamp(world.top+(world.height-h)/2,extent.top,extent.bottom-h);
+    const edgeRoom=mobileEdgeRoom();
+    const extraX=edgeRoom?.(w)??0,extraY=edgeRoom?.(h)??0;
+    const left=clamp(world.left+(world.width-w)/2,
+      extent.left-(g.cameraX===0?extraX:0),extent.right-w+(g.cameraX===g.maxX?extraX:0));
+    const top=clamp(world.top+(world.height-h)/2,
+      extent.top-(g.cameraY===0?extraY:0),extent.bottom-h+(g.cameraY===g.maxY?extraY:0));
     const crop={...world,left,top,width:w,height:h,visibleGlobal:{
       x:g.cameraX*32+left-extent.left,y:g.cameraY*32+top-extent.top}};
     const hud=balancedRegions(width,height,g,ui,foreground,state);
     if(!hud)return;
-    const layout=global.WarcraftPresentation.createChart({source:g,world:crop,width,height,regions:hud.regions});
+    const projection=mapProjection(crop,g,width,height);
+    const layout=global.WarcraftPresentation.createChart({source:g,world:projection.source,width,height,
+      map:{target:projection.target},regions:hud.regions});
     const canvas=bootstrapCanvas??=document.createElement('canvas');
     canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);
     const ctx=canvas.getContext('2d');
-    const pixels=partialFrame?visibleFramePainter.paint(packet,layout):nativeFramePainter.paint(packet);
-    layout.render(ctx,pixels,{layers:foregroundPainter.capture(foreground)});
-    drawMapOutlines(ctx,layout,crop,g,dpr,partialFrame);
+    // The same render also paints a live modal. Keep its raster separate from
+    // the frozen world source that the browser is copying into the backdrop.
+    const pixels=partialFrame?visibleFramePainter.paint(packet,layout):bootstrapPainter.paint(packet);
+    layout.render(ctx,pixels,{layers:foregroundPainter.capture(foreground),
+      afterMap:(ctx,map)=>drawWorldOutline(ctx,map,crop,g)});
+    drawMinimapOutline(ctx,layout,crop,g,dpr,partialFrame);
     modalPresenter.captureBackground(canvas,{inGame:true,dialogOpen:false});
     modalBackgroundWidth=width;modalBackgroundHeight=height;modalBackgroundDpr=dpr;modalBackgroundInsets=hudInsets;
   }
@@ -360,7 +380,8 @@
       const dpr=enhancedHud?Math.max(1,Math.min(3,global.devicePixelRatio||1)):1;
       const receipt=cameraPilot&&view?.usable&&lastScene.packet?.usable
         ? {currentCamera:view.currentCamera,sequence:lastScene.packet.sequence}:undefined;
-      const world=enhancedHud?camera.frame(g,width,height,undefined,receipt):croppedWorld(g,width,height);
+      const world=enhancedHud?camera.frame(g,width,height,undefined,receipt,mobileEdgeRoom()):
+        croppedWorld(g,width,height);
       if(coherentFrames&&!world){waitForNativeFrame();return;}
       if(cameraPilot){
         const key=[lastScene.packet.sequence,ui.revision,foreground.revision,state.selectionCount,
@@ -377,8 +398,10 @@
       const hud=balancedHud?balancedRegions(width,height,g,ui,foreground,state):
         cleanHud?cleanRegions(width,height,g,ui,foreground,state):null;
       if(cleanHud&&!hud){if(coherentFrames)waitForNativeFrame();else setVisible(false);return;}
+      const projection=mapProjection(world,g,width,height);
       const nextChart=global.WarcraftPresentation.createChart({source:{width:g.width,height:g.height},
-        world,width,height,map:{fit:'contain'},regions:hud?.regions||regions(width,height,g,commands),
+        world:projection.source,width,height,map:{fit:'contain',target:projection.target},
+        regions:hud?.regions||regions(width,height,g,commands),
         provenance:{source:g.source,revision:g.revision,nativeWorld:g.world}});
       const layers=balancedHud?foregroundPainter.capture(foreground):
         hud?{'native-hud-foreground':foregroundPainter.capture(foreground).frame}:{};
@@ -389,8 +412,9 @@
       telemetry.mode='world';
       if(output.width!==Math.round(width*dpr))output.width=Math.round(width*dpr);
       if(output.height!==Math.round(height*dpr))output.height=Math.round(height*dpr);
-      chart.render(context,framePixels,{layers});
-      if(cameraPilot)drawMapOutlines(context,chart,world,g,dpr,camera.independent);
+      chart.render(context,framePixels,{layers,
+        afterMap:cameraPilot?(ctx,map)=>drawWorldOutline(ctx,map,world,g):undefined});
+      if(cameraPilot)drawMinimapOutline(context,chart,world,g,dpr,camera.independent);
       else if(camera?.independent)drawMinimapView(world,g,dpr);
       lastRenderedGeometry=g;
       if(cameraPilot){
@@ -448,7 +472,16 @@
     if(source.width!==g.width||source.height!==g.height||input.width!==g.width||input.height!==g.height)return null;
     if(!visible)return keepNativeUntilReady?null:
       {x:(event.clientX-rect.left)*g.width/rect.width,y:(event.clientY-rect.top)*g.height/rect.height};
-    const point=pick(event,rect,options);if(point?.kind!=='world')return null;
+    let point=pick(event,rect,options);
+    if(!point&&cameraPilot&&touchOnly&&telemetry.mode==='world'&&acceptsInput?.()!==false){
+      const inside=event.clientX>=rect.left&&event.clientX<rect.left+rect.width&&
+        event.clientY>=rect.top&&event.clientY<rect.top+rect.height;
+      if(inside&&chart){
+        const edge=pick(event,rect,{captured:true});
+        if(edge)point={...edge,padding:true};
+      }
+    }
+    if(point?.kind!=='world')return null;
     const map=chart.regions.find(region=>region.id==='map');
     return {...point,pixelsPerCssPixel:chart.width/rect.width/map.transform.scale};
   }
@@ -467,20 +500,21 @@
     Object.assign(commandHighlight.style,{left:r.left+'px',top:r.top+'px',
       width:r.width+'px',height:r.height+'px'});
   }
-  function drawMapOutlines(context,layout,world,g,dpr,independent) {
-    const map=layout.regions.find(region=>region.id==='map')?.transform.painted;
-    const mini=layout.regions.find(region=>region.id==='minimap')?.transform.painted;
-    if(!map||!mini)return;
+  function drawWorldOutline(context,map,world,g) {
     const edge=.001,origin=world.visibleGlobal;
     const width=g.mapWidth*32,height=g.mapHeight*32;
-    context.save();
-    context.setTransform(dpr,0,0,dpr,0,0);
     context.fillStyle='#fff';
     // Paint only the real map edge. A moving camera crop is not a map limit.
     if(origin.x<=edge)context.fillRect(map.left,map.top,1,map.height);
     if(origin.y<=edge)context.fillRect(map.left,map.top,map.width,1);
     if(origin.x+world.width>=width-edge)context.fillRect(map.right-1,map.top,1,map.height);
     if(origin.y+world.height>=height-edge)context.fillRect(map.left,map.bottom-1,map.width,1);
+  }
+  function drawMinimapOutline(context,layout,world,g,dpr,independent) {
+    const mini=layout.regions.find(region=>region.id==='minimap')?.transform.painted;
+    if(!mini)return;
+    context.save();
+    context.setTransform(dpr,0,0,dpr,0,0);
     context.strokeStyle='#fff';
     context.strokeRect(mini.left+.5,mini.top+.5,mini.width-1,mini.height-1);
     context.restore();
@@ -489,12 +523,15 @@
   function drawMinimapView(world,g,dpr,ctx=context,layout=chart) {
     const mini=layout.regions.find(region=>region.id==='minimap')?.transform.painted;
     if(!mini)return;
-    const sx=mini.width/(g.mapWidth*32),sy=mini.height/(g.mapHeight*32);
+    const width=g.mapWidth*32,height=g.mapHeight*32,sx=mini.width/width,sy=mini.height/height;
+    const left=clamp(world.visibleGlobal.x,0,width),top=clamp(world.visibleGlobal.y,0,height);
+    const right=clamp(world.visibleGlobal.x+world.width,0,width);
+    const bottom=clamp(world.visibleGlobal.y+world.height,0,height);
     ctx.save();
     ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.strokeStyle='#fff7df';
-    ctx.strokeRect(mini.left+world.visibleGlobal.x*sx+.5,mini.top+world.visibleGlobal.y*sy+.5,
-      world.width*sx-1,world.height*sy-1);
+    ctx.strokeRect(mini.left+left*sx+.5,mini.top+top*sy+.5,
+      Math.max(0,(right-left)*sx-1),Math.max(0,(bottom-top)*sy-1));
     ctx.restore();
   }
   function moveByMinimap(event) {
@@ -523,6 +560,9 @@
     // Drop the raw HUD release just queued above as well; release actual holds.
     global.WarcraftUiBridge.cancelPendingInput?.();
   }
+  function listen(type,listener,options={}) {
+    global.addEventListener(type,listener,{...options,signal:listeners.signal});
+  }
   function installModalSliderInput() {
     const stop=event=>{event.preventDefault();event.stopImmediatePropagation();};
     function finish(event) {
@@ -541,7 +581,7 @@
       moveNative({x:clamp(x,drag.slider.left,drag.slider.right),y:drag.slider.y});
     }
     const capture={capture:true,passive:false};
-    global.addEventListener('pointerdown',event=>{
+    listen('pointerdown',event=>{
       if(event.target!==input||event.button!==0||event.isPrimary===false||
         sliderDrag||telemetry.mode!=='dialog')return;
       const point=pick(event,input.getBoundingClientRect());
@@ -558,13 +598,13 @@
       held.add(0);
       global.WarcraftUiBridge.nativeButton(1,0,lastNative.x,lastNative.y);
     },capture);
-    global.addEventListener('pointermove',event=>{
+    listen('pointermove',event=>{
       if(event.pointerId!==sliderDrag?.id)return;
       moveSlider(event,sliderDrag);
       stop(event);
     },capture);
     for(const type of ['pointerup','pointercancel','lostpointercapture'])
-      global.addEventListener(type,finish,capture);
+      listen(type,finish,capture);
   }
   function installInputRouter() {
     if(routerInstalled)return;routerInstalled=true;
@@ -574,18 +614,18 @@
     // when the surface owns touch gestures. Use the same minimap hit test.
     if(cameraPilot){
       let touch=null;
-      global.addEventListener('pointerdown',event=>{
+      listen('pointerdown',event=>{
         if(event.pointerType==='touch'&&inScope(event)&&moveByMinimap(event)){
           touch=event.pointerId;
           input.setPointerCapture?.(touch);
           stop(event);
         }
       },{capture:true,passive:false});
-      global.addEventListener('pointermove',event=>{
+      listen('pointermove',event=>{
         if(event.pointerId===touch){moveByMinimap(event);stop(event);}
       },{capture:true,passive:false});
       for(const name of ['pointerup','pointercancel','lostpointercapture']){
-        global.addEventListener(name,event=>{
+        listen(name,event=>{
           if(event.pointerId!==touch)return;
           touch=null;
           if(name==='pointerup')moveByMinimap(event);
@@ -593,7 +633,7 @@
         },{capture:true,passive:false});
       }
     }
-    global.addEventListener('mousemove',event=>{
+    listen('mousemove',event=>{
       if(minimapDrag){moveByMinimap(event);stop(event);return;}
       if(!visible||(!inScope(event)&&!held.size))return;
       if(buildConfirm&&telemetry.mode==='world'&&global.WarcraftUiBridge.state().buildingPending){stop(event);return;}
@@ -601,7 +641,7 @@
       const point=selected?{x:selected.nativeX,y:selected.nativeY,kind:'native-ui'}:pick(event,input.getBoundingClientRect());
       if(point&&point.kind!=='blocked')moveNative(point);stop(event);
     },{capture:true,passive:false});
-    global.addEventListener('mousedown',event=>{
+    listen('mousedown',event=>{
       if(!visible||!inScope(event)||![0,1,2].includes(event.button))return;
       if(enhancedHud){camera.stop();selectedCommand=null;}
       if(event.button===0&&moveByMinimap(event)){minimapDrag=true;stop(event);return;}
@@ -612,7 +652,7 @@
       const button=nativeButton(event.button);held.add(button);
       global.WarcraftUiBridge.nativeButton(1,button,lastNative.x,lastNative.y);
     },{capture:true,passive:false});
-    global.addEventListener('mouseup',event=>{
+    listen('mouseup',event=>{
       if(minimapDrag&&event.button===0){minimapDrag=false;moveByMinimap(event);stop(event);return;}
       const button=nativeButton(event.button);if(!held.has(button))return;
       const point=visible?pick(event,input.getBoundingClientRect()):null;
@@ -630,16 +670,17 @@
           moveNative({x:info.source.left+info.source.width/2,y:(below+commands.root.native.top)/2});
       }
     },{capture:true,passive:false});
-    global.addEventListener('blur',event=>{if(event.target===global)cancelButtons();},{capture:true});
-    global.addEventListener('pointercancel',()=>cancelButtons(),{capture:true});
-    global.addEventListener('lostpointercapture',event=>{
+    listen('blur',event=>{if(event.target===global)cancelButtons();},{capture:true});
+    listen('pointercancel',()=>cancelButtons(),{capture:true});
+    listen('lostpointercapture',event=>{
       if(event.pointerType!=='mouse'||event.buttons)cancelButtons();
     },{capture:true});
-    global.addEventListener('contextmenu',event=>{if(visible&&inScope(event))stop(event);},{capture:true,passive:false});
+    listen('contextmenu',event=>{if(visible&&inScope(event))stop(event);},{capture:true,passive:false});
   }
   let cameraPilot,hostPresentation,modalTexture,infoButtons,touchOnly=false;
   function install(host) {
     if(installed)return;
+    listeners=new AbortController();
     keepNativeUntilReady=!!host;
     cameraPilot=coherentFrames?host?.independentCamera:null;
     infoButtons=host?.infoButtons;
@@ -677,8 +718,9 @@
         if(installed&&lastScene)scheduleAnimation(true);
       }
       measureInsets();
-      const insetObserver=new global.ResizeObserver(measureInsets);
-      for(const probe of Object.values(probes))insetObserver.observe(probe);
+      insetObserver=new global.ResizeObserver(measureInsets);
+      insetProbes=Object.values(probes);
+      for(const probe of insetProbes)insetObserver.observe(probe);
       commandHighlight=document.createElement('div');
       commandHighlight.id='warcraft-command-highlight';
       commandHighlight.setAttribute('aria-hidden','true');
@@ -733,9 +775,36 @@
         return result;
       };
     }
-    global.addEventListener('resize',()=>{camera?.stop();cancelButtons();global.WarcraftDuneControls?.cancel?.();render();});
-    document.addEventListener('fullscreenchange',()=>{camera?.stop();cancelButtons();global.WarcraftDuneControls?.cancel?.();render();});
+    const resize=()=>{camera?.stop();cancelButtons();global.WarcraftDuneControls?.cancel?.();render();};
+    listen('resize',resize);
+    document.addEventListener('fullscreenchange',resize,{signal:listeners.signal});
     installed=true;
+    if(host)return uninstall;
+  }
+  function uninstall() {
+    if(!installed)return;
+    installed=routerInstalled=false;
+    listeners.abort();
+    insetObserver?.disconnect();
+    for(const probe of insetProbes||[])probe.remove();
+    insetObserver=insetProbes=null;
+    if(animation!==null)global.cancelAnimationFrame(animation);
+    animation=null;
+    cancelButtons();
+    camera?.reset();
+    setVisible(false);
+    cursorPresenter?.update(null,input);
+    output.remove();
+    commandHighlight?.remove();
+    buildConfirm?.remove();
+    output=context=copier=buildConfirm=commandHighlight=null;
+    lastScene=lastNative=lastRenderedGeometry=lastDialogToken=selectedCommand=lastMapEpoch=null;
+    camera=modalPresenter=cursorPresenter=foregroundPainter=bootstrapPainter=nativeFramePainter=visibleFramePainter=bootstrapCanvas=null;
+    onPresented=onUnavailable=acceptsInput=modalBack=modalSlider=modalTexture=infoButtons=null;
+    bootstrapInUse=false;
+    bootstrapPaletteKey=modalBackgroundInsets=null;
+    modalBackgroundWidth=modalBackgroundHeight=modalBackgroundDpr=0;
+    telemetry.mode='native';telemetry.geometry=null;
   }
   function consumePan(dx,dy) {
     if(enhancedHud)return {dx,dy};
