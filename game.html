@@ -8,6 +8,21 @@ html.warcraft-page,
 html.warcraft-page body,
 html.warcraft-page body #screen-wrap { background: #161513; }
 
+/* The Warcraft surface owns its gestures, including transparent HUD overlays. */
+.warcraft-page #screen-wrap,
+.warcraft-page #screen-wrap * {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.warcraft-page #screen-wrap :is(input, textarea, [contenteditable]:not([contenteditable="false" i])),
+.warcraft-page #screen-wrap [contenteditable]:not([contenteditable="false" i]) * {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.warcraft-page #screen-wrap :is(img, canvas, a) { -webkit-user-drag: none; }
+
 .warcraft-page #shell { margin: 0; border: 0; background: transparent; }
 .warcraft-page #touch-controls .tc-key { display: none !important; }
 .warcraft-page :is(#titlebar, #toolbar, #log, #debug-peek, #taskbar, #start-menu,

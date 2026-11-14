@@ -13,6 +13,7 @@
   body { margin: 0; min-height: 100dvh; display: grid; place-items: center }
   main { width: min(87vw, 26rem); text-align: center; padding: 1rem 0 }
   h1 { font-size: clamp(1.7rem, 6vw, 2.4rem); margin: 0 0 1rem }
+  #version { font-size: .7rem; opacity: .65; overflow-wrap: anywhere }
   a, button { display: inline-block; padding: .65rem 1rem; border: 1px solid #98753d;
     border-radius: .3rem; color: #f2e6ca; background: #421e15; font: inherit; text-decoration: none }
   [hidden] { display: none !important }
@@ -22,6 +23,7 @@
   <p id="status" role="status">Подготовка приложения…</p>
   <a id="open" href="./game.html" hidden>Открыть игру</a>
   <button id="retry" type="button" hidden>Повторить</button>
+  <p id="version" hidden></p>
   <p id="iphone" hidden>В Safari открой «Поделиться» → «На экран Домой». Открой игру с иконки, чтобы скачать её для запуска без интернета.</p>
 </main>
 <script src="./install.js" defer></script>

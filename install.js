@@ -3,6 +3,7 @@
 const status = document.getElementById('status');
 const openGame = document.getElementById('open');
 const retry = document.getElementById('retry');
+const version = document.getElementById('version');
 const workers = navigator.serviceWorker;
 const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
 const compact = document.documentElement.hasAttribute('data-compact');
@@ -17,7 +18,13 @@ function checkPackage(worker) {
     channel.port1.onmessage = event => {
       clearTimeout(timeout);
       channel.port1.close();
-      resolve(event.data.ready === true);
+      const ready = event.data?.ready === true;
+      if (version) {
+        const visible = ready && /^[a-f0-9]{24}$/.test(event.data.version || '');
+        version.hidden = !visible;
+        version.textContent = visible ? 'Версия ' + event.data.version : '';
+      }
+      resolve(ready);
     };
     worker.postMessage({type: 'WC2_OFFLINE_STATUS'}, [channel.port2]);
   });
@@ -26,10 +33,13 @@ function checkPackage(worker) {
 async function prepare() {
   if (!workers) throw Error('Для установки нужен браузер с поддержкой офлайн-приложений.');
   const errorText = 'Загрузка прервалась. Подключись к интернету и повтори.';
+  let registration;
   const reportReady = async () => {
     if (!await checkPackage(workers.controller)) return false;
-    status.textContent = compact ? 'При первом запуске игра скачает данные для работы без интернета.'
-      : 'Приложение готово. Игровой архив выбирается один раз.';
+    status.textContent = registration?.waiting
+      ? 'Обновление загружено. Оно применится после закрытия игры.'
+      : compact ? 'При первом запуске игра скачает данные для работы без интернета.'
+        : 'Приложение готово. Игровой архив выбирается один раз.';
     openGame.hidden = false;
     retry.hidden = true;
     return true;
@@ -43,7 +53,6 @@ async function prepare() {
   });
   workers.addEventListener('controllerchange', () => reportReady());
   const oldPackageReady = await reportReady();
-  let registration;
   try {
     registration = await workers.register('./service-worker.js', {scope: './', updateViaCache: 'none'});
   } catch {

@@ -1,5 +1,5 @@
 {
-  "version": "d9fbec8775e1bfe71a614a8d",
+  "version": "ca50a7e8b54bbbe476ac26a4",
   "files": [
     {
       "path": "LICENSE.wine-assembly",
@@ -108,8 +108,8 @@
     },
     {
       "path": "game.html",
-      "bytes": 184447,
-      "sha256": "cc7fc4abca2dd8efede8df33fe3147db87e7294c7709847ef23c1ddf960008aa"
+      "bytes": 185022,
+      "sha256": "7decfe3a66701cbd4cce5514751dd87a6c5685897e59a7c50ab0319ed18ed805"
     },
     {
       "path": "host.js",
@@ -193,13 +193,13 @@
     },
     {
       "path": "index.html",
-      "bytes": 1597,
-      "sha256": "7c54bfe10ac831a7bf5ce985c4bed06672403b2886767c5203d884c5862fc4fc"
+      "bytes": 1698,
+      "sha256": "412ea7c071bb8407fa4d8b1619d60b01961d669cb7b1db2868f08b0ddc8726eb"
     },
     {
       "path": "install.js",
-      "bytes": 3275,
-      "sha256": "8e95b7011326d4ef963ce91dd81f8de9fe0ea03bf5d56a0c435b5c1699a7ebb5"
+      "bytes": 3733,
+      "sha256": "7b6149ae8717ed30ad69510775a05e916bc1aa9cacc7fc173827eabe0db2fa11"
     },
     {
       "path": "lib/agent-connect-ui.js",
@@ -813,8 +813,8 @@
     },
     {
       "path": "ui/boxedwine/dune-controls.js",
-      "bytes": 33270,
-      "sha256": "dc90c97664bfbedbd15ff3e95145edfebe84b69fafa6c0cdad7a48a4c63d6524"
+      "bytes": 35123,
+      "sha256": "31a451563c683e50ddf2c95c1f5d6684c8c18b120b369e99be147a9078468c1a"
     },
     {
       "path": "ui/boxedwine/full-map-runtime.js",
@@ -948,8 +948,8 @@
     },
     {
       "path": "warcraft2-v16.css",
-      "bytes": 3151,
-      "sha256": "213f86cab9c28be20e5ab04a793faa85a3abdbdda4f7c3bf9c8dd65f7ad91fc9"
+      "bytes": 3178,
+      "sha256": "5cc3cc310216e70bbd8371f44d18fd82c2b6cf319b96c4fb18ab913fd676ade4"
     },
     {
       "path": "warcraft2.js",
@@ -957,5 +957,5 @@
       "sha256": "129460b35ffe37800ad7fd15d6afaf21ad7441449ca925623382dbd770d6c4e1"
     }
   ],
-  "workerSha256": "b0952756043bfac3dc29ce84a0b7b01f550bf154e96b92f8cd669c89df2678d9"
+  "workerSha256": "900be29d5197462dfe510b63d2a52b744a73f5c8047b240fae1c0eeee169cf93"
 }

@@ -494,6 +494,8 @@
     const machine = createGestureMachine(api, getCanvasRect);
     const listeners = [];
     let capture = null;
+    let ownedTouch = false, mouseFromPointer = false, compatibilityMouseUntil = -Infinity;
+    const inputTime = () => typeof api.now === 'function' ? api.now() : Date.now();
     const stop = event => { event.preventDefault(); event.stopImmediatePropagation(); };
     const inScope = event => !element || event.target === element || element.contains?.(event.target);
     const focus = () => { try { element?.focus({preventScroll: true}); } catch (_) {} };
@@ -510,21 +512,47 @@
       // Drop earlier queued input BEFORE original projection cancellation.
       api.cancelPendingInput?.();machine.cancelPlacementProjection();releaseCapture();
     }
+    function rememberOwnedTouch() {
+      ownedTouch = true;
+      mouseFromPointer = false;
+      compatibilityMouseUntil = inputTime() + 1000;
+    }
+    function compatibilityMouse(event) {
+      return api.commandSelectionV15===true && machine.enabled &&
+        (inScope(event) || !!capture) &&
+        (capture || !api.allowNativeTouch?.()) &&
+        inputTime() <= compatibilityMouseUntil &&
+        (event.sourceCapabilities?.firesTouchEvents===true || !mouseFromPointer);
+    }
     // Install now, even while disabled. This must precede Boxedwine's anonymous
     // window-capture mouse listeners; enabling later then retains input priority.
     for(const name of ['touchstart','touchmove','touchend','touchcancel'])listen(name,event=>{
       if(api.commandSelectionV15!==true || !machine.enabled || (!inScope(event)&&!capture))return;
       if(!capture&&api.allowNativeTouch?.())return;
       if(name==='touchstart'){try{api.resumeAudio?.();}catch(_){}}
-      // PointerEvents own adapted gestures. Fence SDL's duplicate TouchEvents,
-      // preserving default compatibility mouse events for original native menus.
+      // iOS can retain selection, callout and compatibility mouse defaults even
+      // after PointerEvent cancellation. Cancel the original TouchEvent for
+      // owned gestures as well, including its end after pointer capture releases.
+      const first = event.changedTouches?.[0];
+      const startsOwned = name==='touchstart' && machine.canStart({
+        clientX:first?.clientX ?? event.clientX,clientY:first?.clientY ?? event.clientY,button:0});
+      if (ownedTouch || (capture?.pointerType==='touch') || startsOwned) {
+        rememberOwnedTouch();
+        event.preventDefault();
+      }
+      if(name==='touchend' || name==='touchcancel') {
+        if (!event.touches?.length) ownedTouch = false;
+      }
+      // Unowned native menus and portrait controls keep compatibility clicks.
       event.stopImmediatePropagation();
     });
     listen('pointerdown', event => {
       if(api.commandSelectionV15===true && !inScope(event))api.stopPan?.();
       if (event.pointerType === 'mouse') {
+        mouseFromPointer = event.sourceCapabilities?.firesTouchEvents !== true;
+        if (compatibilityMouse(event)) { stop(event); return; }
         if (inScope(event) && machine.canStart(event)) {
-          capture = {target: event.target, id: event.pointerId};
+          capture = {target: event.target, id: event.pointerId, pointerType:'mouse'};
           try { event.target.setPointerCapture?.(event.pointerId); } catch (_) {}
         }
         return; // Keep compatibility mousedown; desktop handling lives below.
@@ -535,8 +563,11 @@
       }
       if (inScope(event) && machine.down({...event, clientX: event.clientX, clientY: event.clientY,
         pointerId: event.pointerId, pointerType:event.pointerType, button: 0, timeStamp:event.timeStamp})) {
-        stop(event); focus(); capture = {target: event.target, id: event.pointerId};
+        if(event.pointerType==='touch')rememberOwnedTouch();
+        stop(event); focus(); capture = {target: event.target, id: event.pointerId, pointerType:event.pointerType};
         try { event.target.setPointerCapture?.(event.pointerId); } catch (_) {}
+      } else if(event.pointerType==='touch') {
+        ownedTouch=false;compatibilityMouseUntil=-Infinity;
       }
     });
     listen('pointermove', event => {
@@ -548,10 +579,17 @@
         button: 0, timeStamp:event.timeStamp})) { stop(event); releaseCapture(); }
     });
     listen('mousedown', event => {
+      if(compatibilityMouse(event)){stop(event);return;}
       if ((machine.active || inScope(event)) && machine.down(event)) { stop(event); focus(); }
     });
-    listen('mousemove', event => { if (machine.move(event)) stop(event); });
-    listen('mouseup', event => { if (machine.up(event)) { stop(event); releaseCapture(); } });
+    listen('mousemove', event => {
+      if(compatibilityMouse(event)){stop(event);return;}
+      if (machine.move(event)) stop(event);
+    });
+    listen('mouseup', event => {
+      if(compatibilityMouse(event)){stop(event);return;}
+      if (machine.up(event)) { stop(event); releaseCapture(); }
+    });
     listen('pointercancel', event => {
       if(api.commandSelectionV15===true && capture && event.pointerType==='touch' && event.pointerId!==capture.id)return;
       if(machine.debug().mode.startsWith('hud-')){cancelOwnedV15();stop(event);return;}
