@@ -180,8 +180,8 @@
   }
 
   function create(wine, frame) {
-    // Reserve the widest shipped bitmap for each choice in both locales.
-    const captionWidths = [68, 119, 127];
+    // The widest speed caption in the shipped English and Russian bitmap sets.
+    const widestCaption = 82;
     const prefs = document.createElement('div');
     prefs.id = 'warcraft-match-settings';
     prefs.dataset.winePageDialog = '';
@@ -205,11 +205,10 @@
     const group = document.createElement('div');
     group.setAttribute('role', 'group');
     group.setAttribute('aria-label', ru ? 'Скорость игры' : 'Game Speed');
-    group.style.gridTemplateColumns = captionWidths.map(width => `minmax(0,${width}fr)`).join(' ');
     const buttons = ['normal', 'faster', 'max'].map((name, i) => {
       const button = document.createElement('button');
       button.type = 'button';
-      const labels = ru ? ['Средняя', 'Очень быстро', 'Максимальная'] : ['Normal', 'Even Faster', 'Fastest'];
+      const labels = ru ? ['Медленно', 'Средне', 'Быстро'] : ['Slow', 'Medium', 'Fast'];
       button.setAttribute('aria-label', labels[i]);
       button.append(glyph('speed-' + name));
       button.addEventListener('click', () => {
@@ -268,7 +267,7 @@
           height:19*scale+'px'});
         prefs.style.setProperty('--settings-glyph', 19 * scale + 'px');
         const captionScale = Math.max(0, Math.min(scale,
-          (width - 2 * 4 - 3 * 8) / captionWidths.reduce((sum, w) => sum + w, 0)));
+          ((width - 2 * 4) / buttons.length - 6) / widestCaption));
         prefs.style.setProperty('--settings-choice-glyph', 19 * captionScale + 'px');
         prefs.style.setProperty('--settings-control', Math.max(24, Math.min(42, height * .32)) + 'px');
         extent = css;

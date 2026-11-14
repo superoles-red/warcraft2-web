@@ -1,5 +1,5 @@
 {
-  "version": "572b3a8e3fcbb635fa85fd6c",
+  "version": "ba66ae89cc57e8726f8995f8",
   "files": [
     {
       "path": "LICENSE.wine-assembly",
@@ -903,18 +903,18 @@
     },
     {
       "path": "menu-art/label-ru-speed-faster.png",
-      "bytes": 997,
-      "sha256": "291c40b3f802b7c9d749e02abc165021f7d981a90845763a7405c2212db80dc9"
+      "bytes": 591,
+      "sha256": "3e2a1b41db204e215584360872eb4904f99cf2b15bd346cf514a75e2d7751246"
     },
     {
       "path": "menu-art/label-ru-speed-max.png",
-      "bytes": 968,
-      "sha256": "9f36f0bfa79bb19e99ffc0356b2f5c54fe2032011c9699db0d5736105f47bdfb"
+      "bytes": 639,
+      "sha256": "480688e6dd36d3d7bd7a7a923fa405e9e47617e6fb27865fb7349d7ad67f5b5d"
     },
     {
       "path": "menu-art/label-ru-speed-normal.png",
-      "bytes": 676,
-      "sha256": "0b9f5c3cf3aca2722b34c69c45a2294ad857e801f323acc1cc92c466f0028b96"
+      "bytes": 680,
+      "sha256": "75d716a4db0aec8a89339608dc8939d7d9730fa6c6c53bcf14d030fae249869d"
     },
     {
       "path": "menu-art/label-ru-story.png",
@@ -953,18 +953,18 @@
     },
     {
       "path": "menu-art/label-speed-faster.png",
-      "bytes": 919,
-      "sha256": "9f6f402fb8d84cb3428066224675189fdd968845076d25cc12677f63acf5e305"
+      "bytes": 736,
+      "sha256": "1d9fe95f449ef643b533ea26a0e660a44517b4b1a92bbd78b8b162233f2c2b9b"
     },
     {
       "path": "menu-art/label-speed-max.png",
-      "bytes": 656,
-      "sha256": "51a205ef96927cb8351d45cde0c995fe56a456e7253e50c72f17ef3d33df1581"
+      "bytes": 556,
+      "sha256": "9b8a0bfd609726a9d84a3650dc559b9f4700072181c478c9c34f3d9a902b03a2"
     },
     {
       "path": "menu-art/label-speed-normal.png",
-      "bytes": 694,
-      "sha256": "fb3d197753d6cd65ea3232f41a79e639cbedf7fffe039133628b61a694ec434c"
+      "bytes": 486,
+      "sha256": "9ca5fa2bae76d33ef8de9313785b518b4b99b1d16b4c7881d9d26d0bf125fc71"
     },
     {
       "path": "menu-art/label-story.png",
@@ -1138,8 +1138,8 @@
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-preferences.js",
-      "bytes": 12340,
-      "sha256": "2fc0fbe1b286e82410cdea975dced937c50f2621c057e9320a4b8f36682f8cf5"
+      "bytes": 12187,
+      "sha256": "11a29696ec7914cf5c443f2c7c038fc57e35e3e81bb879031dc57bb3c04f097d"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-v16.js",
@@ -1173,8 +1173,8 @@
     },
     {
       "path": "warcraft2-v16.css",
-      "bytes": 6172,
-      "sha256": "9274cf8af600b948514fd8134c499b7ba29ab98042310ff5af82494238c8eac1"
+      "bytes": 6222,
+      "sha256": "6ff16180f290996b24c28112350bee71601050eda33f369d3ca1e2bbba01e92b"
     },
     {
       "path": "warcraft2.js",
@@ -1182,5 +1182,5 @@
       "sha256": "1ab0c1ef65b4894df9645dd5484323cc541a2034acbfe8ad4d58c1598daf695d"
     }
   ],
-  "workerSha256": "1216552642116963d6510300f122bfb1b82cf0a777d48072bec61fff78c6502e"
+  "workerSha256": "5d13bc9ffd3a5f8b06b2ffc35e893689627e1a98e40dd796ab91f12d2654ddea"
 }

@@ -148,7 +148,7 @@
 }
 #warcraft-match-settings img { height: var(--settings-glyph); image-rendering: pixelated; }
 #warcraft-match-settings section { display: grid; gap: 3px; }
-#warcraft-match-settings [role="group"] { display: grid; gap: 4px; }
+#warcraft-match-settings [role="group"] { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
 #warcraft-match-settings button {
   display: grid;
   place-items: center;
