@@ -1,5 +1,5 @@
 {
-  "version": "90766de7265663bd6f441b1d",
+  "version": "9f8735791caebaca15291f73",
   "files": [
     {
       "path": "LICENSE.wine-assembly",
@@ -1238,8 +1238,8 @@
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-dialog-layout.js",
-      "bytes": 27661,
-      "sha256": "d50f220f79e9925b95cbd4b520cae7c0701769d2ceb1cb0a873fe30bb8b5be8c"
+      "bytes": 27699,
+      "sha256": "6275dc923deef059b39ffd66e47f249808a350211f3544537f343482918a27d9"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-files.js",
@@ -1288,8 +1288,8 @@
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-v16.js",
-      "bytes": 18778,
-      "sha256": "8a38020819c821d3bbc786488b66bd5a373f6b31329f0993f41bad374c52d6d4"
+      "bytes": 19458,
+      "sha256": "f21f8f8fa75c5d0ac56ddef52e42a6cec83154668c8e22be6a811bd9c968ef77"
     },
     {
       "path": "v16-bridge.dll",
@@ -1327,5 +1327,5 @@
       "sha256": "0cc645613893c9dec209e8630337ac91773ae7972beef695b1d3038fd2b479a9"
     }
   ],
-  "workerSha256": "14584160b44082f6b018e4be48839e001c7425a1b6b1eae275c00cd96f244e27"
+  "workerSha256": "bcd2832b094be670e339597f9642b4b061c65099f27afa4f3d7230c2f9ec3883"
 }

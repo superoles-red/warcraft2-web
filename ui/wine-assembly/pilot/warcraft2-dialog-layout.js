@@ -217,16 +217,16 @@
     const rowHeight = 40 * formScale;
     const lastRowHeight = inlineDetail ? Math.max(rowHeight, detailHeight) : rowHeight;
     const desiredButtonH=menuButtonHeight(width,height);
-    const total = 20 * titleScale + (rows - 1) * rowHeight + lastRowHeight +
+    const bodyHeight = 20 * titleScale + (rows - 1) * rowHeight + lastRowHeight +
       (inlineDetail ? 0 : detailHeight + gap) +
-      buttonRows * desiredButtonH + (rows + buttonRows + 1) * gap;
-    const formHeight = !landscape && backTarget ? backTarget.y - gap : height;
-    const fit = Math.min(1, (formHeight - 2 * inset) / total);
+      (rows + buttonRows + 1) * gap;
+    const formHeight = !landscape && backTarget ? backTarget.y+backTarget.h-desiredButtonH-gap : height;
+    const fit = Math.min(1,(formHeight-2*inset-buttonRows*desiredButtonH)/bodyHeight);
     if (fit <= 0) return null;
-    let top = (formHeight - total * fit) / 2;
+    let top = (formHeight-bodyHeight*fit-buttonRows*desiredButtonH)/2;
     const paintRegions = [], regions = [];
     function crop(source, x, y, scale, interactive, decoration) {
-      const target = {x, y, w: source.w * scale, h: decoration==='tall-button'?desiredButtonH*fit:source.h*scale};
+      const target = {x, y, w: source.w * scale, h: decoration==='tall-button'?desiredButtonH:source.h*scale};
       const region = {source, target, interactive, foreground: !interactive, decoration};
       if (interactive) regions.push(region);
       paintRegions.push(region);
@@ -274,12 +274,12 @@
       const col = index % buttonColumns;
       crop(actions[index].source, actionLeft + col * (actionW + actionGap), top,
         actionScale, true, 'tall-button');
-      if (col === buttonColumns - 1) top += desiredButtonH*fit + actionGap;
+      if (col === buttonColumns - 1) top += desiredButtonH + actionGap;
     }
 
     if (!popup) {
       if (backTarget) {
-        const size = desiredButtonH*fit;
+        const size = desiredButtonH;
         const back = {source: CUSTOM_BUTTONS[2].source, target: {x:backTarget.x+backTarget.w-size,
           y:backTarget.y+backTarget.h-size,w:size,h:size}, decoration:'back'};
         regions.push(back);

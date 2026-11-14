@@ -174,6 +174,15 @@
     const surface = document.getElementById('screen');
     const display = document.getElementById('screen-present');
     const frame = document.getElementById('screen-canvas-stack');
+    const menuButtonSize = window.WarcraftAssemblyDialogLayout?.menuButtonHeight;
+    const menuResize = onTitlePrepared && menuButtonSize && new ResizeObserver(([entry]) => {
+      const {width,height} = entry.contentRect;
+      const left = window.WarcraftFullMap?.hudInsets?.left || 0;
+      const right = window.WarcraftFullMap?.hudInsets?.right || 0;
+      frame.style.setProperty('--warcraft-menu-row-height',
+        menuButtonSize(width-(left>4?left:0)-(right>4?right:0),height)+'px');
+    });
+    if (menuResize) menuResize.observe(frame);
     const input = window.WarcraftAssemblyInput.create(wine, renderer);
     const objectivesCheckbox = onTitlePrepared && createObjectivesCheckbox(wine, frame, surface);
     const matchSettings = onTitlePrepared && window.WarcraftMatchPreferences?.create(wine, frame);
@@ -374,6 +383,10 @@
     window.installWarcraftDuneControls();
     window.WarcraftFullMap.installInputRouter();
     return () => {
+      if (menuResize) {
+        menuResize.disconnect();
+        frame.style.removeProperty('--warcraft-menu-row-height');
+      }
       detachMap?.();
       detachTransport();
       menu?.destroy();
