@@ -4,31 +4,47 @@
   const originalHash = 'c3d83429aa0c2200ad3f6ac141da8ae7213a7b196d1f70d4d84a6e607bd504bd';
   const ownsPresentation = document.documentElement.classList.contains('warcraft-page');
   const autoLaunch = !!(window.WarcraftCompactPlan || window.WarcraftLocalMedia);
+  const gameTitle = 'Warcraft II: Battle.net Edition';
   let activeRun, bridgeReady;
-  const panel = document.createElement('main');
-  panel.id = 'war2-launch-cover';
-  panel.style.cssText = [
-    'position:fixed;inset:0;z-index:2147483647;display:grid;place-content:center',
-    'gap:16px;box-sizing:border-box;text-align:center;background:#161513;color:#f2e6ca',
-    'padding:max(24px,env(safe-area-inset-top,0px)) max(24px,env(safe-area-inset-right,0px)) ' +
-      'max(24px,env(safe-area-inset-bottom,0px)) max(24px,env(safe-area-inset-left,0px))',
-    'font:16px system-ui,sans-serif',
-  ].join(';');
-  const heading = document.createElement('h1');
-  heading.textContent = 'Warcraft II: Battle.net Edition';
-  const status = document.createElement('p');
-  status.setAttribute('role', 'status');
-  status.textContent = 'Проверяю локальный архив игры…';
+  const pwaCover = document.getElementById('war2-launch-cover');
+  const panel = pwaCover || document.createElement('main');
+  const controls = pwaCover?.querySelector('.wc2-startup-controls') || panel;
+  const status = controls.querySelector('[role="status"]') || document.createElement('p');
+  const progress = controls.querySelector('progress');
+  if (!pwaCover) {
+    panel.id = 'war2-launch-cover';
+    panel.style.cssText = [
+      'position:fixed;inset:0;z-index:2147483647;display:grid;place-content:center',
+      'gap:16px;box-sizing:border-box;text-align:center;background:#161513;color:#f2e6ca',
+      'padding:max(24px,env(safe-area-inset-top,0px)) max(24px,env(safe-area-inset-right,0px)) ' +
+        'max(24px,env(safe-area-inset-bottom,0px)) max(24px,env(safe-area-inset-left,0px))',
+      'font:16px system-ui,sans-serif',
+    ].join(';');
+    const heading = document.createElement('h1');
+    heading.textContent = gameTitle;
+    status.setAttribute('role', 'status');
+    status.textContent = 'Проверяю локальный архив игры…';
+    panel.append(heading, status);
+    document.body.append(panel);
+  }
   const start = document.createElement('button');
   start.id = 'war2-pilot-start';
   start.type = 'button';
   start.textContent = 'Запустить Warcraft II';
   start.style.cssText = 'font:inherit;padding:10px 16px;justify-self:center';
   start.disabled = true;
-  panel.append(heading, status);
-  if (!autoLaunch) panel.append(start);
-  document.body.append(panel);
-  document.title = heading.textContent;
+  if (!autoLaunch) controls.append(start);
+  document.title = gameTitle;
+
+  function loading(message, bytes) {
+    const fraction = bytes?.total > 0 ? bytes.loaded / bytes.total : null;
+    status.textContent = fraction === null ? message : message + ' ' + Math.floor(100 * fraction) + '%';
+    if (progress) {
+      progress.hidden = false;
+      if (fraction === null) progress.removeAttribute('value');
+      else progress.value = fraction;
+    }
+  }
 
   async function waitForRuntime() {
     const deadline = performance.now() + 20000;
@@ -43,6 +59,7 @@
 
   function showError(error) {
     start.disabled = true;
+    if (progress) progress.hidden = true;
     status.textContent = 'Запуск не удался. ' + (error?.message || String(error));
   }
 
@@ -102,7 +119,7 @@
     const app = media.makeAppEntry(plan, {
       exePath: candidate.path,
       badge: 'session',
-      label: 'Warcraft II: Battle.net Edition',
+      label: gameTitle,
     });
     const readExe = app.exeBytes;
     let exeError;
@@ -201,7 +218,7 @@
     }
 
     if (autoLaunch) {
-      if (!initialPage) status.textContent = 'Запускаю игру…';
+      if (!initialPage) loading('Запускаю игру…');
       return launch();
     }
     start.addEventListener('click', () => launch().catch(showError), {once: true});
@@ -213,40 +230,41 @@
     const local = window.WarcraftLocalMedia;
     if (await local.installed()) return prepare();
     status.textContent = 'Выбери ZIP с оригинальной Warcraft II Battle.net Edition.';
+    if (progress) progress.hidden = true;
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = '.zip,application/zip';
     input.setAttribute('aria-label', 'Архив Warcraft II');
-    panel.append(input);
+    controls.append(input);
     input.addEventListener('change', async () => {
       const file = input.files[0];
       if (!file) return;
       input.disabled = true;
       try {
         navigator.storage?.persist?.().catch(() => {});
-        await local.install(file, ({loaded, total}) => {
-          status.textContent = 'Копирую игру на устройство… ' + Math.floor(100 * loaded / total) + '%';
-        });
+        loading('Копирую игру на устройство…');
+        await local.install(file, bytes => loading('Копирую игру на устройство…', bytes));
       } catch (error) {
         input.value = '';
         input.disabled = false;
+        if (progress) progress.hidden = true;
         status.textContent = error.message;
         return;
       }
       input.remove();
+      loading('Запускаю игру…');
       await prepare().catch(showError);
     });
   }
 
   async function prepareCompact() {
     const local = window.WarcraftCompactAssets;
-    await local.ensureInstalled(({loaded, total}) => {
-      status.textContent = 'Скачиваю игру для запуска без интернета… ' +
-        Math.floor(100 * loaded / total) + '%';
-    });
+    await local.ensureInstalled(bytes => loading('Скачиваю файлы игры…', bytes));
+    loading('Запускаю игру…');
     await prepare();
     window.WarcraftCompactLanguage?.setRestart(async page => {
-      status.textContent = window.WarcraftLanguage.current() === 'ru' ? 'Переключаю язык…' : 'Switching language…';
+      loading(window.WarcraftLanguage.current() === 'ru' ? 'Переключаю язык…' : 'Switching language…');
+      if (pwaCover) pwaCover.querySelector('.wc2-startup-art').hidden = true;
       panel.style.background = '#161513 url("./menu-art/orc-texture.png") center / cover';
       document.body.append(panel);
       await prepare(page);
@@ -260,7 +278,7 @@
       retry.href = location.href;
       retry.textContent = 'Повторить запуск';
       retry.style.color = 'inherit';
-      panel.append(retry);
+      controls.append(retry);
     });
   } else {
     (window.WarcraftLocalMedia ? prepareLocal() : prepare()).catch(showError);

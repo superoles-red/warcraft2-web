@@ -1,0 +1,64 @@
+.wc2-startup {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: safe center;
+  box-sizing: border-box;
+  overflow: auto;
+  gap: clamp(10px, 2dvh, 18px);
+  padding: max(12px, env(safe-area-inset-top, 0px))
+    max(12px, env(safe-area-inset-right, 0px))
+    max(12px, env(safe-area-inset-bottom, 0px))
+    max(12px, env(safe-area-inset-left, 0px));
+  background: #0a0a10;
+  color: #f2e6ca;
+  text-align: center;
+  font: 16px system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+.wc2-startup-art {
+  display: block;
+  flex: 0 1 auto;
+  min-height: 0;
+  width: min(100%, 640px, 76dvh);
+  height: auto;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.wc2-startup-controls { flex: none; width: min(100%, 420px); }
+.wc2-startup-controls p { margin: 0 0 .6rem; }
+.wc2-startup [hidden] { display: none !important; }
+.wc2-startup-progress {
+  display: block;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 10px;
+  border: 1px solid #98753d;
+  background: #20160f;
+  color: #dcb94d;
+}
+.wc2-startup-progress::-webkit-progress-bar { background: transparent; }
+.wc2-startup-progress::-webkit-progress-value { background: #dcb94d; }
+.wc2-startup-progress::-moz-progress-bar { background: #dcb94d; }
+.wc2-startup-progress:indeterminate {
+  background: #20160f linear-gradient(#dcb94d, #dcb94d) no-repeat left center / 24% 100%;
+  animation: wc2-startup-progress 1.25s ease-in-out infinite alternate;
+}
+.wc2-startup-progress:indeterminate::-moz-progress-bar { background: transparent; }
+.wc2-startup a {
+  display: inline-block;
+  margin-top: .6rem;
+  color: inherit;
+}
+@keyframes wc2-startup-progress { to { background-position: right center; } }
+@media (prefers-reduced-motion: reduce) {
+  .wc2-startup-progress:indeterminate { animation: none; background-position: center; }
+}

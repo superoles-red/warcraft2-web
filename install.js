@@ -4,6 +4,7 @@ const status = document.getElementById('status');
 const install = document.getElementById('install');
 const retry = document.getElementById('retry');
 const version = document.getElementById('version');
+const progress = document.getElementById('install-progress');
 const workers = navigator.serviceWorker;
 const updates = window.WarcraftAppUpdate;
 const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
@@ -13,6 +14,7 @@ let downloading = false;
 
 function showError(error) {
   status.textContent = error.message;
+  progress.hidden = true;
   retry.hidden = false;
 }
 
@@ -48,6 +50,7 @@ async function prepare() {
   }
 
   status.textContent = 'Установи файлы игры для запуска без интернета.';
+  progress.hidden = true;
   install.hidden = false;
   iphone.hidden = standalone || !/iPhone|iPad/.test(navigator.userAgent);
 }
@@ -57,6 +60,7 @@ install.addEventListener('click', async () => {
   install.hidden = true;
   iphone.hidden = true;
   status.textContent = 'Загружаю приложение…';
+  progress.hidden = false;
   navigator.storage?.persist?.().catch(() => {});
   try {
     const registration = await workers.register('./service-worker.js', {scope: './', updateViaCache: 'none'});
@@ -72,7 +76,8 @@ install.addEventListener('click', async () => {
 
 workers?.addEventListener('message', ({data}) => {
   if (data?.type === 'WC2_OFFLINE_PROGRESS' && downloading && data.total > 0) {
-    status.textContent = 'Загружаю приложение… ' + Math.floor(100 * data.loaded / data.total) + '%';
+    progress.value = data.loaded / data.total;
+    status.textContent = 'Загружаю приложение… ' + Math.floor(100 * progress.value) + '%';
   }
 });
 retry.addEventListener('click', () => {

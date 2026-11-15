@@ -8,22 +8,15 @@ const ProcessBoot = (typeof window !== 'undefined' && window.processBoot) || nul
 const HostMemUtils = (typeof window !== 'undefined' && window.memUtils) ||
   (typeof require !== 'undefined' ? require('./lib/mem-utils') : null);
 
-// iOS decides whether a page may be heard at all, and WebAudio alone does not
-// get a say. A page that only ever makes sound through an AudioContext lands
-// in the ambient-style session the ringer switch mutes: the context is
-// running, samples are scheduled, currentTime advances, every level meter
-// reads healthy -- and the phone plays nothing, with no error anywhere. A
-// visitor with the switch flipped (or the volume rocker at its media zero,
-// which is the same thing) hears silence from an emulator that looks fine.
-//
-// Declaring the session 'playback' is the one thing that opts a page out of
-// it. Safari 16.4+; everywhere else the property is absent and this is a
-// no-op. Idempotent because it is called from every launch and every unlock.
+// Choose the platform output category at launch and again on gesture unlock.
+// Warcraft may opt into the system's Ring/Silent behavior on iOS.
 function claimAudioSession(type = 'playback') {
   try {
     const session = (typeof navigator !== 'undefined') && navigator.audioSession;
-    const wanted = type === 'play-and-record' ? type : 'playback';
-    if (session && session.type !== wanted) session.type = wanted;
+    if (!session) return;
+    const warcraft = (typeof window !== 'undefined') && window.WarcraftAudioLifecycle;
+    const wanted = type === 'play-and-record' ? type : (warcraft?.playbackSessionType(navigator) || 'playback');
+    if (session.type !== wanted) session.type = wanted;
   } catch (_) { /* a browser that has the property but refuses the value */ }
 }
 if (typeof window !== 'undefined') window.claimAudioSession = claimAudioSession;

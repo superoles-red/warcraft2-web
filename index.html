@@ -6,26 +6,27 @@
 <link rel="manifest" href="./manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="./icons/warcraft2-180.png">
 <link rel="icon" type="image/png" sizes="48x48" href="./icons/warcraft2-48.png">
+<link rel="stylesheet" href="./startup.css">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Warcraft II</title>
 <style>
-  html { color-scheme: dark; background: #161513; color: #f2e6ca; font: 17px system-ui, sans-serif }
-  body { margin: 0; min-height: 100dvh; display: grid; place-items: center }
-  main { box-sizing: border-box; width: min(100%, 28rem); text-align: center;
-    padding: 1rem max(1rem, env(safe-area-inset-right)) 1rem max(1rem, env(safe-area-inset-left)) }
-  h1 { font-size: clamp(1.7rem, 6vw, 2.4rem); margin: 0 0 1rem }
+  html { background: #0a0a10 }
   #version { font-size: .7rem; opacity: .65; overflow-wrap: anywhere }
   a, button { display: inline-block; padding: .65rem 1rem; border: 1px solid #98753d;
     border-radius: .3rem; color: #f2e6ca; background: #421e15; font: inherit; text-decoration: none }
-  [hidden] { display: none !important }
+  #iphone { margin: .6rem 0 0; font-size: .875rem }
 </style>
-<main>
-  <h1>Warcraft II</h1>
-  <p id="status" role="status">Проверяю установку…</p>
-  <button id="install" type="button" hidden>Установить</button>
-  <button id="retry" type="button" hidden>Повторить</button>
-  <p id="version" hidden></p>
-  <p id="iphone" hidden>Для запуска с иконки выбери в Safari «Поделиться» → «На экран Домой».</p>
+<main class="wc2-startup">
+  <img class="wc2-startup-art" src="./menu-art/title-splash.png" width="640" height="480"
+    alt="Warcraft II: Battle.net Edition" fetchpriority="high">
+  <div class="wc2-startup-controls">
+    <p id="status" role="status">Проверяю установку…</p>
+    <progress id="install-progress" class="wc2-startup-progress" aria-label="Загрузка приложения"></progress>
+    <button id="install" type="button" hidden>Установить</button>
+    <button id="retry" type="button" hidden>Повторить</button>
+    <p id="version" hidden></p>
+    <p id="iphone" hidden>Для запуска с иконки выбери в Safari «Поделиться» → «На экран Домой».</p>
+  </div>
 </main>
 <script src="./app-update.js" defer></script>
 <script src="./install.js" defer></script>

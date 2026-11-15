@@ -12,6 +12,16 @@
   const campaignCode = 0x48f7a0, outcomeCode = 0x48f7d0;
   const fastSetup = 0x4ad960, fastRoot = 0x4ad9c4;
   const selectedMap = 0x4ad678, startUnits = 0x4ad78d, race = 0x4ad78e;
+  const commandLineMap = 0x4ad9d0;
+  const pickerHandler = 0x41d490, builtInList = 0x4964a0;
+  const pickerSelection = 0x4ae1b0, pickerFilenames = 0x4ae1e4;
+  const firstBuiltIn = 0x4c4, builtInSizes = [96,96,128,128,128,128,128,128,96,96,96,128,128,128,
+    128,64,96,64,64,32,96,128,96,128,128,128,96,96];
+  // The native picker reserves 256 filename slots. Its stock list uses at
+  // most 153 PUDs, so the last slot can carry the basename of a nested map.
+  const authoredFilenameIndex = 255;
+  const mapRoot = 'c:\\warcraft2\\';
+  const packagedMapPath = /^maps\\(?:[a-z0-9 _-]+\\)*[a-z0-9_ !&',-]+\.pud$/;
   const saveCode = 0x48f810, continueCode = 0x48f890, savePath = 0x48f910, saveLabel = 0x48f940;
   const continueRequest = 0x48f788, saveResult = 0x48f789, autosaveRequest = 0x48f78a;
   const guestSave = 'c:\\wc2-web-continue.sav';
@@ -19,6 +29,7 @@
   const maxSaveBytes = 3 * 1024 * 1024;
   const autosaveInterval = 60000;
   const installed = new WeakSet();
+  let publishedMaps = new Map();
   // Top-level stock PUD maps, in the native picker order. Each entry holds
   // the filename, DIM width, OWNR player count and TYPE map signature.
   const portableMaps = Object.freeze([
@@ -186,7 +197,65 @@
     const end = buffer.indexOf(0);
     if (end < 0) return '';
     const encoding = global.WarcraftLanguage?.current() === 'ru' ? 'windows-1251' : 'windows-1252';
-    return new TextDecoder(encoding).decode(buffer.subarray(0, end));
+    return new TextDecoder(encoding).decode(buffer.slice(0, end));
+  }
+
+  function mapTitle(filename) {
+    return filename[0].toUpperCase() + filename.slice(1, -4).replace(/\bbne$/, 'BNE');
+  }
+
+  function readPud(data) {
+    if (!(data instanceof Uint8Array)) return null;
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    let size, players, signature, description = '';
+    for (let offset = 0; offset + 8 <= data.length;) {
+      const kind = view.getUint32(offset), length = view.getUint32(offset + 4, true);
+      const start = offset + 8;
+      if (length > data.length - start) return null;
+      if (kind === 0x54595045 && length === 16 && view.getUint32(start) === 0x57415232 &&
+          view.getUint32(start + 4) === 0x204d4150) {
+        signature = view.getUint32(start + 12, true);
+      } else if (kind === 0x44494d20 && length === 4) {
+        const width = view.getUint16(start, true), height = view.getUint16(start + 2, true);
+        if (width === height && [32,64,96,128].includes(width)) size = width;
+      } else if (kind === 0x4f574e52 && length === 16) {
+        // The original picker counts the first eight OWNR values of 5.
+        players = data.subarray(start, start + 8).filter(owner => owner === 5).length;
+      } else if (kind === 0x44455343 && length === 32) {
+        description = nativeText(data.subarray(start, start + length)).trim();
+      }
+      offset = start + length;
+      if (size && players && signature !== undefined && description) break;
+    }
+    return size && players && signature !== undefined ? {size,players,signature,description} : null;
+  }
+
+  function readPackagedMaps(files) {
+    const entries = new Map();
+    for (const [fullPath,file] of files || []) {
+      if (!(file.attrs & 1) || file._provider || !fullPath.startsWith(mapRoot)) continue;
+      const path = fullPath.slice(mapRoot.length);
+      if (!packagedMapPath.test(path)) continue;
+      const filename = path.split('\\').at(-1), data = filename.length <= 31 && readPud(file.data);
+      if (data) entries.set(path, {...data,filename,path,title:mapTitle(filename),id:path});
+    }
+    return entries;
+  }
+
+  function scenarioRecord(entry) {
+    const record = new Uint8Array(48);
+    record.set([1,entry.size,entry.players]);
+    const view = new DataView(record.buffer);
+    view.setUint16(6, authoredFilenameIndex, true);
+    view.setUint32(12, entry.signature, true);
+    record.set(new TextEncoder().encode(entry.filename),16);
+    return record;
+  }
+
+  function matchesMap(settings, entry) {
+    return !!entry && settings[1] === entry.size && settings[2] === entry.players &&
+      new DataView(settings.buffer, settings.byteOffset).getUint32(12, true) === entry.signature &&
+      nativeText(settings.subarray(16)).toLowerCase() === entry.filename;
   }
 
   function validOctets(data, size) {
@@ -194,28 +263,32 @@
       Number.isInteger(value) && value >= 0 && value <= 255);
   }
 
-  function fastConfig(scenario) {
+  function fastConfig(scenario, maps = publishedMaps) {
     if (scenario?.version !== 1 || !validOctets(scenario.settings, 48) ||
         !Number.isInteger(scenario.startUnits) || scenario.startUnits < 0 || scenario.startUnits > 7 ||
         !Number.isInteger(scenario.race) || scenario.race < 0 || scenario.race > 3) return null;
     const settings = Uint8Array.from(scenario.settings);
     const mapId = settings[6] | settings[7] << 8;
-    if (settings[0] === 0 && mapId >= 0x4c4 && mapId <= 0x4df) return settings;
+    if (settings[0] === 0 && builtInSizes[mapId - firstBuiltIn] && !scenario.externalPath) return settings;
     // BNE's picker uses a 32-byte DOS filename for packaged local scenarios.
     const name = nativeText(settings.subarray(16));
-    return settings[0] === 1 && !scenario.externalPath && /^[^\\/:]+\.pud$/i.test(name)
+    if (settings[0] === 1 && typeof scenario.externalPath === 'string') {
+      return mapId === authoredFilenameIndex && matchesMap(settings, maps.get(scenario.externalPath)) ? settings : null;
+    }
+    return settings[0] === 1 && mapId !== authoredFilenameIndex && !scenario.externalPath && /^[^\\/:]+\.pud$/i.test(name)
       ? settings : null;
   }
 
   function portableFastSlot(slot) {
-    if (slot?.kind !== 'fast' || slot.scenario?.externalPath !== false) return false;
+    if (slot?.kind !== 'fast') return false;
     const settings = fastConfig(slot.scenario);
     if (!settings || settings[2] < 1 || settings[2] > 8 || settings[3] || settings[4] || settings[5] ||
         !settings.subarray(16).includes(0)) return false;
     const record = new DataView(settings.buffer), mapId = record.getUint16(6, true);
     const options = record.getUint32(8, true), signature = record.getUint32(12, true);
     if ((options & ~0x3fe00) !== 0) return false;
-    if (settings[0] === 0) return settings[1] === 0 && signature === 0;
+    if (settings[0] === 0) return (settings[1] === 0 || settings[1] === builtInSizes[mapId - firstBuiltIn]) && signature === 0;
+    if (typeof slot.scenario.externalPath === 'string') return true;
     const map = portableMaps[mapId];
     return !!map && map[0] === nativeText(settings.subarray(16)) && map[1] === settings[1] &&
       map[2] === settings[2] && map[3] === signature;
@@ -224,32 +297,114 @@
   function attach(wine, {onStarted, onVictory, onDefeat} = {}) {
     if (!installed.has(wine)) return null;
     let active = null, pendingFast = null, running = false, resuming = null, nextAutosave = Infinity;
+    let pendingScenario = null;
+    const maps = readPackagedMaps(wine._helpCtx?.vfs?.files);
+    publishedMaps = maps;
+    const dword = address => nativeView(wine, address, 4)?.getUint32(0, true);
     const word = address => nativeView(wine, address, 2)?.getUint16(0, true);
     const byte = address => nativeView(wine, address, 1)?.getUint8(0);
     const offline = () => byte(networkGame) === 0 && byte(replay) === 0;
     function openFastSetup() {
-      const root = nativeView(wine, fastRoot, 4)?.getUint32(0, true);
-      return word(gameState) === 12 && offline() && root &&
-        nativeView(wine, root + 0x2a, 4)?.getUint32(0, true) === 0x415640;
+      const root = dword(fastRoot);
+      return word(gameState) === 12 && offline() && root && dword(root + 0x2a) === 0x415640;
+    }
+    function openPicker(front) {
+      return front?.slot === 4 && front.handler === pickerHandler && word(front.root + 0x20) === 4 &&
+        dword(front.root + 0x2a) === pickerHandler && openFastSetup();
+    }
+    function readBuiltIns() {
+      const count = word(builtInList + 6), base = dword(builtInList + 8);
+      if (!base || count !== builtInSizes.length) return [];
+      const entries = [];
+      for (let index = 0; index < count; index++) {
+        const view = nativeView(wine, base + index * 48, 48);
+        if (!view) return [];
+        const record = octets(view).slice(), size = record[1], players = record[2];
+        const id = view.getUint16(6, true), title = nativeText(record.subarray(16));
+        if (record[0] || builtInSizes[id - firstBuiltIn] !== size || !players || players > 8 || !title) return [];
+        entries.push({id:`builtin:${id}`,title,size,players,description:'',record});
+      }
+      return entries;
+    }
+    function scenarioChoices(front) {
+      if (!openPicker(front)) return null;
+      const setup = nativeView(wine, fastSetup, 48), builtIns = readBuiltIns();
+      if (!setup || !builtIns.length) return null;
+      const record = octets(setup), filename = nativeText(record.subarray(16)).toLowerCase();
+      const activePath = readSelectedPath();
+      const selectedId = record[0] === 0 ? `builtin:${setup.getUint16(6,true)}` :
+        activePath || `maps\\${filename}`;
+      return {selectedId, entries:[...builtIns, ...maps.values()].map(({id,title,size,players,description}) =>
+        ({id,title,size,players,description}))};
+    }
+    function selectScenario(id, front) {
+      if (!openPicker(front)) return false;
+      const entry = maps.get(id) || readBuiltIns().find(item => item.id === id);
+      const selection = nativeView(wine, pickerSelection, 48);
+      if (!entry || !selection) return false;
+      const record = entry.record || scenarioRecord(entry);
+      if (entry.path) {
+        const filenames = dword(pickerFilenames);
+        const filename = filenames && nativeView(wine, filenames + authoredFilenameIndex * 32, 32);
+        if (!filename) return false;
+        octets(filename).set(record.subarray(16));
+      }
+      // Original OK closes the dialog and copies this exact record into the
+      // current Fast setup, retaining the existing game rules at offsets 4/8.
+      octets(selection).set(record);
+      pendingScenario = {record,path:entry.path || false};
+      return true;
+    }
+    function readSelectedPath() {
+      const path = nativeView(wine, selectedMap, 260);
+      if (!path) return false;
+      const name = nativeText(octets(path)).toLowerCase();
+      return name.startsWith(mapRoot) && maps.has(name.slice(mapRoot.length)) ? name.slice(mapRoot.length) : false;
+    }
+    function writeSelectedPath(relative) {
+      const path = nativeView(wine, selectedMap, 260), flag = nativeView(wine, commandLineMap, 2);
+      if (!path || !flag || (relative && !maps.has(relative))) return false;
+      const raw = octets(path);
+      raw.fill(0);
+      if (relative) raw.set(new TextEncoder().encode(mapRoot + relative));
+      flag.setUint16(0,0,true);
+      return true;
+    }
+    function acknowledgeScenario() {
+      if (!pendingScenario || !openFastSetup()) return;
+      const setup = nativeView(wine, fastSetup, 48);
+      if (!setup) return;
+      const {record,path} = pendingScenario;
+      const confirmed = octets(setup);
+      // The native commit preserves setup options at offsets 4/8. Every
+      // other byte must match the catalog entry before changing its path.
+      if (!record.every((value,i) => (i >= 4 && i < 6) || (i >= 8 && i < 12) || confirmed[i] === value)) return;
+      if (writeSelectedPath(path)) pendingScenario = null;
     }
     function snapshotFast() {
       const setup = openFastSetup() && nativeView(wine, fastSetup, 48);
       if (!setup) return null;
+      acknowledgeScenario();
       const scenario = {version:1,settings:Array.from(octets(setup)),startUnits:byte(startUnits),race:byte(race),
-        externalPath:byte(selectedMap) !== 0};
-      const settings = fastConfig(scenario);
+        externalPath:setup.getUint8(0) === 1 && readSelectedPath()};
+      const settings = fastConfig(scenario,maps);
       if (!settings) return null;
-      const name = nativeText(settings.subarray(16)).replace(/\.pud$/i, '').trim();
+      const name = maps.get(scenario.externalPath)?.title || nativeText(settings.subarray(16)).replace(/\.pud$/i, '').trim();
       return {kind:'fast',scenario,name};
     }
-    function restoreFast(slot) {
-      const settings = slot?.kind === 'fast' && fastConfig(slot.scenario);
-      const setup = openFastSetup() && nativeView(wine, fastSetup, 48);
+    function applyFast(slot) {
+      const settings = slot?.kind === 'fast' && fastConfig(slot.scenario,maps);
+      const setup = nativeView(wine, fastSetup, 48);
       const units = nativeView(wine, startUnits, 1), teamRace = nativeView(wine, race, 1);
-      if (!settings || !setup || !units || !teamRace) return false;
+      if (!settings || !setup || !units || !teamRace || !writeSelectedPath(slot.scenario.externalPath)) return false;
       octets(setup).set(settings);
       units.setUint8(0, slot.scenario.startUnits);
       teamRace.setUint8(0, slot.scenario.race);
+      pendingScenario = null;
+      return true;
+    }
+    function restoreFast(slot) {
+      if (!openFastSetup() || !applyFast(slot)) return false;
       pendingFast = slot;
       return true;
     }
@@ -296,6 +451,7 @@
     }
     function tick() {
       commitCheckpoint();
+      acknowledgeScenario();
       const event = nativeView(wine, finishedState, 4);
       if (event?.getUint16(0, true)) {
         const result = event.getUint16(0, true), id = event.getUint16(2, true);
@@ -329,6 +485,9 @@
         nativeView(wine, selectedLevel, 2)?.setUint16(0, 0, true);
       } else {
         active = resuming?.kind === 'fast' ? resuming : pendingFast;
+        // The original save carries the running map. Restore the setup's map
+        // selection separately so Restart can open the same packaged PUD.
+        if (resuming?.kind === 'fast') applyFast(resuming);
         pendingFast = null;
       }
       if (active) {
@@ -339,7 +498,7 @@
       if (resuming) nativeView(wine, continueRequest, 1)?.setUint8(0, 0);
       resuming = null;
     }
-    return {armCampaign,tick,snapshotFast,restoreFast,continueSlot,clearCheckpoint,readSession:() => active,
+    return {armCampaign,tick,scenarioChoices,selectScenario,snapshotFast,restoreFast,continueSlot,clearCheckpoint,readSession:() => active,
       armFast(slot) { pendingFast = slot?.kind === 'fast' ? slot : null; }};
   }
 

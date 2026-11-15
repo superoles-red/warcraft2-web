@@ -18,7 +18,8 @@
   const SCENARIO_FILTERS = [
     {id:2, label:[8,38,120,20], control:[138,36,204,22]},
     {id:3, label:[8,86,120,20], control:[138,84,204,22]},
-    {id:16, control:[22,110,240,22]},
+    // The original picker hides the folder control for built-in scenarios.
+    {id:16, control:[22,110,240,22], optional:true},
   ];
   const SCENARIO_TYPES = new Set([1,2,7,9,10,11,12,13]);
 
@@ -128,7 +129,7 @@
   // exceeds gray 135. Keep the original light grayscale lettering ramp.
   const PAPER_BUTTON_INK = new Set([0xffffff,0xdbdbdb,0xbbbbbb,0x9b9b9b]);
   let inkCanvas;
-  function paintTallButton(context,image,source,target,blank,captionScale,paper=false) {
+  function paintTallButton(context,image,source,target,blank,captionScale,paper=false,useNativeFrame=true) {
     const {x:sx,y:sy,w:sw,h:sh}=source, {x,y,w,h}=target;
     const scale = Math.min(w/sw,h/sh);
     const rim = Math.min(4,sh/4), edge = rim*scale;
@@ -154,11 +155,14 @@
       const i=row*sw+col;
       if (!text[i] && asRgb(i)===0 && (text[i-sw-1]===1||text[i-sw]===1||text[i-1]===1)) text[i]=2;
     }
-    // Keep every actual frame pixel, including current focused/default outline.
-    context.drawImage(image,sx,sy,sw,rim,x,y,w,edge);
-    context.drawImage(image,sx,sy+sh-rim,sw,rim,x,y+h-edge,w,edge);
-    context.drawImage(image,sx,sy+rim,rim,sh-rim*2,x,y+edge,edge,h-edge*2);
-    context.drawImage(image,sx+sw-rim,sy+rim,rim,sh-rim*2,x+w-edge,y+edge,edge,h-edge*2);
+    // The authored title uses the blank original frame and its own focus.
+    // Native dialogs retain the current rim, including any native highlight.
+    const frame=!useNativeFrame&&body?body:image;
+    const fx=frame===image?sx:0, fy=frame===image?sy:0;
+    context.drawImage(frame,fx,fy,sw,rim,x,y,w,edge);
+    context.drawImage(frame,fx,fy+sh-rim,sw,rim,x,y+h-edge,w,edge);
+    context.drawImage(frame,fx,fy+rim,rim,sh-rim*2,x,y+edge,edge,h-edge*2);
+    context.drawImage(frame,fx+sw-rim,fy+rim,rim,sh-rim*2,x+w-edge,y+edge,edge,h-edge*2);
     if (body) context.drawImage(body,rim,rim,sw-rim*2,sh-rim*2,x+edge,y+edge,w-edge*2,h-edge*2);
     else {
       // A blank region to the right of the drawn caption preserves the
@@ -272,29 +276,48 @@
     context.drawImage(thumb,t.x+(t.w-size)*position,t.y+(t.h-size)/2,size,size);
   }
 
-  function reflowCustom(chart, controls, inset, backTarget) {
+  function reflowCustom(chart, controls, inset, backTarget, bottomInset) {
     if (controls.size !== CUSTOM_FIELDS.length + CUSTOM_BUTTONS.length) return null;
     const {width, height} = chart;
     const available = width - 2 * inset;
     const landscape = width >= height;
-    const columns = landscape ? (available >= 600 ? 3 : 2) :
-      (available >= 500 || height < 630 ? 2 : 1);
     const gap = Math.min(landscape ? 12 : 10, available / 6);
-    const columnW = (available - (columns - 1) * gap) / columns;
-    const formScale = Math.min(1.7, columnW / 184);
     const actions = backTarget ? CUSTOM_BUTTONS.slice(0, -1) : CUSTOM_BUTTONS;
-    const buttonRows = landscape ? 1 : actions.length;
-    const buttonColumns = landscape ? actions.length : 1;
+    const titleScale = Math.min(1.2, available / CUSTOM_HEADING.w);
+    const desiredHeight = menuButtonHeight(width, height);
+    const backBottom = backTarget && Math.min(backTarget.y + backTarget.h, height - bottomInset);
+    const formHeight = !landscape && backTarget ? backBottom - desiredHeight - gap : height;
+    const innerHeight = formHeight - 2 * inset;
+    const inlineDetail = landscape && height < 315;
+    const stackedActions = landscape ? 1 : actions.length;
+    const fieldScale = columnWidth => Math.min(1.7, columnWidth / 184);
+    const summaryScale = summaryWidth => Math.min(1.15, summaryWidth / CUSTOM_SCENARIO_TEXT.w);
+    const labelsAndGaps = (rows, scale, summary, actionRows) =>
+      CUSTOM_HEADING.h * titleScale + rows * 18 * scale + summary + (rows + actionRows + 1) * gap;
+    const singleRows = CUSTOM_FIELDS.length;
+    const singleSummary = CUSTOM_SCENARIO_TEXT.h * summaryScale(available) + gap;
+    const singleColumnHeight = labelsAndGaps(singleRows, fieldScale(available), singleSummary, stackedActions) +
+      (singleRows + stackedActions) * desiredHeight;
+    // Keep full-height controls on phones by using a second field column when
+    // the complete single-column form would run into the footer.
+    const columns = landscape ? (available >= 600 ? 3 : 2) :
+      (innerHeight >= singleColumnHeight && available < 500 ? 1 : 2);
+    const columnW = (available - (columns - 1) * gap) / columns;
+    const formScale = fieldScale(columnW);
+    const detailWidth = inlineDetail ? columnW : available;
+    const detailScale = summaryScale(detailWidth);
+    const detailHeight = CUSTOM_SCENARIO_TEXT.h * detailScale;
+    const rows = Math.ceil(CUSTOM_FIELDS.length / columns);
+    const summary = inlineDetail ? 0 : detailHeight + gap;
+    const stackFits = innerHeight >= labelsAndGaps(rows, formScale, summary, stackedActions) +
+      (rows + stackedActions) * desiredHeight;
+    const buttonColumns = landscape || (!stackFits && actions.length === 2) ? actions.length : 1;
+    const buttonRows = Math.ceil(actions.length / buttonColumns);
     const actionAvailable = landscape && backTarget ? backTarget.x - inset - gap : available;
     const actionContentWidth = Math.min(actionAvailable, available * buttonColumns /
       (landscape ? CUSTOM_BUTTONS.length : 1));
     const buttonScale = Math.min(1.65, (actionContentWidth - (buttonColumns - 1) * gap) / (224 * buttonColumns));
     if (buttonScale <= 0) return null;
-    const titleScale = Math.min(1.2, available / CUSTOM_HEADING.w);
-    const inlineDetail = landscape && height < 315;
-    const detailWidth = inlineDetail ? columnW : available;
-    const detailScale = Math.min(1.15, detailWidth / CUSTOM_SCENARIO_TEXT.w);
-    const detailHeight = CUSTOM_SCENARIO_TEXT.h * detailScale;
     let expanded = null;
     for (const field of CUSTOM_FIELDS) {
       const live = controls.get(field.id);
@@ -313,16 +336,11 @@
     // In landscape keep the original left-to-right field order.
     const fields = landscape ? [CUSTOM_FIELDS[0], CUSTOM_FIELDS[2], CUSTOM_FIELDS[4],
       CUSTOM_FIELDS[1], CUSTOM_FIELDS[3]] : CUSTOM_FIELDS;
-    const rows = Math.ceil(fields.length / columns);
-    const desiredHeight=menuButtonHeight(width,height);
-    const formHeight = !landscape && backTarget ? backTarget.y+backTarget.h-desiredHeight-gap : height;
-    const bodyHeight = 20*titleScale + rows*18*formScale +
-      (inlineDetail ? 0 : detailHeight + gap) +
-      (rows + buttonRows + 1) * gap;
+    const bodyHeight = labelsAndGaps(rows, formScale, summary, buttonRows);
     const controlRows=rows+buttonRows;
-    const desiredButtonH=Math.min(desiredHeight,Math.max(28*formScale,(formHeight-2*inset-bodyHeight)/controlRows));
+    const desiredButtonH=Math.min(desiredHeight,Math.max(28*formScale,(innerHeight-bodyHeight)/controlRows));
     const extraDetail=inlineDetail?Math.max(0,detailHeight-18*formScale-desiredButtonH):0;
-    const fit = Math.min(1,(formHeight-2*inset-controlRows*desiredButtonH)/(bodyHeight+extraDetail));
+    const fit = Math.min(1,(innerHeight-controlRows*desiredButtonH)/(bodyHeight+extraDetail));
     if (fit <= 0) return null;
     let top = (formHeight-(bodyHeight+extraDetail)*fit-controlRows*desiredButtonH)/2;
     const paintRegions = [], regions = [];
@@ -352,7 +370,7 @@
         const popupScale = Math.min(scale, (height - 2 * inset) / source.h);
         const y = control.target.y+(control.target.h-field.control.h*popupScale)/2+
           (source.y-field.control.y)*popupScale;
-        popup = {source, interactive: true, foreground: false, target: {
+        popup = {source, interactive: true, foreground: false, wideHeldInput: true, target: {
           x: control.target.x, y: Math.max(inset, Math.min(y, height - inset - source.h * popupScale)),
           w: source.w * popupScale, h: source.h * popupScale,
         }};
@@ -384,7 +402,7 @@
       if (backTarget) {
         const size = desiredButtonH;
         const back = {source: CUSTOM_BUTTONS[2].source, target: {x:backTarget.x+backTarget.w-size,
-          y:backTarget.y+backTarget.h-size,w:size,h:size}, decoration:'back'};
+          y:backBottom-size,w:size,h:size}, decoration:'back'};
         regions.push(back);
         paintRegions.push(back);
       }
@@ -530,7 +548,8 @@
     const filterTop = inset+(landscape?35:30*scale);
     const filterGap=6*scale;
     const listX = landscape ? inset+labelWidth+gap : inset;
-    const listTop = landscape?filterTop:filterTop+3*(buttonSize+filterGap);
+    const filters = SCENARIO_FILTERS.filter(field => !field.optional || controls.has(field.id));
+    const listTop = landscape?filterTop:filterTop+filters.length*(buttonSize+filterGap);
     const footerGap = (footerY-listTop)-64*scale;
     const listHeight = Math.max(112*scale,footerGap);
     const barWidth = Math.min(listWidth*.18,Math.max(23,Math.min(44,28*scale)));
@@ -542,7 +561,7 @@
 
     add(title,center(title,inset+4*scale),'scenario-caption');
     let popup = null;
-    for (const [index,field] of SCENARIO_FILTERS.entries()) {
+    for (const [index,field] of filters.entries()) {
       const source = area(...field.control);
       const item = controls.get(field.id);
       const drawY = filterTop+index*(buttonSize+filterGap);
@@ -585,7 +604,7 @@
     return chart?.mode === 'dialog' && chart.heldControls.some(rect => contains(rect, point));
   }
 
-  function layout({width, height, art, scenes, wine, backTarget, backImage}) {
+  function layout({width, height, art, scenes, wine, backTarget, backImage, bottomInset=0}) {
     if (![width, height].every(value => Number.isFinite(value) && value > 0) ||
         !art || !contains(art, art) || !Array.isArray(scenes)) return null;
     const dialogs = scenes.filter(scene => scene.painter === DIALOG_PAINTER);
@@ -626,7 +645,7 @@
     };
     if (fullFrame && front.handler === CUSTOM_GAME_SETUP) {
       const controls = readControls(wine, front, CUSTOM_CONTROL_TYPES);
-      const reflow = controls && reflowCustom(chart, controls, inset, backTarget);
+      const reflow = controls && reflowCustom(chart, controls, inset, backTarget, bottomInset);
       return reflow || (width < height && backTarget ? null : chart);
     }
     if (fullFrame && front.handler === LOAD_GAME) {

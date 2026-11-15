@@ -227,6 +227,19 @@
     return{regions,height,menuOwnLine:false,menuScale:actualMenuScale,resourceScale:actualResourceScale,
       reservedNativeWidths:parts.map(p=>p.reserved)};
   }
+  function alignMinimapToHeader(fields, options, header, minimap) {
+    const {left=0,top=0,gap=6,menuScale=1.8}=options;
+    const edge=minimap.target.left-Math.max(4,gap);
+    if(header.regions.some(({target})=>target.left+target.width>edge)){
+      // Reserve the minimap column only when every native counter still fits legibly.
+      const width=edge-left, minMenuScale=Math.min(1.5,menuScale);
+      if(width<=MENU_BUTTON.width*minMenuScale+gap*4)return {header,minimap};
+      const fit=createCompactHeaderLayout(fields,{...options,width,minMenuScale});
+      if(fit.resourceScale<1)return {header,minimap};
+      header=fit;
+    }
+    return {header,minimap:{...minimap,target:{...minimap.target,top}}};
+  }
   /** Already-trimmed native tooltip/cost foreground, kept in its original
    * relative arrangement and uniformly fit above the command grid. No text,
    * availability, masking or cost logic is implemented here.
@@ -322,6 +335,7 @@
     return {regions, bounds, scale};
   }
   return Object.freeze({createCommandRegions,createMinimapRegion,createHeaderLayout,
-    createV14CommandRegions,createInfoRegion,createAdaptiveBoardLayout,createCompactHeaderLayout,createStatusLayout,createGapStatusLayout,
+    createV14CommandRegions,createInfoRegion,createAdaptiveBoardLayout,createCompactHeaderLayout,alignMinimapToHeader,
+    createStatusLayout,createGapStatusLayout,
     nativeMinimap:MINIMAP,nativeMenu:MENU,nativeMenuButton:MENU_BUTTON});
 });

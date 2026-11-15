@@ -52,6 +52,67 @@
     return !!offset && read(0x4be1b4,4)?.getUint32(0,true) === table+offset+2;
   }
 
+  // BNE 2.02: the production/placement check at 40DCD0 and the
+  // research check at 40DC20 read the same live tables as hover at 44ADE0.
+  // A scenario can replace these tables, so prices are read from the guest.
+  const purchaseTypes = new Map([
+    [0x40e6d0, 'train'], [0x436b80, 'build'], [0x40e710, 'upgrade'],
+    [0x40e650, 'research'], [0x40e690, 'research'],
+  ]);
+  const unitCosts = [0x4ce93c, 0x4cec8c, 0x4cedfc];
+  const researchCosts = [0x4d0188, 0x4d0258, 0x4d01f0];
+
+  function readWallet(read) {
+    const player = read(0x4acb68, 1)?.getUint8(0);
+    if (player === undefined || player >= 16) return null;
+    const resources = [0x4abb18, 0x4acb6c, 0x4abbfc]
+      .map(address => read(address + player * 4, 4)?.getInt32(0, true));
+    if (resources.some(amount => amount === undefined)) return null;
+    return {player, resources};
+  }
+
+  function exceedsFoodCapacity(read, player) {
+    const offset = player * 2;
+    const used = read(0x4adacc + offset, 2)?.getUint16(0, true);
+    const reserved = read(0x4adf4c + offset, 2)?.getUint16(0, true);
+    const capacity = read(0x4adc6c + offset, 2)?.getUint16(0, true);
+    const expansion = read(0x4ae26c, 4)?.getUint32(0, true);
+    return used - reserved >= (expansion ? Math.min(200, capacity) : capacity);
+  }
+
+  function lacksResources(read, wallet, type, id) {
+    if (type === 'train' && exceedsFoodCapacity(read, wallet.player)) return true;
+    if (type === 'research') {
+      if (id >= 52) return false;
+      return researchCosts.some((table, i) => wallet.resources[i] < read(table + id * 2, 2)?.getUint16(0, true));
+    }
+    if (id >= 110) return false;
+    return unitCosts.some((table, i) => wallet.resources[i] < 10 * read(table + id, 1)?.getUint8(0));
+  }
+
+  function unavailableCommands(wine, commands) {
+    let mask = 0, read, wallet;
+    for (const command of commands) {
+      const type = purchaseTypes.get(command.actionAddress);
+      if (!command.nativeVisible || !type || (type === 'build' && !command.isBuildingPlacement)) continue;
+      if (!read) {
+        read = guestReader(wine);
+        wallet = readWallet(read);
+        if (!wallet) break;
+      }
+      if (lacksResources(read, wallet, type, command.param)) mask |= 1 << command.id;
+    }
+    return mask;
+  }
+
+  function placementUnaffordable(wine) {
+    const read = guestReader(wine);
+    if (!read(0x4b50a8, 1)?.getUint8(0)) return false;
+    const type = read(0x4b50b0, 1)?.getUint8(0);
+    const wallet = readWallet(read);
+    return !!wallet && type >= 58 && lacksResources(read, wallet, 'build', type);
+  }
+
   function infoButtons(view, layer) {
     if (!layer?.root) return [];
     if (view(0x4bdcd0, 4)?.getUint32(0, true) !== layer.root) return [];
@@ -309,6 +370,8 @@
       modalBack: window.WarcraftAssemblyMenuNavigation?.createModalBack?.(wine),
       modalFaction: () => modalFaction(wine),
       purchaseTooltipMatches: command => purchaseTooltipMatches(wine, command),
+      unavailableCommands: commands => unavailableCommands(wine, commands),
+      placementUnaffordable: () => placementUnaffordable(wine),
       modalSlider: (layer, x, y) => window.WarcraftAssemblyMenuPolicy?.sliderAt(wine, layer, x, y),
       modalTexture() {
         if (!textures || !window.WarcraftUiBridge.state().inGame) return null;

@@ -26,6 +26,7 @@
   let portraitPress=null,objectivesWaitUntil=null;
   let listeners,insetObserver,insetProbes;
   let purchaseDialog, pendingPurchase=null, modalFaction, purchaseTooltipMatches;
+  let unavailableCommands, placementUnaffordable;
   // These exact BNE command wrappers share the original paid-production path.
   // Spell research, unit research and building upgrades validate their own costs.
   const paidActions=new Map([
@@ -86,7 +87,9 @@
 
     const native=target&&global.WarcraftFullMap.globalToWorld(target.x,target.y);
     const bounds=lastRenderedGeometry?.world;
-    buildConfirm.disabled=buildConfirm.hidden||!target||target.submitted||!native||!bounds||
+    const unaffordable=!buildConfirm.hidden&&placementUnaffordable?.()===true;
+    buildConfirm.toggleAttribute('data-unaffordable',unaffordable);
+    buildConfirm.disabled=buildConfirm.hidden||unaffordable||!target||target.submitted||!native||!bounds||
       native.x<bounds.left||native.x>=bounds.right||native.y<bounds.top||native.y>=bounds.bottom;
   }
   function croppedWorld(g,width,height) {
@@ -142,13 +145,18 @@
     const fields=foreground.fields.map(field=>({id:field.id,
       compact:{source:global.WarcraftHudForeground.contentRect(field)}}));
     const compact=cameraPilot&&hudWidth<480;
-    const header=global.WarcraftHudLayout.createCompactHeaderLayout(fields,
-      {width:hudWidth,left,top:2,menuScale:cameraPilot&&!compact?1.9:1.8,resourceScale:cameraPilot?1.65:1.5,
-        gap:compact?3:6,reserveWidth:cameraPilot?46:42});
+    const headerOptions={width:hudWidth,left,top:2,menuScale:cameraPilot&&!compact?1.9:1.8,
+      resourceScale:cameraPilot?1.65:1.5,gap:compact?3:6,reserveWidth:cameraPilot?46:42};
+    let header=global.WarcraftHudLayout.createCompactHeaderLayout(fields,headerOptions);
     const sideTop=header.height+8;
     const info=foreground.layers.find(layer=>layer.id===100);
     const board=cameraPilot&&global.WarcraftHudLayout.createAdaptiveBoardLayout(
       state.selectionCount>0?info:null,{left,right:rightEdge,top:sideTop,bottom:lowerEdge,scale,portrait:height>width});
+    const miniSize=Math.max(144,128*scale);
+    let minimap=board?board.minimap:
+      global.WarcraftHudLayout.createMinimapRegion({left:rightEdge-miniSize,top:sideTop,size:miniSize});
+    if(cameraPilot&&width>height)
+      ({header,minimap}=global.WarcraftHudLayout.alignMinimapToHeader(fields,headerOptions,header,minimap));
     const commandScale=board?board.commandScale:scale;
     const gridTop=board?board.gridTop:lowerEdge-140*commandScale;
     const nativeCommands=global.WarcraftHudLayout.createV14CommandRegions(packet,
@@ -163,9 +171,7 @@
       return {...region,layer:'native-hud-'+id,visualSource:{left:region.source.left-native.source.left,
         top:region.source.top-native.source.top,width:region.source.width,height:region.source.height}};
     });
-    const miniSize=Math.max(144,128*scale);
-    result.push(board?board.minimap:
-      global.WarcraftHudLayout.createMinimapRegion({left:rightEdge-miniSize,top:sideTop,size:miniSize}));
+    result.push(minimap);
     if(board?.info){
       const box=board.info.source,hitRects=infoButtons?.(info)??[];
       result.push({...board.info,hitRects:hitRects.filter(hit=>
@@ -222,7 +228,10 @@
     if(!point||!/^command-\d+$/.test(point.regionId))return null;
     return readHudCommand(point.regionId)||{blocked:true};
   }
-  function readHudCommand(regionId, view=global.WarcraftUiBridge?.viewState?.(), packet=global.WarcraftUiBridge?.uiRects?.()) {
+  function unaffordableMask(view) {
+    return view?.usable&&view.count>0 ? unavailableCommands?.(view.commands)||0 : 0;
+  }
+  function readHudCommand(regionId, view=global.WarcraftUiBridge?.viewState?.(), packet=global.WarcraftUiBridge?.uiRects?.(), mask) {
     const id=Number(regionId.slice(8));
     const child=packet?.usable&&packet.children.find(item=>item.id===id&&item.type===2);
     const meta=view?.commands?.find(item=>item.objectAddress===child?.objectAddress&&
@@ -233,10 +242,11 @@
       contextToken:view.selectionToken,epoch:view.mapEpoch,nativeX:(child.native.left+child.native.right)/2,
       nativeY:(child.native.top+child.native.bottom)/2,visible:true,present:true,
       isCancel:child.isCancel===true,isBuildingPlacement:meta.isBuildingPlacement===true,
-      action:meta.actionAddress,param:meta.param,regionId,confirmPurchase};
+      action:meta.actionAddress,param:meta.param,regionId,confirmPurchase,
+      unaffordable:!!((mask??unaffordableMask(view))&(1<<id))};
   }
-  function matchingPurchase(original,view,ui) {
-    const live=readHudCommand(original.regionId,view,ui);
+  function matchingPurchase(original,view,ui,mask) {
+    const live=readHudCommand(original.regionId,view,ui,mask);
     return live?.confirmPurchase&&
       ['epoch','contextToken','object','descriptor','action','param'].every(key=>live[key]===original[key])?live:null;
   }
@@ -247,18 +257,20 @@
     delete frame.dataset.warcraftPurchase;
     if(refocus&&visible&&telemetry.mode==='world')input.focus({preventScroll:true});
   }
-  function updatePurchase({state,view,ui,foreground}) {
+  function updatePurchase({state,view,ui,foreground,missingResources}) {
     if(!pendingPurchase)return;
     const {command}=pendingPurchase;
+    const live=view?.usable&&ui?.usable&&matchingPurchase(command,view,ui,missingResources);
     if(!state?.inGame||state.dialogOpen||state.targetPending||state.buildingPending||view?.mapEpoch!==command.epoch||
-      (view?.usable&&ui?.usable&&!matchingPurchase(command,view,ui))){
+      (view?.usable&&ui?.usable&&!live)){
       closePurchase();
       return;
     }
     if(!pendingPurchase.statusReady&&foreground?.usable&&purchaseTooltipMatches(command))
       pendingPurchase.statusReady=paintPurchaseStatus(foreground);
+    purchaseDialog.ok.toggleAttribute('data-unaffordable',live?.unaffordable===true);
     purchaseDialog.ok.disabled=!state.inputAllowed||acceptsInput?.()===false||
-      !view?.usable||!ui?.usable||!pendingPurchase.statusReady;
+      !live||live.unaffordable||!pendingPurchase.statusReady;
   }
   function paintPurchaseStatus(foreground) {
     const status=foreground.layers.find(layer=>layer.id===101);
@@ -284,7 +296,9 @@
   function requestHudPurchase(command,submit) {
     const bridge=global.WarcraftUiBridge,state=bridge.state();
     if(!purchaseDialog||pendingPurchase||!visible||telemetry.mode!=='world'||acceptsInput?.()===false||
-      !state.inputAllowed||state.dialogOpen||state.targetPending||state.buildingPending||!matchingPurchase(command))return;
+      !state.inputAllowed||state.dialogOpen||state.targetPending||state.buildingPending)return;
+    const live=matchingPurchase(command);
+    if(!live||live.unaffordable)return;
     const faction=modalFaction?.();
     if(!faction)return;
     pendingPurchase={command,submit,statusReady:false};
@@ -339,6 +353,11 @@
       const pending=pendingPurchase, state=global.WarcraftUiBridge.state();
       const valid=pending?.statusReady&&visible&&telemetry.mode==='world'&&acceptsInput?.()!==false&&state.inputAllowed&&
         !state.dialogOpen&&!state.targetPending&&!state.buildingPending&&matchingPurchase(pending.command);
+      if(valid?.unaffordable){
+        ok.setAttribute('data-unaffordable','');
+        ok.disabled=true;
+        return;
+      }
       closePurchase(true);
       if(valid){global.WarcraftDuneControls?.cancel?.();pending.submit(valid);}
     });
@@ -365,6 +384,7 @@
         if(layer.getAttribute('aria-label')===labels[kind])title.replaceChildren(caption(labels[kind],atlas));
       }).catch(()=>{});
       icon.hidden=description.hidden=costs.hidden=true;
+      ok.removeAttribute('data-unaffordable');
       ok.disabled=true;
     }};
   }
@@ -430,7 +450,7 @@
   function resizeFrozenWorld(width,height,dpr) {
     if(!frozenWorld||(modalBackgroundWidth===width&&modalBackgroundHeight===height&&modalBackgroundDpr===dpr&&
       modalBackgroundInsets===hudInsets))return;
-    const {g,world,ui,foreground,state,packet,partialFrame}=frozenWorld;
+    const {g,world,ui,foreground,state,packet,partialFrame,missingResources}=frozenWorld;
     const extent=g.world;
     const span=Math.max(world.width,world.height);
     const ratio=width/height;
@@ -457,6 +477,7 @@
     const pixels=partialFrame?visibleFramePainter.paint(packet,layout):bootstrapPainter.paint(packet);
     layout.render(ctx,pixels,{layers:foregroundPainter.capture(foreground),
       afterMap:(ctx,map)=>drawWorldOutline(ctx,map,crop,g)});
+    paintUnavailableCommands(ctx,layout,missingResources);
     drawMinimapOutline(ctx,layout,crop,g,dpr);
     modalPresenter.captureBackground(canvas,{inGame:true,dialogOpen:false});
     modalBackgroundWidth=width;modalBackgroundHeight=height;modalBackgroundDpr=dpr;modalBackgroundInsets=hudInsets;
@@ -498,12 +519,13 @@
       lastScene={g,state,view,ui:cleanHud?global.WarcraftUiBridge?.uiRects?.():null,
         foreground:cleanHud?global.WarcraftUiBridge?.hudForeground?.():null,
         packet:completed,
+        missingResources: state?.inGame&&!state.dialogOpen ? unaffordableMask(view) : 0,
         partialFrame:matchesGeometry&&visibleFramePainter&&state?.inGame&&!state.dialogOpen&&!completed.dialogRoot&&
           (touchOnly||cameraPilot.coversWorld(g)),
         frame:coherentFrames?(matchesGeometry?completed:null):
           source.width&&source.height?copier.capture(source).frame:null};
     }
-    const {g,state,view,ui,foreground}=lastScene;
+    const {g,state,view,ui,foreground,missingResources}=lastScene;
     updatePurchase(lastScene);
     if(coherentFrames){
       if(lastMapEpoch!==null&&!state?.ready){waitForNativeFrame();return;}
@@ -596,7 +618,7 @@
         croppedWorld(g,width,height);
       if(coherentFrames&&!world){waitForNativeFrame();return;}
       if(cameraPilot){
-        const key=[lastScene.packet.sequence,ui.revision,foreground.revision,state.selectionCount,
+        const key=[lastScene.packet.sequence,ui.revision,foreground.revision,state.selectionCount,missingResources,
           state.buildingPending,width,height,dpr,hudInsets,world.left,world.top,world.width,world.height];
         if(telemetry.mode==='world'&&chart&&lastWorldPaint?.every((value,index)=>value===key[index])){
           updateBuildConfirm(state,'world');
@@ -626,6 +648,7 @@
       if(output.height!==Math.round(height*dpr))output.height=Math.round(height*dpr);
       chart.render(context,framePixels,{layers,
         afterMap:cameraPilot?(ctx,map)=>drawWorldOutline(ctx,map,world,g):undefined});
+      paintUnavailableCommands(context,chart,missingResources);
       if(cameraPilot)drawMinimapOutline(context,chart,world,g,dpr);
       else if(camera?.independent)drawMinimapView(world,g,dpr);
       lastRenderedGeometry=g;
@@ -638,7 +661,7 @@
         if(cameraPilot){
           cleanWorldReady=true;
           frozenWorld={g,world,ui,foreground,state,width,height,dpr,hudInsets,
-            packet:lastScene.packet,partialFrame:lastScene.partialFrame};
+            packet:lastScene.packet,partialFrame:lastScene.partialFrame,missingResources};
           updateCommandHighlight();
         }else{
           modalPresenter.captureBackground(output,{inGame:true,dialogOpen:false});
@@ -653,7 +676,7 @@
       telemetry.frames++;telemetry.geometry={native:g,latestNative:g,frameSequence:lastScene.packet?.sequence,
         shownWorld:world,commands,width,height,
         ...(lastScene.partialFrame?{cameraMode:camera.independent?'independent':'native-crop',visiblePaint:visibleFramePainter.debug()}:{}),
-        hud:hud?{header: hud.header,commandCount:hud.commandCount,foregroundRevision:foreground.revision,
+        hud:hud?{header: hud.header,commandCount:hud.commandCount,foregroundRevision:foreground.revision,unaffordableMask:missingResources,
           infoLayoutMode:foreground.infoLayoutMode}:null};
       onPresented?.('world',chart);
     } catch(error) {
@@ -712,6 +735,24 @@
     const r=region.target;
     Object.assign(commandHighlight.style,{left:r.left+'px',top:r.top+'px',
       width:r.width+'px',height:r.height+'px'});
+  }
+  function paintUnavailableCommands(ctx,layout,mask) {
+    if(!mask)return;
+    const {width,height}=ctx.canvas;
+    const scale=Math.min(width/layout.width,height/layout.height);
+    ctx.save();
+    ctx.setTransform(scale,0,0,scale,(width-layout.width*scale)/2,(height-layout.height*scale)/2);
+    ctx.beginPath();
+    for(const region of layout.regions){
+      if(!region.visible||!region.id.startsWith('command-')||!(mask&(1<<Number(region.id.slice(8)))))continue;
+      const box=region.visible;
+      ctx.rect(box.left,box.top,box.width,box.height);
+    }
+    // Saturation uses the native icon's luminance and removes only its chroma.
+    ctx.globalCompositeOperation='saturation';
+    ctx.fillStyle='#808080';
+    ctx.fill();
+    ctx.restore();
   }
   function drawWorldOutline(context,map,world,g) {
     const edge=.001,origin=world.visibleGlobal;
@@ -839,13 +880,21 @@
     if(routerInstalled)return;routerInstalled=true;
     const stop=event=>{event.preventDefault();event.stopImmediatePropagation();};
     const inScope=event=>event.target===input;
+    let portraitMouse=null;
+    const isPortraitMouse=event=>portraitMouse&&event.button===0&&inScope(event)&&telemetry.mode==='world'&&
+      Math.hypot(event.clientX-portraitMouse.x,event.clientY-portraitMouse.y)<=8;
     if(infoFocus&&cameraPilot){
       const capture={capture:true,passive:false};
       listen('pointerdown',event=>{
-        if(event.button!==0||event.isPrimary===false||!inScope(event)||portraitPress)return;
+        if(event.button!==0||event.isPrimary===false)return;
+        portraitMouse=null;
+        if(!inScope(event)||portraitPress)return;
         const focus=portraitAt(event);
         if(!focus||focus.native)return;
         portraitPress={id:event.pointerId,x:event.clientX,y:event.clientY,focus};
+        // A legacy mouse event after pointerup still belongs to this portrait.
+        // Forwarding it would stop the host jump and run the original recenter too.
+        portraitMouse=portraitPress;
         try{input.setPointerCapture(event.pointerId);}catch(_){}
         input.focus({preventScroll:true});
         stop(event);
@@ -900,6 +949,7 @@
     },{capture:true,passive:false});
     listen('mousedown',event=>{
       if(!visible||!inScope(event)||![0,1,2].includes(event.button))return;
+      if(isPortraitMouse(event)){stop(event);return;}
       if(enhancedHud){camera.stop();selectedCommand=null;}
       if(event.button===0&&moveByMinimap(event)){minimapDrag=true;stop(event);return;}
       const point=pick(event,input.getBoundingClientRect());stop(event);
@@ -910,6 +960,7 @@
       global.WarcraftUiBridge.nativeButton(1,button,lastNative.x,lastNative.y);
     },{capture:true,passive:false});
     listen('mouseup',event=>{
+      if(!held.has(0)&&isPortraitMouse(event)){stop(event);return;}
       if(minimapDrag&&event.button===0){minimapDrag=false;moveByMinimap(event);stop(event);return;}
       const button=nativeButton(event.button);if(!held.has(button))return;
       const point=visible?pick(event,input.getBoundingClientRect()):null;
@@ -952,6 +1003,8 @@
     modalTexture=host?.modalTexture;
     modalFaction=host?.modalFaction;
     purchaseTooltipMatches=host?.purchaseTooltipMatches;
+    unavailableCommands=host?.unavailableCommands;
+    placementUnaffordable=host?.placementUnaffordable;
     if(hostPresentation&&coherentFrames&&modalFaction&&purchaseTooltipMatches)purchaseDialog=createPurchaseDialog();
     onPresented=host?.onPresented;
     onUnavailable=host?.onUnavailable;
@@ -1036,7 +1089,7 @@
         buildConfirm.append(art);frame.append(buildConfirm);
       }
       buildConfirm.addEventListener('click',()=>{
-        if(telemetry.mode==='world'&&acceptsInput?.()!==false&&
+        if(telemetry.mode==='world'&&acceptsInput?.()!==false&&placementUnaffordable?.()!==true&&
             global.WarcraftDuneControls?.confirmBuilding())buildConfirm.disabled=true;
       });
     }
@@ -1097,6 +1150,7 @@
     placement=null;
     purchaseDialog?.layer.remove();
     purchaseDialog=modalFaction=purchaseTooltipMatches=null;
+    unavailableCommands=placementUnaffordable=null;
     output=context=copier=buildConfirm=commandHighlight=null;
     lastScene=lastNative=lastRenderedGeometry=lastDialogToken=selectedCommand=lastMapEpoch=displayedEndRaster=objectivesWaitUntil=null;
     camera=modalPresenter=cursorPresenter=foregroundPainter=bootstrapPainter=nativeFramePainter=visibleFramePainter=bootstrapCanvas=null;

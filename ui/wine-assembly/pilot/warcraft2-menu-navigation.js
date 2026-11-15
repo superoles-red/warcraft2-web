@@ -66,7 +66,7 @@
     picture.height = art.h;
     const context = picture.getContext('2d');
     context.drawImage(original, 0, 0);
-    context.drawImage(cleanVersion, 58, 458);
+    if (cleanVersion) context.drawImage(cleanVersion, 58, 458);
     context.globalCompositeOperation = 'destination-in';
     for (const axis of ['x', 'y']) {
       const length = axis === 'x' ? art.w : art.h;
@@ -250,13 +250,14 @@
     const sessionAtlases = new Map();
     const sessionCaptions = new Map();
     let resume = null, resumeTimer = 0;
+    let scenarioPickerOpen = false, scenarioCloseTimer = 0;
     if (session) for (const locale of ['en', 'ru']) {
       window.WarcraftSessionText.load(locale).then(atlas => {
         sessionAtlases.set(locale, atlas);
         repaint();
       }).catch(console.error);
     }
-    const images = Object.fromEntries(['orc-texture', 'title-version-clean', 'title-button', 'title-button-pressed', 'menu-back-orc', 'menu-back-orc-pressed',
+    const images = Object.fromEntries(['orc-texture', 'title-version-clean', 'title-landscape-art', 'title-logo', 'title-button', 'title-button-pressed', 'menu-back-orc', 'menu-back-orc-pressed',
       'label-options', 'label-fast-scenario', 'label-replay-demo',
       'label-story', 'label-sound', 'label-language', 'label-english',
       'label-russian', 'label-russian-text', 'language-selected', 'language-unselected',
@@ -334,8 +335,41 @@
     }
 
     function closeSession() {
+      window.clearTimeout(scenarioCloseTimer);
+      scenarioCloseTimer = 0;
+      scenarioPickerOpen = false;
       sessionPanel?.hide();
       layer.inert = false;
+    }
+
+    function showScenarioPicker(dialog, choose, back, retryId) {
+      const scenarios = session?.native.scenarioChoices?.(dialog);
+      if (!scenarios?.entries.length || !sessionPanel?.showScenarios) return false;
+      scenarioPickerOpen = true;
+      layer.inert = true;
+      function finish(action, selectedId) {
+        if (scenarioCloseTimer) return false;
+        // The click is queued for the original dialog. Keep the picker over
+        // the last native picture until the Fast setup has actually painted.
+        scenarioCloseTimer = window.setTimeout(() => {
+          scenarioCloseTimer = 0;
+          if (selectedId !== undefined && !showScenarioPicker(dialog, choose, back, selectedId)) closeSession();
+        }, 2500);
+        if (action()) return true;
+        window.clearTimeout(scenarioCloseTimer);
+        scenarioCloseTimer = 0;
+        return false;
+      }
+      sessionPanel.showScenarios({
+        ...scenarios,
+        selectedId: retryId ?? scenarios.selectedId,
+        accept: entry => finish(() => session.native.selectScenario(entry.id,dialog) && choose(), entry.id),
+        back: () => finish(back),
+      }).catch(error => {
+        closeSession();
+        console.error(error);
+      });
+      return true;
     }
 
     function showSession(options) {
@@ -424,6 +458,7 @@
     }
 
     function handleFastDialog() {
+      if (scenarioPickerOpen) closeSession();
       if (resume?.stage !== 'fast') return;
       const request = resume;
       request.stage = 'loading';
@@ -492,7 +527,7 @@
       return button;
     }
 
-    function setButtons(items, boxes) {
+    function setButtons(items, boxes, home) {
       const labels = items.map(i => i.label).join('|');
       if (layer.dataset.buttons !== labels) {
         layer.replaceChildren();
@@ -506,13 +541,15 @@
         const item = items[i], control = buttons[i];
         control.disabled = pending || languageBusy || !!item.disabled ||
           !!(item.language === 'ru' && !language()?.available?.('ru'));
+        control.toggleAttribute('data-warcraft-default', home && i === 0);
         if (item.language) control.setAttribute('aria-pressed',
           String(item.language === (language()?.current?.() || 'en')));
       });
     }
 
-    function place(width, height, count, campaign, home, safeBottom) {
+    function place(width, height, count, campaign, home, safeBottom, showLogo) {
       const portrait = width < height;
+      const overlay = !portrait && home;
       const h = window.WarcraftAssemblyDialogLayout.menuButtonHeight(width,height);
       const gap = Math.min(8,h*.16);
       const headingRoom = campaign ? h*.42 : 0;
@@ -521,14 +558,26 @@
       const back = {x:corner.x+corner.w-h,y:corner.y+corner.h-h,w:h,h};
       const artTop = Math.min(16, height * .025);
       const rail = portrait ? 0 : Math.max(h+gap,Math.min(124,width*.18));
-      const pictureSpace = portrait ? width : (width-rail)*.51;
-      const controlSpace = portrait ? width : width-pictureSpace-rail;
-      const controlCenter = portrait ? width/2 : pictureSpace+controlSpace/2;
+      const pictureSpace = portrait || overlay ? width : (width-rail)*.51;
+      const controlSpace = portrait || overlay ? width : width-pictureSpace-rail;
+      const controlCenter = portrait || overlay ? width/2 : pictureSpace+controlSpace/2;
       // Leave room for the five Options rows and a separate corner button on every title page.
       const artLimit = portrait ? Math.min(height*.43,back.y-5*h-6*gap-artTop) : height*.94;
       const pictureScale = Math.min((pictureSpace-16) / art.w,artLimit/art.h);
       const picture = {x: (pictureSpace-art.w*pictureScale)/2, y: portrait ? artTop : (height-art.h*pictureScale)/2,
         w: art.w * pictureScale, h: art.h * pictureScale};
+      if (overlay) {
+        const scale = Math.min(1.25, (width-24)/224, height*.49/172);
+        const w = 224*scale;
+        const y = Math.max(artTop, height-safeBottom-gap-span);
+        const boxes = Array.from({length:count},(_,i) => ({x:(width-w)/2, y:y+i*(h+gap), w, h}));
+        const image = images['title-logo'];
+        const ratio = image.naturalWidth/image.naturalHeight;
+        const logoWidth = Math.min(width*.45,height*.64,326,Math.max(0,y-artTop-gap)*ratio);
+        const logo = showLogo && logoWidth > 0 ? {x:(width-logoWidth)/2, y:artTop,
+          w:logoWidth, h:logoWidth/ratio} : null;
+        return {picture, boxes, back, scale, rail, logo};
+      }
       const panelTop = portrait ? picture.y+picture.h+gap : gap;
       const panelBottom = (portrait ? home ? height-safeBottom : back.y : height)-gap;
       const scale = Math.max(.1, Math.min(1.6,
@@ -577,10 +626,10 @@
       return [action, {label: 'Delete', glyph: 'delete', page: 'language-delete'}];
     }
 
-    function drawButton(context, image, item, box, captionScale) {
+    function drawButton(context, image, item, box, captionScale, home = false) {
       if (item.source && !item.glyph && !item.caption) {
         const blank = images[pressed === item.label ? 'title-button-pressed' : 'title-button'];
-        return window.WarcraftAssemblyDialogLayout.paintTallButton(context,image,item.source,box,blank,captionScale);
+        return window.WarcraftAssemblyDialogLayout.paintTallButton(context,image,item.source,box,blank,captionScale,false,!home);
       }
       const base = images[pressed === item.label ? 'title-button-pressed' : 'title-button'];
       drawImage(context, base, box);
@@ -662,8 +711,10 @@
         return null;
       }
       const contentWidth = width - leftInset - rightInset;
-      const {picture, boxes, back, scale, rail} = place(contentWidth,height,items.length,campaign,home,
-        Math.max(8,bottomInset));
+      const useLandscapeArt = home && contentWidth >= height &&
+        !!images['title-landscape-art'].naturalWidth && !!images['title-logo'].naturalWidth;
+      const {picture, boxes, back, scale, rail, logo} = place(contentWidth,height,items.length,campaign,home,
+        Math.max(8,bottomInset),useLandscapeArt);
       let feedbackBox;
       if (feedback) {
         const first = boxes[0];
@@ -672,12 +723,15 @@
         feedbackBox.x += leftInset;
       }
       picture.x += leftInset;
+      if (logo) logo.x += leftInset;
       back.x += leftInset;
       for (const box of boxes) box.x += leftInset;
       active = true;
       layer.hidden = false;
       paintTexture(context, images['orc-texture'], width, height);
-      drawImage(context, softenedArtwork(backdrop.canvas,images['title-version-clean']), picture, art);
+      const artwork = useLandscapeArt ? images['title-landscape-art'] : backdrop.canvas;
+      drawImage(context, softenedArtwork(artwork,useLandscapeArt ? null : images['title-version-clean']), picture, art);
+      if (logo) drawImage(context,images['title-logo'],logo);
       if (campaign) {
         const headings = scene.controls.filter(control => control.text).sort((a, b) => a.y - b.y);
         headings.forEach((source, i) => {
@@ -701,7 +755,7 @@
           drawLabel(context, {glyph: heading}, {...first, y, h}, scale);
         }
       }
-      items.forEach((item, i) => drawButton(context, image, item, boxes[i], scale));
+      items.forEach((item, i) => drawButton(context, image, item, boxes[i], scale, home));
       const controls = [...items];
       if (feedback) {
         controls.push(feedbackItem);
@@ -715,8 +769,8 @@
         const arrow = images[pressed === 'Back' ? 'menu-back-orc-pressed' : 'menu-back-orc'];
         drawImage(context, arrow, back);
       }
-      presented = {picture, controls, boxes, page};
-      setButtons(controls, boxes);
+      presented = {picture, logo, controls, boxes, page};
+      setButtons(controls, boxes, home);
       return true;
     }
 
@@ -743,11 +797,12 @@
         }
       };
     }
-    return {paint, hide, confirmFast, handleFastDialog,
+    return {paint, hide, confirmFast, handleFastDialog, showScenarioPicker,
       get blocking() { return layer.inert; }, get active() { return active; }, get presented() { return presented; }, destroy() {
       for (const [name, original] of keyHandlers) renderer[name] = original;
       clearPending();
       clearResume();
+      window.clearTimeout(scenarioCloseTimer);
       sessionPanel?.destroy();
       layer.remove();
     }};

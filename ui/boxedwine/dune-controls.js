@@ -263,7 +263,10 @@
       try{
         const command=trustedCommand(rawCommand(event),g.geometry);
         if(g.mode!=='hud-pending' || !sameCommand(command,g.command)){selectCommand(null);return true;}
-        if(command.confirmPurchase&&(g.pointerType==='mouse'||sameCommand(selectedCommand,command))){
+        if(command.unaffordable){
+          selectCommand(command);
+          hoverCommand(command);
+        }else if(command.confirmPurchase&&(g.pointerType==='mouse'||sameCommand(selectedCommand,command))){
           selectCommand(command);
           api.requestHudPurchase?.(command, clickCommand);
         }else if(command.isCancel || sameCommand(selectedCommand,command)) {
@@ -334,12 +337,12 @@
       return startAllowed(current)&&(inWorld(p)||canPanFromPadding(event,p,current));
     }
     function down(event) {
-      if(commandMode())api.stopPan?.();
       if (gesture) return event.button === 0 || event.button === 2;
       const previousTap = clearTouchTap();
       if(commandMode() && event.button===0 && enabled && !destroyed) {
         const command=rawCommand(event);
         if(command!==null){
+          api.stopPan?.();
           if (previousTap) commitTouchTap(previousTap);
           return downCommand(event,startAllowed(state())?command:{blocked:true});
         }
@@ -370,7 +373,10 @@
         restoreTouchSelection = doubleTap && previousTap.committed;
         if (!boxTap) commitTouchTap(previousTap);
       }
-      if(commandMode())selectCommand(null);
+      if(commandMode()){
+        api.stopPan?.();
+        selectCommand(null);
+      }
       gesture = {id: idOf(event), button: event.button,
         mode:building?(explicitBuilding?(event.button===0?'building-aim':'building-cancel'):
           (event.button===0?'placement':'placement-cancel')):'pending', origin: p, last: p,

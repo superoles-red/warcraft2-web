@@ -3,7 +3,16 @@
   'use strict';
   const CHECK_MS = 450;
 
+  function playbackSessionType(nav) {
+    const appleMobile = /iPhone|iPad|iPod/.test(nav.userAgent) ||
+      (nav.platform === 'MacIntel' && nav.maxTouchPoints > 1);
+    // The iOS mixer honors Ring/Silent for Ambient output. Playback clocks,
+    // volume settings and interruptions keep their existing behavior.
+    return appleMobile ? 'ambient' : 'playback';
+  }
+
   function attach(wine, page = window, doc = document, session = navigator.audioSession) {
+    page.claimAudioSession?.();
     const listeners = new AbortController();
     const options = {signal:listeners.signal};
     let context = null, pending = null, resumeTimeout = 0, check = 0;
@@ -144,7 +153,7 @@
       delete wine.recoverForegroundAudio;
     };
   }
-  const api = Object.freeze({attach});
+  const api = Object.freeze({attach, playbackSessionType});
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else window.WarcraftAudioLifecycle = api;
 })();

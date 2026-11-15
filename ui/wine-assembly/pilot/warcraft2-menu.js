@@ -290,6 +290,7 @@
     let backdrop = null, borderColor = '#000';
     let activating = false, transitioning = false;
     let scenarioDrag = null;
+    let scenarioPickerRoot = null;
     const authored = !!global.WarcraftAssemblyMenuNavigation;
     if (authored) frame.classList.add('warcraft-owns-presentation');
     const dialogTexture = authored ? new Image() : null;
@@ -343,6 +344,7 @@
       chart = null;
       last = null;
       scene = null;
+      scenarioPickerRoot = null;
       navigation?.hide();
       onUnavailable?.();
     }
@@ -461,7 +463,7 @@
       const contentWidth = rect.width - left - right;
       const dialogArt = current.sound ? area(0, 0, image.width, image.height) : current.art;
       const params = {width: contentWidth, height: rect.height, art: dialogArt, scenes: current.scenes, wine,
-        backImage: dialogBack,
+        backImage: dialogBack, bottomInset: insets?.bottom,
         backTarget: dialogBack?.naturalWidth && global.WarcraftAssemblyMenuNavigation.backBox(contentWidth, rect.height)};
       const nativeDialog = authored && bottomButtonLayout(wine, current, contentWidth, rect.height) ||
         (current.mode === 'menu' && global.WarcraftAssemblyDialogLayout?.layout(params));
@@ -606,6 +608,18 @@
       transitioning = false;
       canvas.style.display = 'block';
       onPrepared?.({mode: current.mode, authored: Boolean(authoredPaint)});
+      if (!chart?.scenarioFrame) scenarioPickerRoot = null;
+      else if (!chart.scenarioPopup && chart.dialog.root !== scenarioPickerRoot && navigation) {
+        const target = decoration => {
+          const region = chart.regions.find(item => item.decoration === decoration);
+          if (!region) return null;
+          const {x,y,w,h} = region.source;
+          return [x+w/2,y+h/2];
+        };
+        const choose = target('tall-button'), back = target('back');
+        if (choose && back && navigation.showScenarioPicker(chart.dialog,
+          () => activate(...choose), () => activate(...back))) scenarioPickerRoot = chart.dialog.root;
+      }
       if (chart?.dialog?.handler === fastSetup) navigation?.handleFastDialog();
     }
 
@@ -624,6 +638,15 @@
       if (!dialogStillActive()) return this._mouseButtonsMask
         ? {x: originX + 640, y: originY + 480} : {outside: true};
       const point = menuPoint(x,y);
+      const popup = chart.regions[0];
+      if (popup?.wideHeldInput && (this._mouseButtonsMask & 1)) {
+        const {target} = popup;
+        // Only an open, held dropdown extends horizontally. The same native
+        // Y mapping keeps the selected row and cancels above/below the list.
+        if (point.x >= 0 && point.x < chart.width && point.y >= target.y && point.y < target.y + target.h) {
+          point.x = target.x + target.w / 2;
+        }
+      }
       const bar = !chart.scenarioPopup && chart.scrollbar;
       if (bar?.max > 0 && (scenarioDrag?.root === chart.dialog.root || inScrollbar(point,bar))) {
         // Begin each drag on the native thumb, then use its original track.

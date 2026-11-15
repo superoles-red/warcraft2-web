@@ -2,6 +2,7 @@
 <html class="warcraft-page direct-launch">
 <head>
   <meta charset="utf-8">
+<link rel="stylesheet" href="./startup.css">
 <script src="./app-update.js"></script>
 <script src="./game-bootstrap.js"></script>
 <style>
@@ -1398,6 +1399,15 @@ html.warcraft-page body #screen-wrap { background: #161513; }
   </style>
 </head>
 <body>
+
+<main id="war2-launch-cover" class="wc2-startup">
+  <img class="wc2-startup-art" src="./menu-art/title-splash.png" width="640" height="480"
+    alt="Warcraft II: Battle.net Edition" fetchpriority="high">
+  <div class="wc2-startup-controls">
+    <p role="status">Запускаю Warcraft II…</p>
+    <progress class="wc2-startup-progress" aria-label="Подготовка игры"></progress>
+  </div>
+</main>
   <div id="compile-status">Compiling WAT source...</div>
   <button id="debug-peek" onclick="toggleDebugPanels()">Debug</button>
   <div id="shell">
