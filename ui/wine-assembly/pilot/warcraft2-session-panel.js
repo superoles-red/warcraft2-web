@@ -227,7 +227,7 @@
       footer.className = 'warcraft-session-footer';
       let size = null, category = null, openDropdown = null;
       let choice = entries.find(entry => entry.id === selectedId);
-      let previews, currentCard;
+      let previews, currentCard, cardWidth;
       function showDetails(messages) {
         details.replaceChildren(...messages.map(message => {
           const row = document.createElement('p');
@@ -355,13 +355,6 @@
           description?.trim().toLowerCase() !== entry.title.trim().toLowerCase() &&
             !/^\d+ players?$/i.test(description) && description,
         ].filter(Boolean);
-        const copyWidth = Math.max(130, Math.min(280, panel.clientWidth - 150));
-        for (const message of lines) {
-          const line = document.createElement('p');
-          line.setAttribute('aria-label', message);
-          line.append(caption(message, atlas, copyWidth, true));
-          copy.append(line);
-        }
         const parts = [];
         if (info) {
           const [era, slot] = info, {columns, rows} = previews;
@@ -376,6 +369,14 @@
           parts.push(thumbnail);
         }
         card.replaceChildren(...parts, copy);
+        cardWidth = card.clientWidth;
+        const copyWidth = Math.max(1, Math.min(280, copy.clientWidth));
+        for (const message of lines) {
+          const line = document.createElement('p');
+          line.setAttribute('aria-label', message);
+          line.append(caption(message, atlas, copyWidth, true));
+          copy.append(line);
+        }
       }
 
       function refresh() {
@@ -418,12 +419,11 @@
       if (selected) reveal(selected.wrapper, true);
       (selected?.button || rows[0]?.button || arrow).focus({preventScroll:true});
       const updateScrollbar = scrollUpdates.get(content);
-      let listWidth = content.clientWidth;
       scrollUpdates.set(content, () => {
         updateScrollbar();
-        if (listWidth !== content.clientWidth) {
-          listWidth = content.clientWidth;
-          if (currentCard) reveal(card.parentElement);
+        if (currentCard && cardWidth !== card.clientWidth) {
+          printCard(currentCard);
+          reveal(card.parentElement);
         }
       });
       void loadScenarioPreviews().then(index => {

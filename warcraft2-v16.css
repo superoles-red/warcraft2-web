@@ -558,13 +558,13 @@
 .warcraft-scenario-thumbnail {
   display: block;
   flex: none;
-  width: clamp(64px, 22vmin, 96px);
+  width: min(30%, clamp(64px, 22vmin, 96px));
   aspect-ratio: 1;
   background-repeat: no-repeat;
   image-rendering: pixelated;
   outline: 1px solid #bc924f;
 }
-.warcraft-scenario-card-copy { min-width: 0; }
+.warcraft-scenario-card-copy { flex: 1; min-width: 0; }
 .warcraft-scenario-card-copy p + p { margin-top: 4px; }
 .warcraft-scenario-card-copy img { margin-left: 0; }
 .warcraft-scenario-filter .warcraft-session-choice[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #e4c43e; }
@@ -578,6 +578,12 @@
 }
 .scenario-picker .warcraft-session-footer .warcraft-session-choice:active {
   background-image: url("./menu-art/title-accept-button-pressed.png");
+}
+@media (orientation: landscape) {
+  .scenario-picker > .warcraft-scroll-region > .warcraft-session-content {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
 }
 @media (orientation: landscape) and (min-width: 560px) {
   .warcraft-scenario-heading { grid-template-columns: minmax(0, 1fr) minmax(0, 20rem); }
