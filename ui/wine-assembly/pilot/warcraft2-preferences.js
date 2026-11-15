@@ -4,6 +4,7 @@
 
   const handler = 0x441940;
   const request = 0x48f568;
+  const fogEnabled = 0x4acef0;
   const levels = [4, 7, 8];
 
   function view(wine, address, size) {
@@ -113,15 +114,15 @@
     speedUnchanged();
     close.emit(0xa0); close.dword(request+1); close.emit(0x84,0xc0);
     const fogUnchanged = close.skipIf(0x74);
-    close.emit(0xfe,0xc8,0x86,0x05); close.dword(0x4acef0);
+    close.emit(0xfe,0xc8,0x86,0x05); close.dword(fogEnabled);
     close.emit(0x50);
     close.branch(0xe8, 0x42d9d0);
     close.emit(0x58,0x84,0xc0);
-    const fogWasOn = close.skipIf(0x74);
-    close.emit(0x80,0x3d); close.dword(0x4acef0); close.emit(0);
-    const fogIsOff = close.skipIf(0x75);
+    const fogWasOff = close.skipIf(0x74);
+    close.emit(0x80,0x3d); close.dword(fogEnabled); close.emit(0);
+    const fogStillOn = close.skipIf(0x75);
     close.branch(0xe8, 0x42d430);
-    fogWasOn(); fogIsOff(); fogUnchanged(); online(); canceled();
+    fogWasOff(); fogStillOn(); fogUnchanged(); online(); canceled();
     close.emit(0x66,0xc7,0x05); close.dword(request); close.emit(0,0,0xc3);
     setCode(0x48f610, close);
     redirect(0x441ab4, [0xe8,0x47,0x38,0xff,0xff], 0x48f610);
@@ -235,8 +236,8 @@
     function writeRequest() {
       const data = view(wine, request, 2);
       data?.setUint8(0, active.speedRequest);
-      // BNE stores the inverse: 0 keeps fog on, 1 reveals the whole map.
-      data?.setUint8(1, toggle.checked ? 1 : 2);
+      // Zero in the request means no change. The guest handler subtracts one.
+      data?.setUint8(1, toggle.checked ? 2 : 1);
     }
     toggle.addEventListener('change', () => { if (active) writeRequest(); });
 
@@ -258,7 +259,7 @@
         const currentSpeed = view(wine, 0x4d6b38, 4)?.getInt32(0, true);
         const expansion = !!view(wine, 0x4ae26c, 4)?.getInt32(0, true);
         active = {token:layout.token, speedRequest:0, expansion};
-        toggle.checked = view(wine, 0x4acef0, 1)?.getUint8(0) === 0;
+        toggle.checked = view(wine, fogEnabled, 1)?.getUint8(0) === 1;
         const step = expansion ? levels : [4, 6, 7];
         updateButtons(currentSpeed >= step[2] ? 2 : currentSpeed === step[1] ? 1 : 0);
         view(wine, request, 2)?.setUint16(0, 0, true);

@@ -25,8 +25,8 @@
   let sliderDrag=null;
   let portraitPress=null,objectivesWaitUntil=null;
   let listeners,insetObserver,insetProbes;
-  let purchaseDialog, pendingPurchase=null, modalFaction, purchaseTooltipMatches;
-  let unavailableCommands, placementUnaffordable;
+  let actionDialog, pendingConfirmation=null, modalFaction, purchaseTooltipMatches;
+  let unavailableCommands, placementUnaffordable, activeConstruction;
   // These exact BNE command wrappers share the original paid-production path.
   // Spell research, unit research and building upgrades validate their own costs.
   const paidActions=new Map([
@@ -40,7 +40,7 @@
   const nativeGeometry=()=>global.WarcraftUiBridge?.viewportSnapshot?.()||null;
   function setVisible(value) {
     if(!value){
-      closePurchase();
+      closeConfirmation();
       hideBuildControls();
       onUnavailable?.();
       cleanWorldReady=false;
@@ -225,7 +225,7 @@
     return view?.usable?view.selectionToken:null;
   }
   function getHudCommand(event,rect) {
-    if(!enhancedHud||!visible||telemetry.mode==='dialog'||pendingPurchase)return null;
+    if(!enhancedHud||!visible||telemetry.mode==='dialog'||pendingConfirmation)return null;
     const point=pick(event,rect);
     if(!point||!/^command-\d+$/.test(point.regionId))return null;
     return readHudCommand(point.regionId)||{blocked:true};
@@ -239,40 +239,51 @@
     const meta=view?.commands?.find(item=>item.objectAddress===child?.objectAddress&&
       item.descriptorAddress===child?.descriptorAddress);
     if(!child?.commandPresent||!child.nativeVisible||!view?.usable||!view.selectionToken||!meta)return null;
-    const confirmPurchase=purchaseDialog&&!child.isCancel&&!meta.isBuildingPlacement&&paidActions.get(meta.actionAddress);
+    const confirmPurchase=actionDialog&&!child.isCancel&&!meta.isBuildingPlacement&&paidActions.get(meta.actionAddress);
+    // The original in-progress building action never serves training, upgrades or placement.
+    const confirmConstructionCancel=actionDialog&&child.isCancel&&meta.actionAddress===0x436190&&
+      child.descriptorAddress===0x4a3818;
     return {key:[child.object,child.descriptor].join(':'),object:child.objectAddress,descriptor:child.descriptorAddress,
       contextToken:view.selectionToken,epoch:view.mapEpoch,nativeX:(child.native.left+child.native.right)/2,
       nativeY:(child.native.top+child.native.bottom)/2,visible:true,present:true,
       isCancel:child.isCancel===true,isBuildingPlacement:meta.isBuildingPlacement===true,
-      action:meta.actionAddress,param:meta.param,regionId,confirmPurchase,
+      action:meta.actionAddress,param:meta.param,regionId,confirmPurchase,confirmConstructionCancel,
       unaffordable:!!((mask??unaffordableMask(view))&(1<<id))};
   }
-  function matchingPurchase(original,view,ui,mask) {
+  function matchingCommand(original,view=global.WarcraftUiBridge?.viewState?.(),ui,mask) {
     const live=readHudCommand(original.regionId,view,ui,mask);
-    return live?.confirmPurchase&&
+    return live&&(!original.confirmConstructionCancel||activeConstruction?.(view))&&
       ['epoch','contextToken','object','descriptor','action','param'].every(key=>live[key]===original[key])?live:null;
   }
-  function closePurchase(refocus=false) {
-    if(!pendingPurchase)return;
-    pendingPurchase=null;
-    purchaseDialog.layer.hidden=true;
+  function closeConfirmation(refocus=false) {
+    if(!pendingConfirmation)return;
+    pendingConfirmation=null;
+    actionDialog.layer.hidden=true;
     delete frame.dataset.warcraftPurchase;
     if(refocus&&visible&&telemetry.mode==='world')input.focus({preventScroll:true});
   }
-  function updatePurchase({state,view,ui,foreground,missingResources}) {
-    if(!pendingPurchase)return;
-    const {command}=pendingPurchase;
-    const live=view?.usable&&ui?.usable&&matchingPurchase(command,view,ui,missingResources);
-    if(!state?.inGame||state.dialogOpen||state.targetPending||state.buildingPending||view?.mapEpoch!==command.epoch||
+  function confirmationContext(state, placement) {
+    return state?.inGame&&!state.dialogOpen&&(placement?state.buildingPending:!state.buildingPending&&!state.targetPending);
+  }
+  function canRequestConfirmation(state, placement) {
+    return actionDialog&&!pendingConfirmation&&visible&&telemetry.mode==='world'&&
+      acceptsInput?.()!==false&&confirmationContext(state,placement)&&state.inputAllowed;
+  }
+  function updateConfirmation({state,view,ui,foreground,missingResources}) {
+    if(!pendingConfirmation)return;
+    const {command, placement}=pendingConfirmation;
+    const live=view?.usable&&ui?.usable&&matchingCommand(command,view,ui,missingResources);
+    if(!confirmationContext(state,placement)||view?.mapEpoch!==command.epoch||
       (view?.usable&&ui?.usable&&!live)){
-      closePurchase();
+      closeConfirmation();
       return;
     }
-    if(!pendingPurchase.statusReady&&foreground?.usable&&purchaseTooltipMatches(command))
-      pendingPurchase.statusReady=paintPurchaseStatus(foreground);
-    purchaseDialog.ok.toggleAttribute('data-unaffordable',live?.unaffordable===true);
-    purchaseDialog.ok.disabled=!state.inputAllowed||acceptsInput?.()===false||
-      !live||live.unaffordable||!pendingPurchase.statusReady;
+    if(command.confirmPurchase&&!pendingConfirmation.statusReady&&foreground?.usable&&purchaseTooltipMatches(command))
+      pendingConfirmation.statusReady=paintPurchaseStatus(foreground);
+    const unaffordable=!!command.confirmPurchase&&live?.unaffordable===true;
+    actionDialog.ok.toggleAttribute('data-unaffordable',unaffordable);
+    actionDialog.ok.disabled=!state.inputAllowed||acceptsInput?.()===false||
+      !live||unaffordable||!pendingConfirmation.statusReady;
   }
   function paintPurchaseStatus(foreground) {
     const status=foreground.layers.find(layer=>layer.id===101);
@@ -281,7 +292,7 @@
     const art=foregroundPainter.capture(foreground)['native-hud-101'];
     if(!art)return false;
     const text=fields.filter(f=>f.role==='description'),costs=fields.filter(f=>f.role==='cost');
-    for(const [line,image] of [[text,purchaseDialog.description],[costs,purchaseDialog.costs]]){
+    for(const [line,image] of [[text,actionDialog.description],[costs,actionDialog.costs]]){
       if(!line.length)continue;
       const canvas=document.createElement('canvas');
       canvas.width=line.reduce((n,f)=>n+f.visualSource.width,0)+Math.max(0,line.length-1)*8;
@@ -297,32 +308,61 @@
   }
   function requestHudPurchase(command,submit) {
     const bridge=global.WarcraftUiBridge,state=bridge.state();
-    if(!purchaseDialog||pendingPurchase||!visible||telemetry.mode!=='world'||acceptsInput?.()===false||
-      !state.inputAllowed||state.dialogOpen||state.targetPending||state.buildingPending)return;
-    const live=matchingPurchase(command);
-    if(!live||live.unaffordable)return;
+    if(!canRequestConfirmation(state,false))return;
+    const live=matchingCommand(command);
+    if(!live?.confirmPurchase||live.unaffordable)return;
     const faction=modalFaction?.();
     if(!faction)return;
-    pendingPurchase={command,submit,statusReady:false};
-    purchaseDialog.show(command.confirmPurchase,faction);
+    pendingConfirmation={command,submit,statusReady:false,placement:false};
+    actionDialog.show(command.confirmPurchase,faction);
     const region=chart.regions.find(item=>item.id===command.regionId)?.transform.painted;
     if(region){
-      const {icon}=purchaseDialog, sx=output.width/chart.width, sy=output.height/chart.height;
+      const {icon}=actionDialog, sx=output.width/chart.width, sy=output.height/chart.height;
       const canvas=document.createElement('canvas');
       canvas.width=Math.max(1,Math.round(region.width*sx));canvas.height=Math.max(1,Math.round(region.height*sy));
       canvas.getContext('2d').drawImage(output,region.left*sx,region.top*sy,region.width*sx,region.height*sy,
         0,0,canvas.width,canvas.height);
       icon.src=canvas.toDataURL();icon.hidden=false;
     }
-    frame.dataset.warcraftPurchase='';
-    purchaseDialog.layer.hidden=false;
-    purchaseDialog.cancel.focus({preventScroll:true});
+    presentConfirmation();
     scheduleAnimation(true);
   }
-  function createPurchaseDialog() {
+  function presentConfirmation() {
+    frame.dataset.warcraftPurchase='';
+    actionDialog.layer.hidden=false;
+    actionDialog.cancel.focus({preventScroll:true});
+  }
+  function constructionCancelCommand() {
+    const bridge=global.WarcraftUiBridge,state=bridge.state(),placement=state.buildingPending===true;
+    if(!canRequestConfirmation(state,placement))return null;
+    const packet=bridge.uiRects(),view=bridge.viewState();
+    const child=packet?.children?.find(item=>item.isCancel&&item.commandPresent&&item.nativeVisible);
+    const command=child&&readHudCommand('command-'+child.id,view,packet);
+    return command?.isCancel&&(placement||command.confirmConstructionCancel&&activeConstruction?.(view))
+      ? {command,placement}:null;
+  }
+  function canConfirmBuildCancellation() {return !!constructionCancelCommand();}
+  function requestBuildCancellation() {
+    const pending=constructionCancelCommand();
+    if(!pending)return false;
+    const bridge=global.WarcraftUiBridge;
+    camera.stop();
+    pendingConfirmation={...pending,statusReady:true,submit(live) {
+      moveNative({x:live.nativeX,y:live.nativeY});
+      bridge.nativeButton(1,0,lastNative.x,lastNative.y);
+      bridge.nativeButton(0,0,lastNative.x,lastNative.y);
+    }};
+    actionDialog.show('cancelBuilding',modalFaction()||'orc');
+    actionDialog.ok.disabled=false;
+    presentConfirmation();
+    return true;
+  }
+  function createActionDialog() {
     const text={
-      en:{train:'Train this unit?',research:'Research this upgrade?',upgrade:'Upgrade this building?',ok:'Buy',cancel:'Cancel'},
-      ru:{train:'Обучить этого бойца?',research:'Изучить улучшение?',upgrade:'Улучшить здание?',ok:'Купить',cancel:'Отмена'},
+      en:{train:'Train this unit?',research:'Research this upgrade?',upgrade:'Upgrade this building?',
+        cancelBuilding:'Cancel construction?',buy:'Buy',ok:'OK',cancel:'Cancel'},
+      ru:{train:'Обучить этого бойца?',research:'Изучить улучшение?',upgrade:'Улучшить здание?',
+        cancelBuilding:'Отменить строительство?',buy:'Купить',ok:'OK',cancel:'Отмена'},
     };
     const current=global.WarcraftLanguage?.current()==='ru'?'ru':'en';
     const labels=text[current],font=global.WarcraftSessionText;
@@ -343,31 +383,40 @@
     costs.className='warcraft-purchase-ink';
     const controls=document.createElement('div');
     controls.className='warcraft-purchase-controls';
-    const makeButton=key=>{
-      const button=document.createElement('button');
-      button.type='button';button.textContent=labels[key];button.setAttribute('aria-label',labels[key]);
-      art?.then(atlas=>button.replaceChildren(caption(labels[key],atlas))).catch(()=>{});
-      return button;
-    };
-    const cancel=makeButton('cancel'),ok=makeButton('ok');
-    cancel.addEventListener('click',()=>closePurchase(true));
+    function setCaption(button,label) {
+      button.textContent=label;
+      button.setAttribute('aria-label',label);
+      art?.then(atlas=>{
+        if(button.getAttribute('aria-label')===label)button.replaceChildren(caption(label,atlas));
+      }).catch(()=>{});
+    }
+    const cancel=document.createElement('button'),ok=document.createElement('button');
+    cancel.type=ok.type='button';
+    setCaption(cancel,labels.cancel);
+    cancel.addEventListener('click',()=>closeConfirmation(true));
     ok.addEventListener('click',()=>{
-      const pending=pendingPurchase, state=global.WarcraftUiBridge.state();
+      const pending=pendingConfirmation, state=global.WarcraftUiBridge.state();
       const valid=pending?.statusReady&&visible&&telemetry.mode==='world'&&acceptsInput?.()!==false&&state.inputAllowed&&
-        !state.dialogOpen&&!state.targetPending&&!state.buildingPending&&matchingPurchase(pending.command);
-      if(valid?.unaffordable){
+        confirmationContext(state,pending.placement)&&matchingCommand(pending.command);
+      if(valid?.unaffordable&&pending.command.confirmPurchase){
         ok.setAttribute('data-unaffordable','');
         ok.disabled=true;
         return;
       }
-      closePurchase(true);
+      closeConfirmation(true);
       if(valid){global.WarcraftDuneControls?.cancel?.();pending.submit(valid);}
     });
     layer.addEventListener('contextmenu',event=>event.preventDefault());
     listen('keydown',event=>{
-      if(!pendingPurchase)return;
+      if(!pendingConfirmation){
+        if(event.key==='Escape'&&!event.repeat&&requestBuildCancellation()){
+          event.preventDefault();event.stopImmediatePropagation();
+        }
+        return;
+      }
       if(event.key==='Escape'){
-        event.preventDefault();event.stopImmediatePropagation();closePurchase(true);
+        event.preventDefault();event.stopImmediatePropagation();
+        if(!event.repeat)closeConfirmation(true);
       }else if(event.key==='Tab'){
         event.preventDefault();(document.activeElement===cancel&&!ok.disabled?ok:cancel).focus({preventScroll:true});
       }else if(!controls.contains(event.target)){
@@ -386,6 +435,7 @@
         if(layer.getAttribute('aria-label')===labels[kind])title.replaceChildren(caption(labels[kind],atlas));
       }).catch(()=>{});
       icon.hidden=description.hidden=costs.hidden=true;
+      setCaption(ok,labels[kind==='cancelBuilding'?'ok':'buy']);
       ok.removeAttribute('data-unaffordable');
       ok.disabled=true;
     }};
@@ -534,7 +584,7 @@
           source.width&&source.height?copier.capture(source).frame:null};
     }
     const {g,state,view,ui,foreground,missingResources}=lastScene;
-    updatePurchase(lastScene);
+    updateConfirmation(lastScene);
     if(coherentFrames){
       if(lastMapEpoch!==null&&!state?.ready){waitForNativeFrame();return;}
       if(!state?.inGame){lastMapEpoch=null;modalPresenter.reset();camera.reset();lastRenderedGeometry=null;bootstrapInUse=false;bootstrapPaletteKey=null;cleanWorldReady=false;lastWorldPaint=frozenWorld=displayedEndRaster=null;}
@@ -709,7 +759,7 @@
     }
   }
   function pick(event,rect,{captured=false}={}) {
-    if(pendingPurchase)return {kind:'blocked'};
+    if(pendingConfirmation)return {kind:'blocked'};
     if(!visible||acceptsInput?.()===false)return null;
     if(enhancedHud&&telemetry.mode==='dialog') {
       if(acceptsInput) {
@@ -1028,7 +1078,8 @@
     purchaseTooltipMatches=host?.purchaseTooltipMatches;
     unavailableCommands=host?.unavailableCommands;
     placementUnaffordable=host?.placementUnaffordable;
-    if(hostPresentation&&coherentFrames&&modalFaction&&purchaseTooltipMatches)purchaseDialog=createPurchaseDialog();
+    activeConstruction=host?.activeConstruction;
+    if(hostPresentation&&coherentFrames&&modalFaction&&purchaseTooltipMatches)actionDialog=createActionDialog();
     onPresented=host?.onPresented;
     onUnavailable=host?.onUnavailable;
     acceptsInput=host?.acceptsInput;
@@ -1087,19 +1138,7 @@
             button.replaceChildren(ink);
           }).catch(console.error);
         }
-        cancel.addEventListener('click',()=>{
-          const bridge=global.WarcraftUiBridge,state=bridge.state();
-          if(telemetry.mode!=='world'||!state.buildingPending||!state.inputAllowed||acceptsInput?.()===false)return;
-          const packet=bridge.uiRects();
-          const child=packet?.children?.find(item=>item.isCancel&&item.commandPresent&&item.nativeVisible);
-          const command=child&&readHudCommand('command-'+child.id,bridge.viewState(),packet);
-          if(!command?.isCancel)return;
-          global.WarcraftDuneControls?.cancel?.();
-          moveNative({x:command.nativeX,y:command.nativeY});
-          bridge.nativeButton(1,0,lastNative.x,lastNative.y);
-          bridge.nativeButton(0,0,lastNative.x,lastNative.y);
-          input.focus({preventScroll:true});
-        });
+        cancel.addEventListener('click',requestBuildCancellation);
         layer.append(buildConfirm,cancel);frame.append(layer);
         placement={layer,cancel};
       }else{
@@ -1174,9 +1213,9 @@
     buildConfirm?.remove();
     placement?.layer.remove();
     placement=null;
-    purchaseDialog?.layer.remove();
-    purchaseDialog=modalFaction=purchaseTooltipMatches=null;
-    unavailableCommands=placementUnaffordable=null;
+    actionDialog?.layer.remove();
+    actionDialog=modalFaction=purchaseTooltipMatches=null;
+    unavailableCommands=placementUnaffordable=activeConstruction=null;
     output=context=copier=buildConfirm=commandHighlight=null;
     lastScene=lastNative=lastRenderedGeometry=lastDialogToken=selectedCommand=lastMapEpoch=displayedEndRaster=objectivesWaitUntil=null;
     camera=modalPresenter=cursorPresenter=foregroundPainter=bootstrapPainter=nativeFramePainter=visibleFramePainter=bootstrapCanvas=null;
@@ -1197,6 +1236,7 @@
   }
   global.WarcraftFullMap={install,installInputRouter,pointForGesture,consumePan,render,
     getHudCommand,getHudContextToken,selectHudCommand,requestHudPurchase,
+    canConfirmBuildCancellation,requestBuildCancellation,
     beginPan(time,scale){if(coherentFrames&&global.WarcraftSmoothCamera.ahead)camera?.begin(time,scale);else camera?.begin();},
     panPixels(dx,dy,time){camera?.move(dx,dy,time);if(!coherentFrames)render(false);scheduleAnimation();},
     endPan(time){camera?.end(time);scheduleAnimation();},

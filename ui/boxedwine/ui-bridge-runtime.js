@@ -405,6 +405,9 @@
         buildingWorldPoint:(x,y)=>global.WarcraftFullMap.worldToGlobal(x,y),
         previewBuilding:world=>dispatchBuildingTarget(world,false),
         confirmBuilding:world=>dispatchBuildingTarget(world,true),
+        ...(transport&&coherentFrames?{
+          requestBuildCancellation:()=>global.WarcraftFullMap?.requestBuildCancellation(),
+        }:{}),
       }:{}),
       getHudCommand:(...args)=>global.WarcraftFullMap?.getHudCommand?.(...args),
       getHudContextToken:()=>global.WarcraftFullMap?.getHudContextToken?.(),

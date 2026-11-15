@@ -310,14 +310,19 @@
       return [faction+'-'+size,image];
     }))) : {};
     const acceptArt = authored && new Image();
+    const shortAcceptArt = authored && new Image();
     if (acceptArt) {
       acceptArt.onload = repaint;
       acceptArt.src = './menu-art/title-accept-button.png';
+      shortAcceptArt.onload = repaint;
+      shortAcceptArt.src = './menu-art/orc-accept-button.png';
     }
     const closedDialog = document.createElement('canvas');
     closedDialog.width = ART.w;
     closedDialog.height = ART.h;
     let closedDialogRoot = null;
+    let dropdownAtlas,dropdownAtlasLoading=false;
+    const dropdownCaptions=new Map();
     const navigation = global.WarcraftAssemblyMenuNavigation?.create({wine, renderer, frame, activate, repaint, initialPage});
 
     function dialogStillActive() {
@@ -366,9 +371,27 @@
       const paper = current.mode === 'briefing' || current.cinematic === 'credits';
       // Title dialogs are Orc-themed, while stats keep the match faction.
       const style = current.cinematic === 'stats' ? faction : 'orc';
-      const green = accept && acceptArt?.naturalWidth;
-      const art = green ? acceptArt : buttonArt[style+'-'+(source.w>106?'wide':'short')];
-      global.WarcraftAssemblyDialogLayout.paintTallButton(context,image,source,target,paper?null:art,undefined,paper,!green);
+      const acceptFace=source.w>106?acceptArt:shortAcceptArt;
+      const green = accept && acceptFace?.naturalWidth;
+      const art = green ? acceptFace : buttonArt[style+'-'+(source.w>106?'wide':'short')];
+      global.WarcraftAssemblyDialogLayout.paintTallButton(context,image,source,target,paper?null:art,undefined,paper,!green,green);
+    }
+
+    function dropdownCaption(text) {
+      const font=global.WarcraftSessionText;
+      if(!text||!font)return null;
+      if(!dropdownAtlas){
+        if(!dropdownAtlasLoading){
+          dropdownAtlasLoading=true;
+          font.load(global.WarcraftLanguage?.current()).then(atlas=>{
+            dropdownAtlas=atlas;
+            repaint();
+          }).catch(()=>{}).finally(()=>{dropdownAtlasLoading=false;});
+        }
+        return null;
+      }
+      if(!dropdownCaptions.has(text))dropdownCaptions.set(text,font.ink(text,dropdownAtlas));
+      return dropdownCaptions.get(text);
     }
 
     function drawScenarioFrame(image, frame) {
@@ -570,8 +593,11 @@
                 drawTallButton(regionImage,region.source,region.target,current,region.accept);
               } else if (region.decoration === 'sound-control') {
                 global.WarcraftAssemblyDialogLayout.paintSoundControl(context,regionImage,region);
+              } else if (region.decoration === 'sound-ends') {
+                global.WarcraftAssemblyDialogLayout.paintSoundEnds(context,regionImage,region.source,region.target);
               } else if (region.decoration === 'dropdown') {
-                global.WarcraftAssemblyDialogLayout.paintDropdown(context,regionImage,region.source,region.target,buttonArt['orc-wide']);
+                global.WarcraftAssemblyDialogLayout.paintDropdown(context,regionImage,region.source,region.target,
+                  buttonArt['orc-wide'],region.glyphScale,dropdownCaption(region.caption));
               } else if (region.decoration === 'custom-popup') {
                 global.WarcraftAssemblyDialogLayout.paintCustomPopup(context,regionImage,region,buttonArt['orc-wide']);
               } else if (region.decoration === 'control-ink') {
@@ -593,14 +619,10 @@
             }
             if (current.sound && next.frame) {
               const {source, target} = next.frame;
-              if(next.paintRegions.some(r=>r.decoration==='sound-control')) {
-                const rim=3*target.w/source.w;
-                draw(context,image,area(source.x,source.y,source.w,3),area(target.x,target.y,target.w,rim));
-                draw(context,image,area(source.x,source.y,3,source.h),area(target.x,target.y,rim,target.h));
-              }
               global.WarcraftModalPresentationV15?.paintSettingsFrame(context, image, next.dialog?.handler,
                 {left:source.x,top:source.y,width:source.w,height:source.h},
-                {left:target.x,top:target.y,width:target.w,height:target.h});
+                {left:target.x,top:target.y,width:target.w,height:target.h},
+                next.frame.scale);
             }
           }
         } finally {

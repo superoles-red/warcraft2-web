@@ -263,7 +263,10 @@
       try{
         const command=trustedCommand(rawCommand(event),g.geometry);
         if(g.mode!=='hud-pending' || !sameCommand(command,g.command)){selectCommand(null);return true;}
-        if(command.unaffordable){
+        if(command.confirmConstructionCancel&&api.requestBuildCancellation){
+          selectCommand(null);
+          api.requestBuildCancellation();
+        }else if(command.unaffordable){
           selectCommand(command);
           hoverCommand(command);
         }else if(command.confirmPurchase&&(g.pointerType==='mouse'||sameCommand(selectedCommand,command))){
@@ -460,7 +463,8 @@
           const aim=point(event,g.geometry,false);
           if(aim&&inWorld(aim))aimBuilding(aim);
         }else if(g.mode==='building-cancel'){
-          buildingTarget=null;press(1,g.origin);release(1,g.origin);
+          if(api.requestBuildCancellation)api.requestBuildCancellation();
+          else{buildingTarget=null;press(1,g.origin);release(1,g.origin);}
         }else if(g.mode==='placement'){
           // The final strict chart hit excludes HUD overlays and outside drops.
           // Invalid/offscreen drops use original right-click cancellation at the

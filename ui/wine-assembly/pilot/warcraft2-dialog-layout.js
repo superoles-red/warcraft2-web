@@ -86,6 +86,14 @@
     return new DataView(memory, start, length);
   }
 
+  const nativeText = new TextDecoder('windows-1251');
+  function customCaption(wine, address) {
+    const value=guestView(wine,address,64);
+    if(!value)return '';
+    const bytes=new Uint8Array(value.buffer,value.byteOffset,value.byteLength),end=bytes.indexOf(0);
+    return end>0&&!bytes.subarray(0,end).some(byte=>byte<32) ? nativeText.decode(bytes.subarray(0,end)) : '';
+  }
+
   function readControls(wine, front, wantedTypes) {
     const root = guestView(wine, front.root, 0x4a);
     if (root?.getUint16(0x20, true) !== front.slot ||
@@ -106,7 +114,9 @@
         const w = item.getInt16(8, true) - x + 1, h = item.getInt16(10, true) - y + 1;
         const source = {x: x + front.x, y: y + front.y, w, h};
         if (!contains(front, source)) return null;
-        controls.set(id, {type, flags, source, address:node});
+        const caption=front.handler===CUSTOM_GAME_SETUP&&type===13
+          ? customCaption(wine,item.getUint32(0x14,true)) : '';
+        controls.set(id, {type, flags, source, address:node, caption});
       }
       node = item.getUint32(0, true);
     }
@@ -130,12 +140,24 @@
   // Credits and briefing use neutral grayscale UI art; stone there never
   // exceeds gray 135. Keep the original light grayscale lettering ramp.
   const PAPER_BUTTON_INK = new Set([0xffffff,0xdbdbdb,0xbbbbbb,0x9b9b9b]);
+  const stockArt = new Map();
+  function artwork(name) {
+    if (!stockArt.has(name)) {
+      const image = new global.Image();
+      image.src = `./menu-art/${name}.png`;
+      stockArt.set(name,image);
+    }
+    return stockArt.get(name);
+  }
+  function acceptArtwork(faction, width) {
+    return artwork(width > 106 ? 'title-accept-button' : faction + '-accept-button');
+  }
   let inkCanvas;
-  function paintTallButton(context,image,source,target,blank,captionScale,paper=false,useNativeFrame=true) {
+  function paintTallButton(context,image,source,target,blank,captionScale,paper=false,useNativeFrame=true,preserveFocus=false) {
     const {x:sx,y:sy,w:sw,h:sh}=source, {x,y,w,h}=target;
     const scale = Math.min(w/sw,h/sh);
     const rim = Math.min(4,sh/4), edge = rim*scale;
-    const body = blank?.width === sw && blank.height === sh ? blank : null;
+    const body = blank?.naturalWidth && blank.naturalHeight === sh ? blank : null;
     if (!inkCanvas) {
       inkCanvas = global.document.createElement('canvas');
     }
@@ -146,6 +168,8 @@
     scratch.drawImage(image,sx,sy,sw,sh,0,0,sw,sh);
     const pixels = scratch.getImageData(0,0,sw,sh), {data}=pixels;
     const asRgb = i => data[i*4]<<16|data[i*4+1]<<8|data[i*4+2];
+    const focus=asRgb(sw>>1);
+    const focused=focus===0xffff00||focus===0xfcfc00;
     const text = new Uint8Array(sw*sh);
     // The outer frame may also contain yellow/gray pixels. Only the inward
     // caption box uses this masking; preserve the live edges separately.
@@ -161,11 +185,12 @@
     // Native dialogs retain the current rim, including any native highlight.
     const frame=!useNativeFrame&&body?body:image;
     const fx=frame===image?sx:0, fy=frame===image?sy:0;
-    context.drawImage(frame,fx,fy,sw,rim,x,y,w,edge);
-    context.drawImage(frame,fx,fy+sh-rim,sw,rim,x,y+h-edge,w,edge);
+    const fw=frame===image?sw:frame.naturalWidth;
+    context.drawImage(frame,fx,fy,fw,rim,x,y,w,edge);
+    context.drawImage(frame,fx,fy+sh-rim,fw,rim,x,y+h-edge,w,edge);
     context.drawImage(frame,fx,fy+rim,rim,sh-rim*2,x,y+edge,edge,h-edge*2);
-    context.drawImage(frame,fx+sw-rim,fy+rim,rim,sh-rim*2,x+w-edge,y+edge,edge,h-edge*2);
-    if (body) context.drawImage(body,rim,rim,sw-rim*2,sh-rim*2,x+edge,y+edge,w-edge*2,h-edge*2);
+    context.drawImage(frame,fx+fw-rim,fy+rim,rim,sh-rim*2,x+w-edge,y+edge,edge,h-edge*2);
+    if (body) context.drawImage(body,rim,rim,body.naturalWidth-rim*2,sh-rim*2,x+edge,y+edge,w-edge*2,h-edge*2);
     else {
       // A blank region to the right of the drawn caption preserves the
       // selected guest's current texture when no exact art was supplied.
@@ -176,6 +201,14 @@
     const captionFit=Math.min(scale,captionScale ?? scale);
     const captionWidth=sw*captionFit,captionHeight=sh*captionFit;
     context.drawImage(inkCanvas,0,0,sw,sh,x+(w-captionWidth)/2,y+(h-captionHeight)/2,captionWidth,captionHeight);
+    if(preserveFocus&&frame!==image&&focused) {
+      const size=Math.max(1,Math.round(scale));
+      context.fillStyle='#ffff00';
+      context.fillRect(x,y,w,size);
+      context.fillRect(x,y+h-size,w,size);
+      context.fillRect(x,y,size,h);
+      context.fillRect(x+w-size,y,size,h);
+    }
   }
 
   function controlPixels(image,{x,y,w,h}) {
@@ -188,29 +221,39 @@
     return {scratch,pixels:scratch.getImageData(0,0,w,h)};
   }
 
-  function paintControlInk(context,image,source,target) {
+  function paintControlInk(context,image,source,target,exact=false) {
     const {scratch,pixels}=controlPixels(image,source),{data,width:w,height:h}=pixels;
     const ink=new Uint8Array(w*h);
     for(let i=0;i<ink.length;i++){
       const p=i*4,r=data[p],g=data[p+1],b=data[p+2];
-      if((r>=168&&g>=136&&b<=41)||(r>=215&&g>=215&&b>=215))ink[i]=1;
+      const rgb=r<<16|g<<8|b;
+      if(exact ? BUTTON_INK.has(rgb)&&r>=156 : (r>=168&&g>=136&&b<=41)||(r>=215&&g>=215&&b>=215))ink[i]=1;
     }
-    for(let i=0;i<ink.length;i++)if(!ink[i]&&!(i>=w+1&&i%w&&ink[i-w-1]&&data[i*4]<40))data[i*4+3]=0;
+    for(let i=0;i<ink.length;i++){
+      const p=i*4,rgb=data[p]<<16|data[p+1]<<8|data[p+2];
+      if(!ink[i]&&!(i>=w+1&&i%w&&ink[i-w-1]&&(data[p]<40||exact&&BUTTON_INK.has(rgb))))data[p+3]=0;
+    }
     scratch.putImageData(pixels,0,0);
     context.drawImage(inkCanvas,0,0,w,h,target.x,target.y,target.w,target.h);
   }
 
-  function paintDropdown(context,image,source,target,background) {
+  function paintDropdown(context,image,source,target,background,scale=target.w/source.w,caption) {
     const {x:sx,y:sy,w:sw,h:sh}=source,{x,y,w,h}=target;
-    const scale=w/sw;
     const lineH=Math.min(h,sh*scale), middle=y+(h-lineH)/2;
     if(!background?.naturalWidth){context.drawImage(image,sx,sy,sw,sh,x,middle,w,lineH);return;}
     context.drawImage(background,x,y,w,h);
-    const arrowWidth=20, pad=5;
-    paintControlInk(context,image,{x:sx+pad,y:sy+2,w:sw-arrowWidth-pad,h:sh-4},
-      {x:x+pad*scale,y:middle+2*scale,w:(sw-arrowWidth-pad)*scale,h:lineH-4*scale});
-    context.drawImage(image,sx+sw-arrowWidth-2,sy+2,arrowWidth,sh-4,
-      x+w-(arrowWidth+4)*scale,middle+2*scale,arrowWidth*scale,lineH-4*scale);
+    const arrow=artwork('orc-dropdown');
+    const arrowW=19, arrowH=20, pad=5;
+    const labelWidth=Math.min(sw-arrowW-pad-4,Math.floor(w/scale-arrowW-pad-4));
+    if(caption?.width){
+      const fit=Math.min(scale,(w-(arrowW+2*pad+4)*scale)/caption.width);
+      context.drawImage(caption,x+pad*scale,y+(h-caption.height*fit)/2,caption.width*fit,caption.height*fit);
+    }else{
+      paintControlInk(context,image,{x:sx+pad,y:sy+2,w:labelWidth,h:sh-4},
+        {x:x+pad*scale,y:middle+2*scale,w:labelWidth*scale,h:lineH-4*scale});
+    }
+    const arrowX=x+w-(arrowW+4)*scale,arrowY=y+(h-arrowH*scale)/2;
+    if(arrow.naturalWidth)context.drawImage(arrow,arrowX,arrowY,arrowW*scale,arrowH*scale);
   }
 
   function paintCustomPopup(context, image, {source:s, target:t, rowCount}, background) {
@@ -249,6 +292,9 @@
     {kind:'slider',source:[32,88,212,20],label:[12,72,232,14],help:[32,108,214,8]},
     {kind:'speech',source:[12,144,240,22]},
   ];
+  const SOUND_ART = [
+    ['volume-track','volume-thumb'], ['volume-track-human','volume-thumb-human'],
+  ];
 
   function soundRows({left,top,width,scale,height,landscape,match=false}) {
     const inset=12*scale,gap=8*scale;
@@ -262,27 +308,32 @@
       const trackY=row.kind==='slider'?y+16*scale:y;
       const labelBox={x,y,w:Math.min(colWidth,232*scale),h:14*scale};
       return {...row,target:{x,y:trackY,w:colWidth,h:height},labelBox,
-        helpBox:{x,y:trackY+height,w:Math.min(colWidth,214*scale),h:8*scale},scale};
+        helpBox:{x,y:trackY+height,w:colWidth,h:8*scale},scale};
     });
     const speech=controls.at(-1).target;
     const bottom=speech.y+height;
     return {controls,bottom, fog:match?{x:two?speech.x+colWidth+gap:speech.x,y:two?speech.y:bottom+gap,w:colWidth,h:height}:null};
   }
 
-  let soundArt;
-  function soundArtwork() {
-    if(!soundArt)soundArt=[['volume-track','volume-thumb'],['volume-track-human','volume-thumb-human']].map(names=>names.map(name=>{
-      const image=new global.Image();
-      image.src=`./menu-art/${name}.png`;
-      return image;
-    }));
-    return soundArt;
+  function paintSoundEnds(context,image,s,t) {
+    // Paint the native words flush with the two ends of the resized track.
+    const scale=t.h/s.h,endWidth=28;
+    for(const end of [0,1])paintControlInk(context,image,
+      {x:s.x+end*(s.w-endWidth),y:s.y,w:endWidth,h:s.h},
+      {x:t.x+end*(t.w-endWidth*scale),y:t.y,w:endWidth*scale,h:t.h});
   }
 
   function paintSoundControl(context,image,{kind,source:s,target:t,scale}) {
     if(kind==='speech') {
       const size=Math.min(t.h,44*scale);
-      context.drawImage(image,s.x,s.y+1,17,20,t.x,t.y+(t.h-size)/2,size*17/20,size);
+      const {pixels:{data}}=controlPixels(image,{x:s.x,y:s.y,w:17,h:20});
+      // Both factions use the same bright cross at (4,14), even in RGB565.
+      // The face at (10,12) remains blue for Humans with either check state.
+      const faction=data[4*(12*17+10)+2]>data[4*(12*17+10)]?'human':'orc';
+      const marked=data[4*(14*17+4)]>=240;
+      const icon=artwork(faction+'-checkbox'+(marked?'-checked':''));
+      if(icon.naturalWidth)context.drawImage(icon,t.x,t.y+(t.h-size)/2,size*17/20,size);
+      else context.drawImage(image,s.x,s.y,17,20,t.x,t.y+(t.h-size)/2,size*17/20,size);
       const width=Math.max(1,Math.min(160,Math.floor((t.w-size)/scale)));
       paintControlInk(context,image,{x:s.x+24,y:s.y,w:width,h:s.h},{x:t.x+size*17/20+7*scale,
         y:t.y+(t.h-s.h*scale)/2,w:width*scale,h:s.h*scale});
@@ -296,14 +347,17 @@
       if(g<35&&r>=47&&b<12)red++;
       if(r<30&&g<62&&b>=54)blue++;
     }
-    const [track,thumb]=soundArtwork()[Number(blue>red)];
+    const [track,thumb]=SOUND_ART[Number(blue>red)].map(artwork);
     if(!track.naturalWidth||!thumb.naturalWidth||last-first>22||last<first){
       const trackH=Math.min(t.h,19*scale);
       context.drawImage(image,s.x,s.y,s.w,s.h,t.x,t.y+(t.h-trackH)/2,t.w,trackH);
       return;
     }
     const size=Math.min(27*scale,t.h), position=Math.max(0,Math.min(1,((first+last)/2-26)/156));
-    context.drawImage(track,t.x,t.y,t.w,t.h);
+    const rim=2,edge=rim*scale;
+    context.drawImage(track,0,0,track.naturalWidth,rim,t.x,t.y,t.w,edge);
+    context.drawImage(track,0,rim,track.naturalWidth,track.naturalHeight-rim*2,t.x,t.y+edge,t.w,t.h-edge*2);
+    context.drawImage(track,0,track.naturalHeight-rim,track.naturalWidth,rim,t.x,t.y+t.h-edge,t.w,edge);
     context.drawImage(thumb,t.x+(t.w-size)*position,t.y+(t.h-size)/2,size,size);
   }
 
@@ -400,6 +454,9 @@
       const left = inset + col * (columnW + gap) + (columnW - 184 * scale) / 2;
       crop(field.label, left, top, scale, false);
       const control = crop(field.control,left+4*scale,top+18*scale,scale,true,'dropdown');
+      control.target.w=180*scale;
+      control.caption=controls.get(field.id).caption;
+      control.glyphScale=scale;
       if (expanded?.id === field.id) {
         const {source, rowCount} = expanded;
         const bottom = height - Math.max(bottomInset, inset);
@@ -517,13 +574,13 @@
         decoration:'control-ink'};
       const fields=body.controls.map(({source,...row})=>({...row,source:area(...source),decoration:'sound-control'}));
       const labels=body.controls.flatMap(row=>row.label?[{source:area(...row.label),target:row.labelBox,decoration:'control-ink'},
-        {source:area(...row.help),target:row.helpBox,decoration:'control-ink'}]:[]);
+        {source:area(...row.help),target:row.helpBox,decoration:'sound-ends'}]:[]);
       const footerY=top+totalH-buttonSize-10*scale;
-      const button={source:accept,target:{x:left+16*scale,y:footerY,w:106*scale,h:buttonSize},decoration:'tall-button'};
+      const button={source:accept,target:{x:left+16*scale,y:footerY,w:106*scale,h:buttonSize},decoration:'tall-button',accept:true};
       const back={source:cancel,target:{x:left+panelW-buttonSize-16*scale,y:footerY,w:buttonSize,h:buttonSize},decoration:'back'};
       const stone={source:area(0,174,256,48),target:{x:left,y:top,w:panelW,h:totalH},texture:true};
       return {...chart,reflow:true,regions:[...fields,button,back],paintRegions:[stone,heading,...labels,...fields,button,back],
-        frame:{source:area(0,0,w,h),target:stone.target}};
+        frame:{source:area(0,0,w,h),target:stone.target,scale}};
     }
     const bands = compact ? spec.compactBody : [[0,spec.body]];
     const bodyHeight = bands.reduce((height,[start,end]) => height + end - start, 0);
@@ -546,10 +603,10 @@
       target:target(0,bodyHeight,w,footerH), texture:spec.texture};
     const rim = {source:area(0,h-4,w,4), target:target(0,height-4,w,4)};
     const size = buttonSize/scale;
-    const button = {source:accept, target:target(16,bodyHeight + (footerH-size)/2,106,size),decoration:'tall-button'};
+    const button = {source:accept, target:target(16,bodyHeight + (footerH-size)/2,106,size),decoration:'tall-button',accept:true};
     const back = {source:cancel, target:target(w-size-12,bodyHeight + (footerH-size)/2,size,size), decoration:'back'};
     return {...chart, reflow:true, regions:[...body, button, back], paintRegions:[...body, footer, rim, button, back],
-      ...(front.handler === SOUND_OPTIONS ? {frame:{source:area(0,0,w,h),target:target(0,0,w,height)}} : {})};
+      ...(front.handler === SOUND_OPTIONS ? {frame:{source:area(0,0,w,h),target:target(0,0,w,height),scale}} : {})};
   }
 
   function reflowScenario(chart, front, controls, inset, wine) {
@@ -619,6 +676,7 @@
     add(list,listBox,'scenario-list',true);
     add(result,{...fitted(result,landscape?listX:inset,resultY),w:Math.min(listWidth,result.w*scale)},'scenario-caption');
     add(ok,{...fitted(ok,inset,footerY),h:buttonSize},'tall-button',true);
+    paintRegions.at(-1).accept=true;
     add(cancel,{x:width-inset-buttonSize,y:height-inset-buttonSize,w:buttonSize,h:buttonSize},'back',true);
     const frame = {source:area(0,0,352,352),target:{x:0,y:0,w:width,h:height},scale};
     const bar = guestView(wine,nativeBar.address,0x4a);
@@ -704,7 +762,7 @@
 
   const isAdaptedHandler = handler => HELD_CONTROLS.has(handler);
   const api = Object.freeze({layout, wantsImmediatePress, isAdaptedHandler, paintTallButton, menuButtonHeight,
-    paintDropdown,paintCustomPopup,soundRows,paintSoundControl,paintControlInk});
+    paintDropdown,paintCustomPopup,soundRows,paintSoundControl,paintSoundEnds,paintControlInk,acceptArtwork});
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WarcraftAssemblyDialogLayout = api;
 })(globalThis);

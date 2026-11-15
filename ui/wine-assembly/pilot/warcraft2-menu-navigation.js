@@ -216,6 +216,7 @@
       const faction = view(0x4abb7c, 1)?.getUint8(0) === 0 ? 'human' : 'orc';
       const arrow = arrows[faction];
       const settings = dialog.handlerAddress === 0x441940;
+      const objectives = dialog.handlerAddress === 0x4353a0;
       // The generic handler is shared. The active native continuation and
       // button geometry distinguish Pause and End Scenario from confirmation dialogs.
       const continuation = dialog.handlerAddress === 0x435b70 && view(0x4b4a14, 4)?.getUint32(0, true);
@@ -261,9 +262,14 @@
         width:item.width, height:28});
       const controls = (items, {skip, replace} = {}) => items
         .filter(item => item.id!==skip)
-        .map(item => ({id:item.id,source:sourceOf(item),
-          blank:item.width===224?art.button:item.width===106?art.shortButton:null,
-          ...(item.id===replace?{button:art.button,label:art.label}:null)}));
+        .map(item => {
+          const accept = item.id === -2 || (objectives && item.id === -3);
+          const blank = accept
+            ? window.WarcraftAssemblyDialogLayout.acceptArtwork(faction,item.width)
+            : item.width===224?art.button:item.width===106?art.shortButton:null;
+          return {id:item.id,source:sourceOf(item),blank,accept,
+            ...(item.id===replace?{button:art.button,label:art.label}:null)};
+        });
 
       if (settings) {
         const cancel = buttons.get(-3), ok = buttons.get(-2);

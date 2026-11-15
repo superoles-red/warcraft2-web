@@ -6,12 +6,14 @@
       resume:'Continue the last session?', replace:'Your previous session will be replaced.',
       selectScenario:'Select Scenario', mapSize:'Map size', anySize:'Any size', mapCategory:'Category',
       allCategories:'All categories', noScenarios:'No scenarios match these filters.',
+      mapPreview:'Map preview', terrain:['Forest', 'Winter', 'Wasteland', 'Orc Swamps'],
       scenarioFailed:'Could not select this map.', ok:'OK', mission:'Mission', locked:'Locked', completed:'Completed', fast:'Fast Scenario', back:'Back',
       failed:'The game could not start. The previous session is still available.'},
     ru: {about:'Об игре', files:'Файлы', feedback:'Отзыв', campaign:'Кампания', continue:'Продолжить', start:'Начать', newGame:'Начать новую игру?',
       resume:'Продолжить игру?', replace:'Предыдущая игра будет заменена.',
       selectScenario:'Выбор сценария', mapSize:'Размер карты', anySize:'Любой размер', mapCategory:'Категория',
       allCategories:'Все категории', noScenarios:'Нет сценариев с такими фильтрами.',
+      mapPreview:'Миниатюра карты', terrain:['Лес', 'Зима', 'Пустоши', 'Орочьи топи'],
       scenarioFailed:'Не удалось выбрать эту карту.', ok:'ОК', mission:'Миссия', locked:'Закрыта', completed:'Пройдена', fast:'Быстрая игра', back:'Назад',
       failed:'Не удалось запустить игру. Предыдущая сессия доступна.'},
   };
@@ -34,6 +36,18 @@
   const campaignName = campaign => names[locale()][campaign];
   const slotName = slot => slot.kind === 'fast' ? [text('fast'), slot.name] :
     [campaignName(slot.campaign), missionName(slot.campaign,slot.mission)];
+  let scenarioPreviews;
+
+  function loadScenarioPreviews() {
+    scenarioPreviews ??= fetch('./menu-art/scenario-previews.json').then(response => {
+      if (!response.ok) throw new Error('Scenario previews are unavailable');
+      return response.json();
+    }).catch(() => {
+      scenarioPreviews = null;
+      return null;
+    });
+    return scenarioPreviews;
+  }
 
   function caption(text, atlas, width, alignLeft = false) {
     const glyph = document.createElement('img');
@@ -233,10 +247,14 @@
       const details = document.createElement('div');
       details.className = 'warcraft-scenario-details';
       details.setAttribute('aria-live', 'polite');
+      const card = document.createElement('div');
+      card.className = 'warcraft-scenario-card';
+      card.id = 'warcraft-scenario-card';
       const footer = document.createElement('div');
       footer.className = 'warcraft-session-footer';
       let size = null, category = null, openDropdown = null;
       let choice = entries.find(entry => entry.id === selectedId);
+      let previews, currentCard;
       function showDetails(messages) {
         details.replaceChildren(...messages.map(message => {
           const row = document.createElement('p');
@@ -269,12 +287,19 @@
       arrow.addEventListener('click', goBack);
       footer.append(choose, arrow);
 
-      const rows = entries.map(entry => ({entry, button:makeButton(entry.title, () => {
-        choice = entry;
-        openFilter(null);
-        refresh();
-      })}));
-      content.append(...rows.map(row => row.button));
+      const rows = entries.map(entry => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'warcraft-scenario-row';
+        const button = makeButton(entry.title, () => {
+          choice = entry;
+          openFilter(null);
+          refresh();
+          reveal(wrapper);
+        });
+        wrapper.append(button);
+        return {entry, button, wrapper};
+      });
+      content.append(...rows.map(row => row.wrapper));
       const sizes = [null, ...[...new Set(entries.map(entry => entry.size).filter(Number.isInteger))].sort((a,b) => a-b)];
       const sizeText = value => value === null ? labels.anySize : `${value} x ${value}`;
       const localizedGroups = categoryLabels[language];
@@ -328,25 +353,81 @@
         if (next) {
           next.menu.hidden = false;
           next.toggle.setAttribute('aria-expanded', 'true');
+          scrollUpdates.get(next.menu.querySelector('.warcraft-scroll-body'))?.();
         }
       }
+      function reveal(wrapper, alignStart = false) {
+        const viewport = content.getBoundingClientRect(), row = wrapper.getBoundingClientRect();
+        if (alignStart || row.height >= viewport.height || row.top < viewport.top) {
+          content.scrollTop += row.top - viewport.top;
+        } else if (row.bottom > viewport.bottom) {
+          content.scrollTop += row.bottom - viewport.bottom;
+        }
+      }
+
+      function printCard(entry) {
+        const info = previews?.maps[entry.id];
+        const players = entry.players;
+        const playerLabel = language === 'ru' ? (players === 1 ? 'игрок' : players < 5 ? 'игрока' : 'игроков') :
+          (players === 1 ? 'player' : 'players');
+        const copy = document.createElement('div');
+        copy.className = 'warcraft-scenario-card-copy';
+        const description = entry.description || info?.[2];
+        const lines = [
+          `${sizeText(entry.size)} · ${players} ${playerLabel}`,
+          info && labels.terrain[info[0]],
+          description?.trim().toLowerCase() !== entry.title.trim().toLowerCase() &&
+            !/^\d+ players?$/i.test(description) && description,
+        ].filter(Boolean);
+        const copyWidth = Math.max(130, Math.min(280, panel.clientWidth - 150));
+        for (const message of lines) {
+          const line = document.createElement('p');
+          line.setAttribute('aria-label', message);
+          line.append(caption(message, atlas, copyWidth, true));
+          copy.append(line);
+        }
+        const parts = [];
+        if (info) {
+          const [era, slot] = info, {columns, rows} = previews;
+          const height = rows[era];
+          const thumbnail = document.createElement('span');
+          thumbnail.className = 'warcraft-scenario-thumbnail';
+          thumbnail.setAttribute('role', 'img');
+          thumbnail.setAttribute('aria-label', `${labels.mapPreview} – ${entry.title}`);
+          thumbnail.style.backgroundImage = `url("./menu-art/scenario-preview-${era}.webp")`;
+          thumbnail.style.backgroundSize = `${columns * 100}% ${height * 100}%`;
+          thumbnail.style.backgroundPosition = `${100 * (slot % columns) / (columns - 1)}% ${100 * Math.floor(slot / columns) / Math.max(1, height - 1)}%`;
+          parts.push(thumbnail);
+        }
+        card.replaceChildren(...parts, copy);
+      }
+
       function refresh() {
         const matches = entry => (size === null || entry.size === size) && (category === null || entry.category === category);
+        const selected = choice && matches(choice) ? choice : null;
         let matching = 0;
-        for (const {entry,button} of rows) {
-          button.hidden = !matches(entry);
-          if (!button.hidden) matching++;
-          button.setAttribute('aria-pressed', String(entry === choice));
+        for (const {entry,button,wrapper} of rows) {
+          const hidden = !matches(entry);
+          if (wrapper.hidden !== hidden) wrapper.hidden = hidden;
+          if (!hidden) matching++;
+          const expanded = entry === selected;
+          if (button.getAttribute('aria-expanded') !== String(expanded)) {
+            button.setAttribute('aria-pressed', String(expanded));
+            button.setAttribute('aria-expanded', String(expanded));
+            if (expanded) button.setAttribute('aria-controls', card.id);
+            else button.removeAttribute('aria-controls');
+          }
+          if (expanded && currentCard !== entry) {
+            wrapper.append(card);
+            printCard(entry);
+          }
         }
+        currentCard = selected;
+        if (!selected) card.remove();
         sizeFilter.update(size);
         categoryFilter.update(category);
-        const selected = choice && matches(choice) ? choice : null;
         choose.disabled = !selected;
-        const players = selected?.players;
-        const metadata = [selected?.size && sizeText(selected.size), players && (language === 'ru'
-          ? `${players} ${players === 1 ? 'игрок' : players < 5 ? 'игрока' : 'игроков'}`
-          : `${players} ${players === 1 ? 'player' : 'players'}`)].filter(Boolean).join(' · ');
-        showDetails(matching ? [metadata, selected?.description].filter(Boolean) : [labels.noScenarios]);
+        showDetails(matching ? [] : [labels.noScenarios]);
         scrollUpdates.get(content)?.();
       }
 
@@ -357,9 +438,27 @@
       refresh();
       layer.setAttribute('aria-label', labels.selectScenario);
       backAction = goBack;
-      const selected = rows.find(row => row.entry === choice)?.button;
-      if (selected) content.scrollTop = selected.offsetTop - content.offsetTop;
-      (selected || rows[0]?.button || arrow).focus({preventScroll:true});
+      const selected = rows.find(row => row.entry === choice);
+      if (selected) reveal(selected.wrapper, true);
+      (selected?.button || rows[0]?.button || arrow).focus({preventScroll:true});
+      const updateScrollbar = scrollUpdates.get(content);
+      let listWidth = content.clientWidth;
+      scrollUpdates.set(content, () => {
+        updateScrollbar();
+        if (listWidth !== content.clientWidth) {
+          listWidth = content.clientWidth;
+          if (currentCard) reveal(card.parentElement);
+        }
+      });
+      void loadScenarioPreviews().then(index => {
+        if (id !== token || !index) return;
+        previews = index;
+        if (currentCard) {
+          printCard(currentCard);
+          reveal(card.parentElement);
+        }
+        scrollUpdates.get(content)?.();
+      });
     }
     return Object.freeze({show, showScenarios, hide, get active(){return !layer.hidden;},
       back(){backAction?.();},destroy(){hide();layer.remove();}});

@@ -240,6 +240,7 @@
   padding: 3px 0;
   border: 0;
   background: url("./menu-art/title-button.png") center / 100% 100%;
+  image-rendering: pixelated;
   cursor: pointer;
   pointer-events: auto;
   touch-action: manipulation;
@@ -319,6 +320,7 @@
   display: grid;
   place-items: center;
   background: var(--purchase-accept) center / 100% 100%;
+  image-rendering: pixelated;
   color: #f2cf41;
   cursor: pointer;
 }
@@ -409,6 +411,7 @@
   height: var(--warcraft-menu-row-height);
   padding: 4px 10px;
   background: url("./menu-art/title-button.png") center / 100% 100% no-repeat;
+  image-rendering: pixelated;
   touch-action: manipulation;
   cursor: pointer;
 }
@@ -416,9 +419,6 @@
 .warcraft-session-choice:disabled {
   filter: grayscale(1) brightness(1.12);
   cursor: default;
-}
-.mission-list .warcraft-session-choice {
-  image-rendering: pixelated;
 }
 .mission-list .warcraft-session-choice img { max-height: 100%; object-fit: contain; }
 .warcraft-session-choice[data-completed] { box-shadow: inset 0 0 0 1px #d1b455; }
@@ -486,15 +486,14 @@
   content: "";
   position: absolute;
   right: 7px;
-  top: calc(50% - 9px);
+  top: calc(50% - 9.5px);
   width: 18px;
-  height: 18px;
+  height: 19px;
   image-rendering: pixelated;
-  background: url("./menu-art/orc-back.png") center / contain no-repeat;
-  transform: rotate(-90deg);
+  background: url("./menu-art/orc-dropdown.png") center / contain no-repeat;
   pointer-events: none;
 }
-.warcraft-scenario-filter-toggle[aria-expanded="true"]::after { transform: rotate(90deg); }
+.warcraft-scenario-filter-toggle[aria-expanded="true"]::after { transform: rotate(180deg); }
 .warcraft-scenario-filter-options {
   position: absolute;
   z-index: 1;
@@ -513,6 +512,28 @@
   touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
 }
+.warcraft-scenario-row .warcraft-session-choice { width: 100%; }
+.warcraft-scenario-card {
+  display: flex;
+  align-items: center;
+  gap: clamp(8px, 3vw, 16px);
+  padding: 8px 12px;
+  box-shadow: inset 0 -1px #9f753b, inset 1px 0 #9f753b, inset -1px 0 #9f753b;
+  background: linear-gradient(#100900a6, #100900a6), url("./menu-art/orc-texture.png") center / cover;
+  pointer-events: none;
+}
+.warcraft-scenario-thumbnail {
+  display: block;
+  flex: none;
+  width: clamp(64px, 22vmin, 96px);
+  aspect-ratio: 1;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  outline: 1px solid #bc924f;
+}
+.warcraft-scenario-card-copy { min-width: 0; }
+.warcraft-scenario-card-copy p + p { margin-top: 4px; }
+.warcraft-scenario-card-copy img { margin-left: 0; }
 .scenario-picker .warcraft-session-choice[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #e4c43e; }
 .scenario-picker .warcraft-session-choice img { max-height: 100%; object-fit: contain; }
 .warcraft-scenario-details { grid-row: 3; }

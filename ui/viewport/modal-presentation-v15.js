@@ -16,30 +16,30 @@
     // Compacting a panel must not enlarge its remaining text on short screens.
     return Math.min(1.5*pixelRatio,(width-2*margin)/256,(height-2*margin)/(288+OBJECTIVES_ROW));
   }
-  function paintSettingsFrame(context,frame,handler,source,target){
-    if(!SLIDER_DIALOGS.has(handler)||source.width!==256||source.height!==288)return;
+  function paintPanelRim(context,frame,source,target,scale){
     // The original panels paint a three-pixel bevel on the top and left.
-    // Reflect those pixels into the empty right and bottom gutters, including the corners.
-    const rim=3;
-    const scaleX=target.width/source.width,scaleY=target.height/source.height;
-    function copy(width,height,flipX,flipY){
+    // The reflowed panel needs the same bevel and corners at all four edges.
+    const rim=3, transform=context.getTransform();
+    const snapX=x=>(Math.round(x*transform.a+transform.e)-transform.e)/transform.a;
+    const snapY=y=>(Math.round(y*transform.d+transform.f)-transform.f)/transform.d;
+    const x=[target.left,target.left+rim*scale,target.left+target.width-rim*scale,target.left+target.width].map(snapX);
+    const y=[target.top,target.top+rim*scale,target.top+target.height-rim*scale,target.top+target.height].map(snapY);
+    for(let row=0;row<3;row++)for(let col=0;col<3;col++){
+      if(row===1&&col===1)continue;
+      const flipX=col===2,flipY=row===2;
+      const sw=col===1?source.width-2*rim:rim,sh=row===1?source.height-2*rim:rim;
+      const w=x[col+1]-x[col],h=y[row+1]-y[row];
+      if(w<=0||h<=0)continue;
       context.save();
-      context.translate(target.left+(flipX?target.width:0),target.top+(flipY?target.height:0));
-      context.scale(flipX?-scaleX:scaleX,flipY?-scaleY:scaleY);
-      context.drawImage(frame,source.left,source.top,width,height,0,0,width,height);
+      context.translate(x[col+Number(flipX)],y[row+Number(flipY)]);
+      context.scale(flipX?-1:1,flipY?-1:1);
+      context.drawImage(frame,source.left+(col===1?rim:0),source.top+(row===1?rim:0),sw,sh,0,0,w,h);
       context.restore();
     }
-    // A taller reflowed footer still uses the native three-pixel bevel.
-    if(Math.abs(scaleY-scaleX)>1e-6){
-      context.save();
-      try{
-        context.translate(target.left+target.width,target.top);
-        context.scale(-scaleX,1);
-        context.drawImage(frame,source.left,source.top,rim,source.height-rim,0,0,rim,target.height-rim*scaleX);
-      }finally{context.restore();}
-    }else copy(rim,source.height-rim,true,false);
-    copy(source.width-rim,rim,false,true);
-    copy(rim,rim,true,true);
+  }
+  function paintSettingsFrame(context,frame,handler,source,target,scale=target.width/source.width){
+    if(SLIDER_DIALOGS.has(handler)&&source.width===256&&source.height===288)
+      paintPanelRim(context,frame,source,target,scale);
   }
   const freezeRect=r=>Object.freeze({...r,right:r.left+r.width,bottom:r.top+r.height});
   function inside(r,x,y){return x>=r.left&&y>=r.top&&x<r.right&&y<r.bottom;}
@@ -64,13 +64,13 @@
       }
     }finally{context.restore();}
   }
-  function paintAction(context,frame,{source:s,target:t,blank,button,label,confirmation}) {
+  function paintAction(context,frame,{source:s,target:t,blank,button,label,confirmation,accept}) {
     const painter=global.WarcraftAssemblyDialogLayout?.paintTallButton;
     if(!painter){context.drawImage(frame,s.left,s.top,s.width,s.height,t.left,t.top,t.width,t.height);return;}
     const artwork=button?.naturalWidth?button:frame;
     const patch=artwork===frame?paintRect(s):{x:0,y:0,w:button.naturalWidth,h:button.naturalHeight};
     if(confirmation&&artwork===button)paintButtonTexture(context,button,t);
-    else painter(context,artwork,patch,paintRect(t),blank);
+    else painter(context,artwork,patch,paintRect(t),blank,undefined,false,!accept,accept);
     if(label){
       const w=(label.naturalWidth||label.width)*t.scale,h=(label.naturalHeight||label.height)*t.scale;
       context.drawImage(label,t.left+(t.width-w)/2,t.top+(t.height-h)/2,w,h);
@@ -156,9 +156,9 @@
   function createPresenter({createCanvas=defaultCanvas,maxScale=1,margin=8}={}){
     if(typeof createCanvas!=='function'||!positive(maxScale)||!finite(margin)||margin<0)
       throw new TypeError('Canvas factory, positive uniform scale and nonnegative margin required');
-    let base=null,baseContext=null,layout=Object.freeze({active:false,mode:'native-fallback'});
+    let base=null,baseContext=null,caption=null,captionKey='',layout=Object.freeze({active:false,mode:'native-fallback'});
     const counters={backgroundCaptures:0,modalFrames:0,waitingFrames:0};
-    function reset(){base=null;baseContext=null;layout=Object.freeze({active:false,mode:'native-fallback'});}
+    function reset(){base=baseContext=caption=null;captionKey='';layout=Object.freeze({active:false,mode:'native-fallback'});}
     /** Capture only the last clean composed WORLD/HUD, BEFORE any cursor overlay.
      * Never pass a frame already containing an original native modal/cursor.
      * The copy is owned; later root rendering cannot overwrite the frozen HUD.
@@ -175,6 +175,7 @@
       try{baseContext.setTransform(1,0,0,1,0,0);baseContext.imageSmoothingEnabled=false;
         baseContext.clearRect(0,0,base.width,base.height);baseContext.drawImage(frame,0,0);
       }finally{baseContext.restore();}
+      captionKey='';
       counters.backgroundCaptures++;return true;
     }
     function plan(frame,{inGame=false,dialogOpen=false,packet=null,expectedToken,width,height,back,
@@ -343,6 +344,7 @@
       layout=Object.freeze({active:true,mode:ready?'modal':'waiting-native-dialog',
         width,height,background,source:ready?native.source:null,target:ready?(strips?unionTarget:mapRect(native.source)):null,
         unionSource:ready?native.union:null,unionTarget:ready?unionTarget:null,
+        restyled:preferences?'preferences':objectives?'objectives':compact?back.compact:null,
         layers:Object.freeze(ready?native.layers.map(layer=>Object.freeze({...layer,target:mapRect(layer.source)})):[]),
         strips:strips&&Object.freeze(strips),
         objectivesCheckbox,objectivesStone,preferencesBody,ok:okControl,restart,confirmation,actions:Object.freeze(actions),
@@ -361,27 +363,40 @@
         const b=p.background;context.drawImage(base,0,0,base.width,base.height,b.left,b.top,b.width,b.height);
         if(p.mode==='modal'){
           const texture=options.panelTexture;
+          const continuous=p.restyled&&texture?.naturalWidth;
+          const rows=global.WarcraftAssemblyDialogLayout;
           if(texture?.naturalWidth&&p.unionTarget){
-            const t=p.unionTarget,rim=Math.min(8,Math.max(2,Math.round(t.scale*3)));
-            context.save();
-            context.beginPath();
-            context.rect(t.left-rim,t.top-rim,t.width+rim*2,t.height+rim*2);
-            context.clip();
-            // One original image across the rim keeps the stones continuous.
-            context.drawImage(texture,t.left-rim,t.top-rim,t.width+rim*2,t.height+rim*2);
-            context.restore();
+            const t=p.unionTarget;
+            context.drawImage(texture,t.left,t.top,t.width,t.height);
           }
           for(const layer of p.strips||p.layers){
             const s=layer.source,t=layer.target;
             if(p.preferencesBody){
-              const rows=global.WarcraftAssemblyDialogLayout;
               if(layer.label){
                 const [x,y,w,h]=layer.label,l=layer.labelBox;
                 rows.paintControlInk(context,frame,{x:p.source.left+x,y:p.source.top+y,w,h},l);
                 const [a,b,c,d]=layer.help,help=layer.helpBox;
-                rows.paintControlInk(context,frame,{x:p.source.left+a,y:p.source.top+b,w:c,h:d},help);
+                rows.paintSoundEnds(context,frame,{x:p.source.left+a,y:p.source.top+b,w:c,h:d},help);
               }
               rows.paintSoundControl(context,frame,{...layer,source:paintRect(s),target:paintRect(t)});
+              continue;
+            }
+            if(continuous&&rows?.paintControlInk){
+              // A resized classic panel shares one stone texture. Blit just
+              // the native heading/body lettering, without old stone strips.
+              if(s.top===p.source.top){
+                const inset=7,native={x:s.left+inset,y:s.top+3,w:s.width-2*inset,h:s.height-3};
+                const scale=t.scale;
+                const key=`${p.restyled}:${p.token}:${native.x}:${native.y}:${native.w}:${native.h}`;
+                if(key!==captionKey){
+                  if(!caption)caption=createCanvas(native.w,native.h);
+                  caption.width=native.w;
+                  caption.height=native.h;
+                  rows.paintControlInk(caption.getContext('2d'),frame,native,{...native,x:0,y:0},true);
+                  captionKey=key;
+                }
+                context.drawImage(caption,t.left+inset*scale,t.top+3*scale,native.w*scale,native.h*scale);
+              }
               continue;
             }
             context.save();
@@ -391,17 +406,16 @@
             }finally{context.restore();}
           }
           if(p.preferencesBody){
-            const t=p.unionTarget,s=p.source;
-            context.drawImage(frame,s.left,s.top,s.width,3,t.left,t.top,t.width,3*t.scale);
-            context.drawImage(frame,s.left,s.top,3,s.height,t.left,t.top,3*t.scale,t.height);
-            paintSettingsFrame(context,frame,0x441940,s,t);
+            paintSettingsFrame(context,frame,0x441940,p.source,p.unionTarget,p.unionTarget.scale);
+          }else if(continuous){
+            paintPanelRim(context,frame,p.source,p.unionTarget,p.unionTarget.scale);
           }
           for(const action of p.actions)paintAction(context,frame,action);
           if(p.confirmation){
             const {button,label}=options.back.confirmation;
             paintAction(context,frame,{...p.confirmation.ok,button,label,confirmation:true});
           }
-          if(p.objectivesStone){
+          if(p.objectivesStone&&!continuous){
             const {source:s,target:t}=p.objectivesStone;
             const texture=options.panelTexture;
             if(texture?.naturalWidth){

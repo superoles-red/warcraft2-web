@@ -113,6 +113,18 @@
     return !!wallet && type >= 58 && lacksResources(read, wallet, 'build', type);
   }
 
+  function activeConstruction(wine, view) {
+    if (view?.count !== 1) return false;
+    const read = guestReader(wine);
+    const building = read(view.selectedPointers[0], 0x2d);
+    const player = read(0x4acb68, 1)?.getUint8(0);
+    if (!building || player === undefined || building.getUint8(0x2c) !== player) return false;
+    // Native construction cancellation checks the building type and rejects
+    // completed or removed objects before applying its original refund.
+    const typeFlags = read(0x4cf574 + building.getUint8(0x27) * 4, 1)?.getUint8(0);
+    return (typeFlags & 0x20) !== 0 && (building.getUint8(0x1e) & 0x87) === 0;
+  }
+
   function infoButtons(view, layer) {
     if (!layer?.root) return [];
     if (view(0x4bdcd0, 4)?.getUint32(0, true) !== layer.root) return [];
@@ -300,7 +312,7 @@
     }
     if (onTitlePrepared) {
       hold('menu');
-      if (window.WarcraftAudioLifecycle?.isAppleMobile(navigator)) {
+      if (window.matchMedia('(pointer: coarse)').matches || window.WarcraftAudioLifecycle?.isAppleMobile(navigator)) {
         wrap(wine, '_scheduleStep', schedule => function(step, delay = 0) {
           // The idle title polls even when there is no native work. Use the
           // host's interruptible timer there and keep normal scheduling as
@@ -310,9 +322,15 @@
           return schedule.call(this, step, idleTitle && delay === 0 ? 4 : delay);
         });
       }
+      let placementEscape = false;
       for (const name of ['handleKeyDown', 'handleKeyPress']) {
         if (typeof renderer[name] !== 'function') continue;
         wrap(renderer, name, handle => function(...args) {
+          if (name === 'handleKeyDown' && args[0] === 27 &&
+              (placementEscape || window.WarcraftFullMap?.canConfirmBuildCancellation?.())) {
+            placementEscape = true;
+            return; // The confirmation's own key listener handles this press.
+          }
           if (!demoPlaying() && !('warcraftTransition' in frame.dataset) &&
               !('warcraftPurchase' in frame.dataset)) return handle.apply(this, args);
         });
@@ -320,6 +338,10 @@
       for (const name of ['handleMouseDown', 'handleMouseMove', 'handleMouseUp', 'handleKeyUp']) {
         if (typeof renderer[name] !== 'function') continue;
         wrap(renderer, name, handle => function(...args) {
+          if (name === 'handleKeyUp' && args[0] === 27 && placementEscape) {
+            placementEscape = false;
+            return;
+          }
           if (!demoPlaying()) return handle.apply(this, args);
         });
       }
@@ -382,6 +404,7 @@
       purchaseTooltipMatches: command => purchaseTooltipMatches(wine, command),
       unavailableCommands: commands => unavailableCommands(wine, commands),
       placementUnaffordable: () => placementUnaffordable(wine),
+      activeConstruction: view => activeConstruction(wine, view),
       modalSlider: (layer, x, y) => window.WarcraftAssemblyMenuPolicy?.sliderAt(wine, layer, x, y),
       modalTexture() {
         if (!textures || !window.WarcraftUiBridge.state().inGame) return null;
