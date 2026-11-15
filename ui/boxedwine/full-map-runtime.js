@@ -19,7 +19,7 @@
   let bootstrapInUse=false,bootstrapPaletteKey=null;
   let cleanWorldReady=false,commandHighlight,lastWorldPaint=null,frozenWorld=null;
   let modalBackgroundWidth=0,modalBackgroundHeight=0,modalBackgroundDpr=0,modalBackgroundInsets=null;
-  const performanceStats={reusedWorldFrames:0};
+  const performanceStats={reusedWorldFrames:0,composedWorldFrames:0,reusedWorldCompositions:0,forceWorldComposition:false};
   let cropX=0,cropY=0,cropKey='';
   let minimapDrag=false;
   let sliderDrag=null;
@@ -620,22 +620,28 @@
       displayedEndRaster=null;
       const width=Math.max(1,Math.floor(container.clientWidth)),height=Math.max(1,Math.floor(container.clientHeight));
       const dpr=enhancedHud?Math.max(1,Math.min(3,global.devicePixelRatio||1)):1;
+      const pixelWidth=Math.round(width*dpr),pixelHeight=Math.round(height*dpr);
       const receipt=cameraPilot&&view?.usable&&lastScene.packet?.usable
         ? {currentCamera:view.currentCamera,sequence:lastScene.packet.sequence}:undefined;
       const world=enhancedHud?camera.frame(g,width,height,undefined,receipt,mobileEdgeRoom()):
         croppedWorld(g,width,height);
       if(coherentFrames&&!world){waitForNativeFrame();return;}
+      const previousPaint=lastWorldPaint;
+      let key,sameWorld=false;
       if(cameraPilot){
-        const key=[lastScene.packet.sequence,ui.revision,foreground.revision,state.selectionCount,missingResources,
-          state.buildingPending,width,height,dpr,hudInsets,world.left,world.top,world.width,world.height];
-        if(telemetry.mode==='world'&&chart&&lastWorldPaint?.every((value,index)=>value===key[index])){
+        key=[lastScene.packet.sceneEpoch,ui.revision,foreground.revision,view?.selectionToken,state.selectionCount,
+          missingResources,state.buildingPending,state.inputAllowed,width,height,dpr,hudInsets,
+          g.width,g.height,g.mapWidth,g.mapHeight,g.cameraX,g.cameraY,g.world.left,g.world.top,g.world.right,g.world.bottom,
+          world.left,world.top,world.width,world.height,world.visibleGlobal.x,world.visibleGlobal.y];
+        sameWorld=visible&&telemetry.mode==='world'&&chart&&output.width===pixelWidth&&output.height===pixelHeight&&
+          !context.isContextLost?.()&&previousPaint?.key.every((value,index)=>value===key[index]);
+        if(sameWorld&&previousPaint.packet===lastScene.packet){
           updateBuildConfirm(state,'world');
           updateCommandHighlight();
           performanceStats.reusedWorldFrames++;
           scheduleAnimation();
           return;
         }
-        lastWorldPaint=key;
       }
       const hud=balancedHud?balancedRegions(width,height,g,ui,foreground,state):
         cleanHud?cleanRegions(width,height,g,ui,foreground,state):null;
@@ -645,20 +651,29 @@
         world:projection.source,width,height,map:{fit:'contain',target:projection.target},
         regions:hud?.regions||regions(width,height,g,commands),
         provenance:{source:g.source,revision:g.revision,nativeWorld:g.world}});
-      const layers=balancedHud?foregroundPainter.capture(foreground):
-        hud?{'native-hud-foreground':foregroundPainter.capture(foreground).frame}:{};
       const framePixels=lastScene.partialFrame?visibleFramePainter.paint(lastScene.packet,nextChart,!camera.active):
         coherentFrames?nativeFramePainter.paint(lastScene.frame):lastScene.frame;
+      // A new native packet still advances input and freeze geometry. The
+      // previous display can remain only when every sampled tile and the HUD
+      // and viewport keys are identical to that exact displayed packet.
+      const reuseComposition=sameWorld&&!performanceStats.forceWorldComposition&&!camera.active&&
+        lastScene.partialFrame&&previousPaint.partialFrame&&visibleFramePainter.unchangedFrom(previousPaint.packet);
       setVisible(true);
       chart=nextChart;
       telemetry.mode='world';
-      if(output.width!==Math.round(width*dpr))output.width=Math.round(width*dpr);
-      if(output.height!==Math.round(height*dpr))output.height=Math.round(height*dpr);
-      chart.render(context,framePixels,{layers,
-        afterMap:cameraPilot?(ctx,map)=>drawWorldOutline(ctx,map,world,g):undefined});
-      paintUnavailableCommands(context,chart,missingResources);
-      if(cameraPilot)drawMinimapOutline(context,chart,world,g,dpr);
-      else if(camera?.independent)drawMinimapView(world,g,dpr);
+      if(reuseComposition)performanceStats.reusedWorldCompositions++;
+      else{
+        const layers=balancedHud?foregroundPainter.capture(foreground):
+          hud?{'native-hud-foreground':foregroundPainter.capture(foreground).frame}:{};
+        if(output.width!==pixelWidth)output.width=pixelWidth;
+        if(output.height!==pixelHeight)output.height=pixelHeight;
+        chart.render(context,framePixels,{layers,
+          afterMap:cameraPilot?(ctx,map)=>drawWorldOutline(ctx,map,world,g):undefined});
+        paintUnavailableCommands(context,chart,missingResources);
+        if(cameraPilot){drawMinimapOutline(context,chart,world,g,dpr);performanceStats.composedWorldFrames++;}
+        else if(camera?.independent)drawMinimapView(world,g,dpr);
+      }
+      if(cameraPilot)lastWorldPaint={key,packet:lastScene.packet,partialFrame:lastScene.partialFrame};
       lastRenderedGeometry=g;
       updateBuildConfirm(state,'world');
       if(cameraPilot){
@@ -1134,6 +1149,9 @@
     }
     const resize=()=>{camera?.stop();cancelButtons();global.WarcraftDuneControls?.cancel?.();render();};
     listen('resize',resize);
+    if(cameraPilot)output.addEventListener('contextrestored',()=>{
+      lastWorldPaint=null;scheduleAnimation(true);
+    },{signal:listeners.signal});
     document.addEventListener('fullscreenchange',resize,{signal:listeners.signal});
     installed=true;
     if(host)return uninstall;

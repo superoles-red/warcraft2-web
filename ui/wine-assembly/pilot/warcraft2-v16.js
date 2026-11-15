@@ -300,6 +300,16 @@
     }
     if (onTitlePrepared) {
       hold('menu');
+      if (window.WarcraftAudioLifecycle?.isAppleMobile(navigator)) {
+        wrap(wine, '_scheduleStep', schedule => function(step, delay = 0) {
+          // The idle title polls even when there is no native work. Use the
+          // host's interruptible timer there and keep normal scheduling as
+          // soon as any transition, native menu or match takes over.
+          const idleTitle = !document.hidden && frame.dataset.warcraftMode === 'title' &&
+            !('warcraftTransition' in frame.dataset);
+          return schedule.call(this, step, idleTitle && delay === 0 ? 4 : delay);
+        });
+      }
       for (const name of ['handleKeyDown', 'handleKeyPress']) {
         if (typeof renderer[name] !== 'function') continue;
         wrap(renderer, name, handle => function(...args) {

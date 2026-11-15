@@ -160,7 +160,7 @@
             packet.cameraX === previous.cameraX && packet.cameraY === previous.cameraY &&
             packet.indices.byteOffset % 4 === 0 && previous.indices.byteOffset % 4 === 0 &&
             packet.palette.every((byte,index) => byte === previous.palette[index])) {
-          comparison = {before: words(previous.indices), after: words(packet.indices)};
+          comparison = {packet: previous, before: words(previous.indices), after: words(packet.indices)};
         }
       }
       paletteBytes.set(packet.palette);
@@ -258,6 +258,9 @@
           if (region.visible && !region.layer) paintRect(region.visualSource,reuse);
         }
         return canvas;
+      },
+      unchangedFrom(packet) {
+        return comparison?.packet === packet && expanded === 0 && reused > 0;
       },
       debug() { return {expanded, reused, uploads, uploadedPixels, full: canvas.width * canvas.height}; },
     };
