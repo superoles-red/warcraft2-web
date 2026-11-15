@@ -461,7 +461,7 @@
       showSession({
         heading:text(continuing ? 'resume' : 'newGame'),
         lines,
-        accept:{title:text(continuing ? 'continue' : 'start'), ready, action() {
+        accept:{title:text(continuing ? 'continue' : 'start'), ready, nativeClick:true, action() {
           if (!start()) return false;
           closeSession();
           return true;
@@ -549,6 +549,7 @@
     function confirmFast(start) {
       const slot = session?.native.snapshotFast?.();
       if (!slot) return false;
+      wine.playWarcraftMenuClick?.();
       confirm(slot, () => {
         session.native.armFast(slot);
         return start();
@@ -591,6 +592,7 @@
       const button = document.createElement('button');
       button.type = 'button';
       button.setAttribute('aria-label', item.caption === 'feedback' ? sessionArt.text('feedback') : item.label);
+      button.toggleAttribute('data-warcraft-native-click', !!item.source && !item.campaign);
       if (item.action) button.dataset.warcraftMenuAction = item.action;
       button.addEventListener('pointerdown', () => { pressed = item.label; repaint(); });
       for (const event of ['pointerup', 'pointerleave', 'pointercancel']) {
@@ -876,8 +878,8 @@
         }
         if (!active) return original.apply(this, args);
         if (name === 'handleKeyDown' && args[0] === 27 && !pending) {
-          const back = presented?.controls.find(item => item.label === 'Back' || item.label === 'Cancel');
-          if (back) action(back);
+          const back = presented?.controls.findIndex(item => item.label === 'Back' || item.label === 'Cancel');
+          buttons[back]?.click();
         }
       };
     }

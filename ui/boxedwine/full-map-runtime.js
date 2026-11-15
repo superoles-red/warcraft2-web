@@ -631,7 +631,6 @@
       const width=Math.max(1,Math.floor(container.clientWidth)),height=Math.max(1,Math.floor(container.clientHeight));
       const dpr=enhancedHud?Math.max(1,Math.min(3,global.devicePixelRatio||1)):1;
       if(cameraPilot)resizeFrozenWorld(width,height,dpr);
-      const framePixels=coherentFrames?nativeFramePainter.paint(lastScene.frame):lastScene.frame;
       const objectiveEnd=objectivesBodyEnd?.(view?.modal,lastScene.packet);
       if(objectiveEnd===null){
         objectivesWaitUntil??=performance.now()+300;
@@ -642,8 +641,20 @@
         back,fillBackground:!!onPresented,
         dialogPixelRatio:onPresented?dpr:0,
         leftInset:hudInsets.left>4?hudInsets.left*dpr:0,rightInset:hudInsets.right>4?hudInsets.right*dpr:0};
-      if(onPresented&&modalPresenter.plan(framePixels,{...modal,width:Math.round(width*dpr),
-        height:Math.round(height*dpr)}).mode!=='modal'){waitForNativeFrame();return;}
+      const nativeFrame=lastScene.frame;
+      const plan=onPresented&&modalPresenter.plan(coherentFrames?nativeFrame?.screen:nativeFrame,
+        {...modal,width:Math.round(width*dpr),height:Math.round(height*dpr)});
+      if(plan&&plan.mode!=='modal'){waitForNativeFrame();return;}
+      let region=coherentFrames?plan?.unionSource:null;
+      if(region&&plan.back?.replaceButton){
+        const s=plan.back.source,extra=Math.ceil(2/plan.target.scale);
+        region={left:Math.max(0,Math.min(region.left,s.left-extra)),
+          top:Math.max(0,Math.min(region.top,s.top-s.height-extra*3)),
+          right:Math.min(nativeFrame.screen.width,Math.max(region.right,s.right+extra)),bottom:region.bottom};
+      }
+      // The frozen playfield is already composited. Expand only the indexed
+      // native pixels that the dialog samples, in their original coordinates.
+      const framePixels=coherentFrames?nativeFramePainter.paint(nativeFrame,region):nativeFrame;
       setVisible(true);
       if(output.width!==Math.round(width*dpr))output.width=Math.round(width*dpr);
       if(output.height!==Math.round(height*dpr))output.height=Math.round(height*dpr);

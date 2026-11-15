@@ -415,6 +415,12 @@
     return counter && readVolumePair(wine, counter)?.[channel];
   }
 
+  function effectVolume(wine) {
+    const value = volume(wine, 'sound') ??
+      nativeView(wine, volumeOptions.sound.address, 4)?.getInt32(0, true);
+    return validVolume(value) ? value : 0;
+  }
+
   function setVolume(wine, channel, value) {
     if (!Object.hasOwn(volumeOptions, channel) || !validVolume(value)) return false;
     const counter = titleCounter(wine);
@@ -434,7 +440,7 @@
   }
 
   const api = Object.freeze({install, requestDemo, demoPlaying, requestSoundOptions, persistSoundOptions,
-    controls, volume, setVolume, sliderAt, showObjectivesAtStart});
+    controls, volume, effectVolume, setVolume, sliderAt, showObjectivesAtStart});
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WarcraftAssemblyMenuPolicy = api;
 })(globalThis);

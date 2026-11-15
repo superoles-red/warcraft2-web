@@ -61,10 +61,16 @@
       state.slot = validMission(campaign, mission + 1) ? {kind:'campaign', campaign, mission:mission + 1} : null;
       return write(state);
     }
+    function lose(value) {
+      const slot = normalizeSlot(value);
+      const state = read();
+      if (!slot || JSON.stringify(state.slot) !== JSON.stringify(slot)) return false;
+      return write({...state, slot:null});
+    }
     function importProgress(state) {
       return write(normalize(state));
     }
-    return Object.freeze({read, canStart, start, win, importProgress});
+    return Object.freeze({read, canStart, start, win, lose, importProgress});
   }
   const api = Object.freeze({create, campaigns, normalizeSlot});
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

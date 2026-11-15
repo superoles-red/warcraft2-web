@@ -189,6 +189,7 @@
       const choose = accept && button(accept.title,() => {
         if (accept.action() === false && id === token) show({heading,lines:[...lines,text('failed')],rows,accept,back,list,prose});
       },controls);
+      if (accept?.nativeClick) choose.setAttribute('data-warcraft-native-click', '');
       if (choose && accept.ready) {
         const updateReady = () => {
           if (id !== token) return;
@@ -211,7 +212,7 @@
       panel.classList.toggle('session-confirmation',!!accept);
       panel.classList.toggle('session-prose',prose);
       layer.hidden = false;
-      backAction = back;
+      backAction = () => arrow.click();
       layer.setAttribute('aria-label',heading);
       content.scrollTop = 0;
       if (list) content.querySelector('button:not(:disabled)')?.focus({preventScroll:true});
@@ -272,10 +273,12 @@
           showDetails([labels.scenarioFailed]);
         }
       });
+      choose.setAttribute('data-warcraft-native-click', '');
       const arrow = document.createElement('button');
       arrow.type = 'button';
       arrow.className = 'warcraft-session-back';
       arrow.setAttribute('aria-label', labels.back);
+      arrow.setAttribute('data-warcraft-native-click', '');
       const goBack = () => {
         if (!openDropdown) back();
         else {
@@ -350,6 +353,7 @@
           openDropdown.toggle.setAttribute('aria-expanded', 'false');
         }
         openDropdown = next;
+        arrow.toggleAttribute('data-warcraft-native-click', !next);
         if (next) {
           next.menu.hidden = false;
           next.toggle.setAttribute('aria-expanded', 'true');
@@ -437,7 +441,7 @@
       layer.hidden = false;
       refresh();
       layer.setAttribute('aria-label', labels.selectScenario);
-      backAction = goBack;
+      backAction = () => arrow.click();
       const selected = rows.find(row => row.entry === choice);
       if (selected) reveal(selected.wrapper, true);
       (selected?.button || rows[0]?.button || arrow).focus({preventScroll:true});

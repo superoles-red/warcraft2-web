@@ -189,6 +189,7 @@
             const native = window.WarcraftSessionNative.attach(wine, {
               onStarted: slot => store.start(slot),
               onVictory: slot => store.win(slot),
+              onDefeat: slot => store.lose(slot),
             });
             wine.warcraftSession = {store, native};
           }

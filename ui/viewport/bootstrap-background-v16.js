@@ -24,20 +24,31 @@
   function createPainter(){
     let canvas=null,ctx=null,image=null,words=null,key=null;
     const colors=new Uint8Array(1024),palette=new Uint32Array(colors.buffer);
-    return {paint(packet){
+    return {paint(packet, region){
       if(!packet?.usable)return null;
-      const next=packet.sceneEpoch+':'+packet.revision+':'+(packet.paletteRevision??'');
+      const {width,height}=packet.screen;
+      const {left=0,top=0,right=width,bottom=height}=region??{};
+      const next=[packet.sceneEpoch,packet.revision,packet.paletteRevision,left,top,right,bottom].join(':');
       if(key===next)return canvas;
       if(!canvas){canvas=global.document.createElement('canvas');ctx=canvas.getContext('2d');}
-      if(!image||image.width!==packet.screen.width||image.height!==packet.screen.height){
-        canvas.width=packet.screen.width;canvas.height=packet.screen.height;
-        image=ctx.createImageData(canvas.width,canvas.height);
+      if(canvas.width!==width)canvas.width=width;
+      if(canvas.height!==height)canvas.height=height;
+      if(!image||image.width!==right-left||image.height!==bottom-top){
+        image=ctx.createImageData(right-left,bottom-top);
         words=new Uint32Array(image.data.buffer);
       }
       for(let i=0;i<256;i++){colors[i*4]=packet.palette[i*4];colors[i*4+1]=packet.palette[i*4+1];
         colors[i*4+2]=packet.palette[i*4+2];colors[i*4+3]=255;}
-      for(let i=0;i<words.length;i++)words[i]=palette[packet.indices[i]];
-      ctx.putImageData(image,0,0);key=next;return canvas;
+      if(left===0&&right===width){
+        const offset=top*width;
+        for(let i=0;i<words.length;i++)words[i]=palette[packet.indices[offset+i]];
+      }else{
+        for(let y=top,i=0;y<bottom;y++){
+          const row=y*width;
+          for(let x=left;x<right;x++)words[i++]=palette[packet.indices[row+x]];
+        }
+      }
+      ctx.putImageData(image,left,top);key=next;return canvas;
     },reset(){key=null;}};
   }
   const api={parse,createPainter};

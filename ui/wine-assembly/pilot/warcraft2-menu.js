@@ -11,6 +11,11 @@
   const ACT_INTERLUDE = 0x429580;
   const CREDITS = 0x417d00;
   const MISSION_STATS = 0x4315e0;
+  const MISSION_VICTORY = 0x4599e0;
+  const MISSION_DEFEAT = 0x459b70;
+  const OUTCOME_SLOT = 3;
+
+  const isOutcome = handler => handler === MISSION_VICTORY || handler === MISSION_DEFEAT;
   const TITLE_IMAGE = 0x4be200;
   const IMAGE_PAINTER = 0x4886f0;
   const NATIVE_DIALOG_PAINTER = 0x405400;
@@ -56,13 +61,13 @@
   }
 
   function bottomButtonLayout(wine, current, width, height) {
-    if (!['credits', 'stats'].includes(current.cinematic) || width < 200 || height < 220) return null;
+    if (!['credits', 'stats'].includes(current.cinematic) || width < 200 || height < 180) return null;
     const isCredits = current.cinematic === 'credits';
     const dialog = current.scenes.find(scene => scene.handler === (isCredits ? CREDITS : MISSION_STATS));
     if (!dialog) return null;
+    const x = isCredits ? 524 : 456;
     const child = nativeView(wine, dialog.root, 0x4a)?.getUint32(0x46, true);
     const button = child && nativeView(wine, child, 0x36);
-    const x = isCredits ? 524 : 456;
     const source = area(x, 448, 106, 28);
     if (!button || button.getUint32(0x32, true) !== dialog.root ||
         button.getInt16(0x20, true) !== -2 || button.getUint16(0x22, true) !== 1 ||
@@ -80,6 +85,128 @@
       decoration:'tall-button'};
     return {width, height, mode: 'dialog', art: current.art, dialog, heldControls: [], regions: [control],
       paintRegions: [{source: art, target: area((width - w) / 2, top, w, h)}, control]};
+  }
+
+  function resultControls(wine, dialog) {
+    const seen = new Set(), controls = [];
+    let address = nativeView(wine, dialog.root, 0x4a)?.getUint32(0x46, true);
+    while (address && seen.size < 80) {
+      const child = nativeView(wine, address, 0x36);
+      if (!child || seen.has(address) || child.getUint32(0x32, true) !== dialog.root) return null;
+      seen.add(address);
+      const x = child.getInt16(4, true), y = child.getInt16(6, true);
+      const w = child.getInt16(8, true) - x + 1, h = child.getInt16(10, true) - y + 1;
+      if (x < 0 || y < 0 || w < 1 || h < 1 || x + w > dialog.w || y + h > dialog.h) return null;
+      controls.push({...area(dialog.x + x, dialog.y + y, w, h),
+        id: child.getInt16(0x20, true), kind: child.getUint16(0x22, true),
+        visible: Boolean(child.getUint32(0x18, true) & 8)});
+      address = child.getUint32(0, true);
+    }
+    return address ? null : controls;
+  }
+
+  function outcomeLayout(wine, dialog, width, height, bottomInset = 0) {
+    if (dialog.w !== 288 || dialog.h !== 128) return null;
+    const controls = resultControls(wine, dialog);
+    const source = controls?.find(({id, kind, visible}) => visible && id === -2 && kind === 1);
+    if (!source) return null;
+    const scale = Math.min(1.65, (width - 24) / dialog.w, (height - bottomInset - 24) / dialog.h);
+    if (scale <= 0) return null;
+    const gap = 6 * scale;
+    const headHeight = 56 * scale, paneWidth = dialog.w * scale;
+    const buttonHeight = global.WarcraftAssemblyDialogLayout.menuButtonHeight(width, height);
+    const paneHeight = headHeight + buttonHeight + gap*2;
+    const x = (width - paneWidth) / 2, y = (height - bottomInset - paneHeight) / 2;
+    const control = {source, decoration:'tall-button', accept:true,
+      target:area(x + gap*2,y + headHeight + gap,paneWidth - gap*4,buttonHeight)};
+    // The browser edition uses the campaign slot, including after victory.
+    // Omit the original manual "Save Game" action from the presentation.
+    return {width,height,mode:'dialog',art:ART,dialog,regions:[control],heldControls:[],
+      outcomePanel:{source:area(dialog.x,dialog.y,dialog.w,56),
+        target:area(x,y,paneWidth,paneHeight),headHeight}};
+  }
+
+  function statsLayout(wine, base, width, height, bottomInset = 0) {
+    const controls = resultControls(wine, base.dialog);
+    const headings = controls?.filter(row => row.kind === 10 && row.id >= 71 && row.id <= 77);
+    const names = controls?.filter(row => row.kind === 10 && row.id >= 4 && row.id <= 11);
+    if (!headings?.length || !names?.length) return null;
+    headings.sort((a,b) => a.x - b.x);
+    names.sort((a,b) => a.y - b.y);
+    const rows = names.map(name => ({
+      name,
+      cells: controls.filter(cell => cell.kind === 9 && cell.y + cell.h === name.y).sort((a,b) => a.x-b.x),
+    }));
+    if (rows.some(row => row.cells.length !== headings.length)) return null;
+
+    const split = width >= height * 1.2;
+    const inset = Math.min(16, width * .04, height * .045), gap = Math.min(16, height * .025);
+    const usableWidth = width - inset * 2, usableHeight = height - inset * 2 - bottomInset;
+    const buttonHeight = global.WarcraftAssemblyDialogLayout.menuButtonHeight(width,height);
+    const maxArtWidth = split ? Math.min(usableWidth * .45, usableHeight * 4/3) :
+      Math.min(usableWidth, usableHeight * .41 * 4/3);
+    const panelWidth = Math.min(720,split ? usableWidth - maxArtWidth - gap : usableWidth);
+    const compact = panelWidth < 510 && (rows.length <= 4 || !split);
+    const groups = compact ? [headings.slice(0,4),headings.slice(4)].filter(group=>group.length) : [headings];
+    const widest = Math.max(...groups.map(group=>group.length));
+    const titleRows = split ? 1 : 2;
+    const summaryHeight = titleRows * 62;
+    const groupHeight = 44, rowGap = 7;
+    const rowHeight = 35 + groups.length * groupHeight + rowGap;
+    const logicalHeight = summaryHeight + rows.length * rowHeight - rowGap;
+    const preferredArtHeight = split ? 0 : Math.min(maxArtWidth * .75,usableHeight * (rows.length > 4 ? .23 : .39));
+    const scale = Math.min(1.3,(panelWidth - 8) / (widest * 90),
+      (usableHeight - preferredArtHeight - buttonHeight - gap * (split ? 2 : 3)) / logicalHeight);
+    if (scale <= 0.2) return null;
+    const artWidth = split ? maxArtWidth : preferredArtHeight * 4/3;
+    const artHeight = artWidth * .75;
+    const totalHeight = logicalHeight * scale + gap + buttonHeight;
+    const layoutX = split ? (width - artWidth - gap - panelWidth) / 2 : (width - panelWidth) / 2;
+    const paneX = layoutX + (split ? artWidth + gap : 0);
+    let y = inset + (usableHeight - totalHeight - (split ? 0 : artHeight + gap)) / 2;
+    const artwork = area(split ? layoutX : (width-artWidth)/2,
+      split ? inset + (usableHeight - artHeight) / 2 : y,artWidth,artHeight);
+    if (!split) y += artHeight + gap;
+    const paneY = y;
+    const captions = [];
+    const add = (source,target) => captions.push({source,target});
+    const centeredCaption = (source,left,top,available) => {
+      const fullScale = Math.min(scale, available / source.w);
+      add(source,area(left + (available - source.w * fullScale) / 2,top,source.w * fullScale,source.h * fullScale));
+    };
+    const masthead = [area(0,58,214,70),area(214,58,220,62),area(434,58,206,62)];
+    if (split) masthead.forEach((source,i)=>centeredCaption(source,paneX+i*panelWidth/3,y,panelWidth/3));
+    else {
+      centeredCaption(masthead[0],paneX,y,panelWidth);
+      masthead.slice(1).forEach((source,i)=>centeredCaption(source,paneX+i*panelWidth/2,y+62*scale,panelWidth/2));
+    }
+    y += summaryHeight * scale;
+    const dividers = [];
+    for (const row of rows) {
+      dividers.push(y);
+      // The full-width native player name can be longer than a column. Trim
+      // only transparent side bearings when fitting it to the text panel.
+      captions.push({source:row.name,target:area(paneX+5,y,panelWidth-10,35*scale),centerInk:true});
+      y += 35 * scale;
+      let index = 0;
+      const metricsLeft = paneX + (panelWidth - widest * 90 * scale) / 2;
+      for (const group of groups) {
+        group.forEach((heading,column) => {
+          const cell = row.cells[index++];
+          const x = metricsLeft + column * 90 * scale;
+          add(heading,area(x,y,heading.w*scale,heading.h*scale));
+          add(cell,area(x+(90-cell.w)*scale/2,y+18*scale,cell.w*scale,cell.h*scale));
+        });
+        y += groupHeight * scale;
+      }
+      y += rowGap * scale;
+    }
+    const originalButton = base.regions[0];
+    const buttonWidth = originalButton.target.w;
+    const control = {...originalButton,target:area(paneX + (panelWidth - buttonWidth) / 2,
+      paneY + logicalHeight * scale + gap,buttonWidth,buttonHeight)};
+    return {...base,regions:[control],control,
+      statistics:{artwork,captions,dividers,panel:area(paneX,paneY,panelWidth,logicalHeight*scale),scale}};
   }
 
   function translate(regions, x, y, inverse = false) {
@@ -140,7 +267,22 @@
       callbacks.getUint32(0x38, true) === 0x43b280;
   }
 
+  function nativeOutcome(wine) {
+    const entry = nativeView(wine, SCENES + OUTCOME_SLOT * SCENE_STRIDE, SCENE_STRIDE);
+    if (!entry?.getUint8(0) || entry.getUint16(6,true) !== 288 || entry.getUint16(8,true) !== 128 ||
+        entry.getUint32(16,true) !== NATIVE_DIALOG_PAINTER) return null;
+    const root = entry.getUint32(12,true);
+    const record = nativeView(wine,root,0x4a);
+    if (record?.getUint16(0x20,true) !== OUTCOME_SLOT) return null;
+    const handler = record.getUint32(0x2a, true);
+    if (!isOutcome(handler)) return null;
+    return {slot:OUTCOME_SLOT,root,handler,painter:NATIVE_DIALOG_PAINTER,...area(entry.getUint16(2,true),
+      entry.getUint16(4,true),entry.getUint16(6,true),entry.getUint16(8,true))};
+  }
+
   function nativeScene(wine, authored) {
+    const outcome = authored && nativeOutcome(wine);
+    if (outcome) return {mode:'menu',art:ART,scenes:[outcome],outcome,cinematic:'outcome',controls:[]};
     const play = nativeView(wine, IN_GAME, 1);
     if (!play || play.getUint8(0) !== 0 || global.WarcraftUiBridge?.state()?.inGame) return null;
     const registry = nativeView(wine, SCENES + 2 * SCENE_STRIDE, 6 * SCENE_STRIDE);
@@ -208,25 +350,28 @@
     return `rgb(${data[offset]}, ${data[offset + 1]}, ${data[offset + 2]})`;
   }
 
-  function installBackdrop(wine, image, previous) {
-    const descriptor = nativeView(wine, TITLE_IMAGE, 8);
+  function installBackdrop(wine, image, previous, artworkAddress = TITLE_IMAGE) {
+    const descriptor = nativeView(wine, artworkAddress, 8);
     if (descriptor?.getUint16(0, true) !== ART.w || descriptor.getUint16(2, true) !== ART.h) return null;
     const pixels = descriptor.getUint32(4, true);
-    const palette = global.WarcraftUiBridge?.cursorPlane()?.palette;
-    if (!palette || palette.length !== 1024) return null;
-    if (previous?.pixels === pixels && palette.every((value, i) => value === previous.palette[i])) {
+    let palette = global.WarcraftUiBridge?.cursorPlane()?.palette;
+    const isNativeStatArt = artworkAddress !== TITLE_IMAGE;
+    if (!isNativeStatArt && (!palette || palette.length !== 1024)) return null;
+    const fallback = isNativeStatArt && nativeView(wine, 0x4ae894, 1024);
+    if (!isNativeStatArt && previous?.pixels === pixels && palette.every((value, i) => value === previous.palette[i])) {
       return previous;
     }
     const native = nativeView(wine, pixels, ART.w * ART.h);
     if (!native) return null;
     // The applied cursor palette and the DirectDraw output should agree.
     // Verify a background patch before masking foreground text against it.
-    const sample = image.getContext('2d').getImageData(0, 0, 3, 1).data;
-    for (let i = 0; i < 3; i++) {
-      const p = native.getUint8(i) * 4;
-      if (sample[i * 4] !== palette[p] || sample[i * 4 + 1] !== palette[p + 1] ||
-          sample[i * 4 + 2] !== palette[p + 2]) return null;
-    }
+    const span = isNativeStatArt ? 12 : 3;
+    const sample = image.getContext('2d').getImageData(0, 0, span, 1).data;
+    const matches = colors => colors && Array.from({length:span}, (_,i)=>native.getUint8(i)*4)
+      .every((offset,i)=>[0,1,2].every(channel=>sample[i*4+channel]===colors[offset+channel]));
+    if (!matches(palette) && fallback) palette = new Uint8Array(fallback.buffer,fallback.byteOffset,fallback.byteLength);
+    if (!matches(palette)) return null;
+    if (previous?.pixels === pixels && palette.every((value,i)=>value===previous.palette[i])) return previous;
     const canvas = document.createElement('canvas');
     canvas.width = ART.w;
     canvas.height = ART.h;
@@ -249,15 +394,26 @@
     draw(scratch, image, r, area(0, 0, r.w, r.h));
     const foreground = scratch.getImageData(0, 0, r.w, r.h);
     const data = foreground.data;
+    let left = r.w, right = 0;
     for (let y = 0; y < r.h; y++) {
       for (let x = 0; x < r.w; x++) {
         const at = (y * r.w + x) * 4, old = ((r.y + y) * ART.w + r.x + x) * 4;
         if (data[at] === backdrop.data[old] && data[at + 1] === backdrop.data[old + 1] &&
             data[at + 2] === backdrop.data[old + 2]) data[at + 3] = 0;
+        else if (region.centerInk) {
+          left = Math.min(left,x);
+          right = Math.max(right,x+1);
+        }
       }
     }
+    if (region.centerInk && right <= left) return;
     scratch.putImageData(foreground, 0, 0);
-    draw(context, scratch.canvas, area(0, 0, r.w, r.h), region.target);
+    const t = region.target;
+    if (region.centerInk) {
+      const scale = Math.min(t.w / (right-left),t.h / r.h);
+      const w = (right-left)*scale, h = r.h*scale;
+      draw(context,scratch.canvas,area(left,0,right-left,r.h),area(t.x+(t.w-w)/2,t.y+(t.h-h)/2,w,h));
+    } else draw(context, scratch.canvas, area(0, 0, r.w, r.h), t);
   }
 
   function drawTitle(context, image, chart, backdrop, scratch) {
@@ -287,7 +443,7 @@
     const originalImmediate = renderer.touchWantsImmediatePress;
     const fastSetup = 0x415640;
     let scene = null, chart = null, last = null, raf = 0, originX = 0, originY = 0;
-    let backdrop = null, borderColor = '#000';
+    let backdrop = null, statsArt = null, borderColor = '#000';
     let activating = false, transitioning = false;
     let scenarioDrag = null;
     let scenarioPickerRoot = null;
@@ -295,6 +451,9 @@
     if (authored) frame.classList.add('warcraft-owns-presentation');
     const dialogTexture = authored ? new Image() : null;
     if (dialogTexture) { dialogTexture.src = './menu-art/orc-texture.png'; dialogTexture.onload = repaint; }
+    const humanTexture = authored && new Image();
+    if (humanTexture) { humanTexture.onload = repaint; humanTexture.src = './menu-art/human-texture.png'; }
+    const resultTexture = () => nativeView(wine,0x4abb7c,1)?.getUint8(0) === 0 ? humanTexture : dialogTexture;
     const dialogBack = authored ? new Image() : null;
     if (dialogBack) { dialogBack.onload = repaint; dialogBack.src = './menu-art/menu-back-orc.png'; }
     const scenarioArt = authored ? ['track','thumb'].map(name => {
@@ -361,20 +520,50 @@
 
     function waitForScene() {
       chart = null;
-      transitioning = !global.WarcraftUiBridge?.state()?.inGame;
+      transitioning = scene?.cinematic === 'outcome' || scene?.cinematic === 'stats' ||
+        !global.WarcraftUiBridge?.state()?.inGame;
       navigation?.hide();
       onUnavailable?.();
     }
 
     function drawTallButton(image, source, target, current, accept = false) {
       const faction = nativeView(wine,0x4abb7c,1)?.getUint8(0) === 0 ? 'human' : 'orc';
-      const paper = current.mode === 'briefing' || current.cinematic === 'credits';
-      // Title dialogs are Orc-themed, while stats keep the match faction.
-      const style = current.cinematic === 'stats' ? faction : 'orc';
+      const statButton = current.cinematic === 'stats';
+      const paper = current.mode === 'briefing' || current.cinematic === 'credits' || statButton;
+      const style = current.cinematic === 'outcome' ? faction : 'orc';
       const acceptFace=source.w>106?acceptArt:shortAcceptArt;
-      const green = accept && acceptFace?.naturalWidth;
+      const green = (accept || statButton) && acceptFace?.naturalWidth;
       const art = green ? acceptFace : buttonArt[style+'-'+(source.w>106?'wide':'short')];
-      global.WarcraftAssemblyDialogLayout.paintTallButton(context,image,source,target,paper?null:art,undefined,paper,!green,green);
+      global.WarcraftAssemblyDialogLayout.paintTallButton(context,image,source,target,paper&&!green?null:art,undefined,paper,!green,green);
+    }
+
+    function paintOutcome(image, layout, current) {
+      const {source:s,target:t,headHeight} = layout.outcomePanel;
+      const scale = t.w/s.w;
+      const rim = 3 * scale;
+      // The original panel supplies the complete two-line caption and its
+      // top bevel; continue the same faction stone behind the larger buttons.
+      context.save();
+      context.translate(t.x,t.y);
+      global.WarcraftAssemblyMenuNavigation.paintTexture(context,resultTexture(),t.w,t.h);
+      context.restore();
+      draw(context,image,s,area(t.x,t.y,t.w,headHeight));
+      draw(context,image,area(s.x,s.y+3,3,s.h-3),area(t.x,t.y+headHeight,rim,t.h-headHeight));
+      draw(context,image,area(s.x+s.w-3,s.y+3,3,s.h-3),area(t.x+t.w-rim,t.y+headHeight,rim,t.h-headHeight));
+      draw(context,image,area(s.x,s.y+125,s.w,3),area(t.x,t.y+t.h-rim,t.w,rim));
+      for (const region of layout.regions) drawTallButton(image,region.source,region.target,current,region.accept);
+    }
+
+    function paintStatistics(image,layout,art,current) {
+      const {artwork,captions,dividers,panel,scale} = layout.statistics;
+      draw(context,art.canvas,ART,artwork);
+      context.fillStyle = 'rgba(0, 0, 0, .49)';
+      context.fillRect(panel.x,panel.y,panel.w,panel.h);
+      context.fillStyle = 'rgba(245, 213, 139, .35)';
+      for (const y of dividers) context.fillRect(panel.x + 5,y,panel.w - 10,Math.max(1,scale));
+      for (const caption of captions) drawForeground(context,image,caption,art,scratch);
+      const {source,target} = layout.control;
+      drawTallButton(image,source,target,current);
     }
 
     function dropdownCaption(text) {
@@ -474,7 +663,9 @@
           image !== renderer._exclusivePresentationSource ||
           image.width < ART.w || image.height < ART.h ||
           transform.srcX !== owner.x || transform.srcY !== owner.y) {
-        if (!authored || global.WarcraftFullMap?.active || !wine.running) hide();
+        const resultsTransition = wine.running && (scene?.cinematic === 'stats' || scene?.cinematic === 'outcome') &&
+          nativeView(wine,IN_GAME,1)?.getUint8(0) === 0;
+        if (!authored || !wine.running || (global.WarcraftFullMap?.active && !resultsTransition)) hide();
         else waitForScene();
         return;
       }
@@ -494,7 +685,13 @@
       const params = {width: contentWidth, height: rect.height, art: dialogArt, scenes: current.scenes, wine,
         backImage: dialogBack, bottomInset: insets?.bottom,
         backTarget: dialogBack?.naturalWidth && global.WarcraftAssemblyMenuNavigation.backBox(contentWidth, rect.height)};
-      const nativeDialog = authored && bottomButtonLayout(wine, current, contentWidth, rect.height) ||
+      const bottomDialog = authored && bottomButtonLayout(wine,current,contentWidth,rect.height);
+      const statistics = current.cinematic === 'stats' && bottomDialog &&
+        statsLayout(wine,bottomDialog,contentWidth,rect.height,insets?.bottom ?? 0);
+      const resultArtwork = statistics && installBackdrop(wine,image,statsArt,statistics.dialog.root+0x0c);
+      statsArt = resultArtwork || (statistics && statsArt) || null;
+      const outcome = current.outcome && outcomeLayout(wine,current.outcome,contentWidth,rect.height,insets?.bottom ?? 0);
+      const nativeDialog = outcome || (resultArtwork && statistics) || bottomDialog ||
         (current.mode === 'menu' && global.WarcraftAssemblyDialogLayout?.layout(params));
       const briefingLayout = global.WarcraftAssemblyBriefingLayout;
       const briefing = current.mode === 'briefing' && briefingLayout?.layout(params);
@@ -564,7 +761,8 @@
         }
         context.fillRect(0, 0, rect.width, rect.height);
         if (nativeDialog || (authored && current.cinematic)) {
-          global.WarcraftAssemblyMenuNavigation?.paintTexture(context, dialogTexture, rect.width, rect.height);
+          const texture = current.cinematic === 'stats' || current.outcome ? resultTexture() : dialogTexture;
+          global.WarcraftAssemblyMenuNavigation?.paintTexture(context, texture, rect.width, rect.height);
         }
         context.save();
         try {
@@ -573,6 +771,10 @@
             briefingLayout.paint({context,image,chart:briefing,prepared:preparedBriefing,
               backgroundLeft:-left,backgroundWidth:rect.width,
               paintContinue:(source,target)=>drawTallButton(image,source,target,current)});
+          } else if (next.outcomePanel) {
+            paintOutcome(image,next,current);
+          } else if (next.statistics) {
+            paintStatistics(image,next,resultArtwork,current);
           } else {
             if (next.scenarioFrame) drawScenarioFrame(image,next.scenarioFrame);
             if (backdrop && next.artwork) drawTitle(context, image, next, backdrop, scratch);
@@ -638,6 +840,8 @@
       originY = transform.srcY;
       transitioning = false;
       canvas.style.display = 'block';
+      const zIndex = next.outcomePanel || current.cinematic === 'stats' ? '4' : '2';
+      if (canvas.style.zIndex !== zIndex) canvas.style.zIndex = zIndex;
       onPrepared?.({mode: current.mode, authored: Boolean(authoredPaint)});
       if (!chart?.scenarioFrame) scenarioPickerRoot = null;
       else if (!chart.scenarioPopup && chart.dialog.root !== scenarioPickerRoot && navigation) {
@@ -752,6 +956,7 @@
       finally { if (button === 0) scenarioDrag = null; }
     }
     function keyDown(key,...args) {
+      if (key === 9 && chart?.outcomePanel) return;
       if (key === 13 && fastScene() && !navigation?.blocking &&
           navigation?.confirmFast(() => activate(510,418))) return;
       return originalKeyDown.call(this,key,...args);
@@ -773,6 +978,7 @@
 
     return {
       get nativeTouch() { return authored && chart?.mode === 'dialog'; },
+      get outcomeOpen() { return authored && !!nativeOutcome(wine); },
       onFrame(publication) {
         if (publication?.source) paint(publication.source);
         else if (!authored || !wine.running) hide();

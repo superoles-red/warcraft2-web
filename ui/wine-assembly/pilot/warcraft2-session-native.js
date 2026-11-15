@@ -7,6 +7,7 @@
     'human-btdp': {base:0x53c6, missions:12}, 'orc-btdp': {base:0x53c7, missions:12},
   });
   const level = 0x4abda2, gameState = 0x4ae480, inGame = 0x4ae86c;
+  const matchResult = 0x4ae862, matchEnding = 0x4ae86d;
   const customScenario = 0x4acc2e, networkGame = 0x4b49ce, replay = 0x4ae0f9;
   const selectedLevel = 0x48f780, finishedState = 0x48f782, finishedLevel = 0x48f784;
   const campaignCode = 0x48f7a0, outcomeCode = 0x48f7d0;
@@ -419,8 +420,14 @@
       return data instanceof Uint8Array && data.length > 0x1000 && data.length <= maxSaveBytes &&
         new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(0x28,true) === 0x32726157;
     }
-    function clearCheckpoint() {
-      try { global.localStorage.removeItem(checkpointKey); }
+    function clearCheckpoint(slot) {
+      try {
+        if (slot) {
+          const saved = JSON.parse(global.localStorage.getItem(checkpointKey));
+          if (JSON.stringify(saved?.slot) !== JSON.stringify(slot)) return;
+        }
+        global.localStorage.removeItem(checkpointKey);
+      }
       catch (_) {}
     }
     function commitCheckpoint() {
@@ -456,23 +463,34 @@
       mailbox.setUint16(0, requested, true);
       return true;
     }
+    function finish(result, id) {
+      const slot = active;
+      running = false;
+      active = null;
+      nativeView(wine, autosaveRequest, 1)?.setUint8(0, 0);
+      if (!slot) return;
+      if (result === 5 || result === 6) clearCheckpoint();
+      if (result === 5 && slot.kind === 'fast') pendingFast = slot;
+      const campaignMatches = slot.kind === 'campaign' && encodeCampaign(slot) === id;
+      if (result === 6 && campaignMatches) onVictory?.(slot);
+      if (result === 7 && (slot.kind === 'fast' || campaignMatches)) {
+        if (onDefeat?.(slot) !== false) clearCheckpoint(slot);
+      }
+    }
     function tick() {
       commitCheckpoint();
       acknowledgeScenario();
       const event = nativeView(wine, finishedState, 4);
-      if (event?.getUint16(0, true)) {
-        const result = event.getUint16(0, true), id = event.getUint16(2, true);
+      const result = event?.getUint16(0, true);
+      if (result) {
+        const id = event.getUint16(2, true);
         event.setUint16(0, 0, true);
-        const slot = active;
-        running = false;
-        active = null;
-        nativeView(wine, autosaveRequest, 1)?.setUint8(0, 0);
-        if (slot && (result === 5 || result === 6 || result === 7)) clearCheckpoint();
-        if (result === 5 && slot?.kind === 'fast') pendingFast = slot;
-        if (slot?.kind === 'campaign' && encodeCampaign(slot) === id) {
-          if (result === 6) onVictory?.(slot);
-          if (result === 7) onDefeat?.(slot);
-        }
+        finish(result, id);
+      } else if (active && offline() && word(gameState) === 3 && byte(inGame) === 0 &&
+          byte(matchEnding) === 1 && word(matchResult) === 7) {
+        // The defeated match sets its result before opening the native OK
+        // dialog. Clear the slot even if the player closes the app here.
+        finish(7, word(level));
       }
       if (resuming && byte(continueRequest) === 3) {
         resuming = null;

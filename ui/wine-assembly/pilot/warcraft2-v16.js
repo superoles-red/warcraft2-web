@@ -262,6 +262,7 @@
     const display = document.getElementById('screen-present');
     const frame = document.getElementById('screen-canvas-stack');
     const detachForegroundAudio = onTitlePrepared && window.WarcraftAudioLifecycle?.attach(wine);
+    const detachMenuClick = onTitlePrepared && window.WarcraftMenuClick?.attach(wine);
     const menuButtonSize = window.WarcraftAssemblyDialogLayout?.menuButtonHeight;
     const menuResize = onTitlePrepared && menuButtonSize && new ResizeObserver(([entry]) => {
       const {width,height} = entry.contentRect;
@@ -381,6 +382,7 @@
       source: surface, input: surface, display, frame, container: frame,
       independentCamera: window.WarcraftIndependentCameraPilot,
       onPresented: onTitlePrepared ? (mode, layout) => {
+        if (menu?.outcomeOpen) return;
         show('map', mode);
         if (mode === 'dialog') {
           const faction = modalFaction(wine);
@@ -427,7 +429,7 @@
         wrap(renderer, 'observePresentationPublication', observe => function(...args) {
           observe.apply(this, args);
           wine.warcraftSession?.native?.tick();
-          callback();
+          if (!menu?.outcomeOpen) callback();
           if (args[0]?.backend !== 'warcraft-map') menu?.onFrame(args[0]);
         });
       },
@@ -448,7 +450,7 @@
 
       function ownsWorld() {
         if (!wine.running || wine.guestWorker || presented !== 'map' || frame.dataset.warcraftMode !== 'world' ||
-            'warcraftTransition' in frame.dataset || renderer._immutableCaptureRequest) return false;
+            'warcraftTransition' in frame.dataset || renderer._immutableCaptureRequest || menu.outcomeOpen) return false;
         const hwnd = wine.instance.exports.get_dx_exclusive_hwnd() >>> 0;
         if (!hwnd || renderer._exclusiveTransform?.hwnd !== hwnd ||
             renderer.windows[hwnd]?.wasm !== wine.instance ||
@@ -498,6 +500,7 @@
     window.WarcraftFullMap.installInputRouter();
     return () => {
       detachForegroundAudio?.();
+      detachMenuClick?.();
       if (menuResize) {
         menuResize.disconnect();
         frame.style.removeProperty('--warcraft-menu-row-height');
