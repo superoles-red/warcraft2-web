@@ -51,9 +51,12 @@
 
   function caption(text, atlas, width, alignLeft = false) {
     const glyph = document.createElement('img');
+    const ink = window.WarcraftSessionText.ink(text,atlas,width,alignLeft);
     glyph.alt = '';
     glyph.draggable = false;
-    glyph.src = window.WarcraftSessionText.ink(text,atlas,width,alignLeft).toDataURL();
+    glyph.width = ink.width;
+    glyph.height = ink.height;
+    glyph.src = ink.toDataURL();
     return glyph;
   }
 
@@ -216,6 +219,7 @@
 
       clearScrollIndicators();
       const content = scrollingContent();
+      const landscape = window.matchMedia('(orientation: landscape)');
       const list = scrollRegion(content);
       const details = document.createElement('div');
       details.className = 'warcraft-scenario-details';
@@ -269,7 +273,7 @@
           choice = entry;
           openFilter(null);
           refresh();
-          reveal(wrapper);
+          if (!landscape.matches) reveal(wrapper);
         });
         wrapper.append(button);
         return {entry, button, wrapper};
@@ -341,6 +345,10 @@
         }
       }
 
+      function updateCardHeight() {
+        content.style.setProperty('--scenario-card-height', card.getBoundingClientRect().height + 'px');
+      }
+
       function printCard(entry) {
         const info = previews?.maps[entry.id];
         const players = entry.players;
@@ -377,17 +385,22 @@
           line.append(caption(message, atlas, copyWidth, true));
           copy.append(line);
         }
+        updateCardHeight();
       }
 
       function refresh() {
         const matches = entry => (size === null || entry.size === size) && (category === null || entry.category === category);
         const selected = choice && matches(choice) ? choice : null;
-        let matching = 0;
+        let matching = 0, expandedIndex = -1;
         for (const {entry,button,wrapper} of rows) {
           const hidden = !matches(entry);
           if (wrapper.hidden !== hidden) wrapper.hidden = hidden;
+          const index = matching;
           if (!hidden) matching++;
           const expanded = entry === selected;
+          if (expanded) expandedIndex = index;
+          wrapper.toggleAttribute('data-below-card', !hidden && expandedIndex >= 0 &&
+            index > expandedIndex && (index - expandedIndex) % 2 === 0);
           if (button.getAttribute('aria-expanded') !== String(expanded)) {
             button.setAttribute('aria-pressed', String(expanded));
             button.setAttribute('aria-expanded', String(expanded));
@@ -426,12 +439,19 @@
           reveal(card.parentElement);
         }
       });
+      scrollUpdates.set(card, () => {
+        if (currentCard) {
+          updateCardHeight();
+          updateScrollbar();
+        }
+      });
+      scrollObserver.observe(card,{box:'border-box'});
       void loadScenarioPreviews().then(index => {
         if (id !== token || !index) return;
         previews = index;
         if (currentCard) {
           printCard(currentCard);
-          reveal(card.parentElement);
+          if (!landscape.matches) reveal(card.parentElement);
         }
         scrollUpdates.get(content)?.();
       });

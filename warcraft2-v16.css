@@ -582,7 +582,13 @@
 @media (orientation: landscape) {
   .scenario-picker > .warcraft-scroll-region > .warcraft-session-content {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: var(--warcraft-menu-row-height);
     align-items: start;
+    overflow-anchor: none;
+  }
+  .warcraft-scenario-row[data-below-card] {
+    position: relative;
+    top: var(--scenario-card-height, 0px);
   }
 }
 @media (orientation: landscape) and (min-width: 560px) {
