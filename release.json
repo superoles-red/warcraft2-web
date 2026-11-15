@@ -1,5 +1,5 @@
 {
-  "version": "b1e54453a52e646ace808111",
+  "version": "697f507979515d50b68d9298",
   "files": [
     {
       "path": "LICENSE.wine-assembly",
@@ -1163,8 +1163,8 @@
     },
     {
       "path": "ui/boxedwine/full-map-runtime.js",
-      "bytes": 61151,
-      "sha256": "974150fad07dc036f5491e35906333120f35a0a776cef7f61f88a895326bb993"
+      "bytes": 61144,
+      "sha256": "46016bd19e43b487c23545616b8f01f8eb936db4d43e2e037660f6b60eb28881"
     },
     {
       "path": "ui/boxedwine/input-fence.js",
@@ -1342,5 +1342,5 @@
       "sha256": "0cc645613893c9dec209e8630337ac91773ae7972beef695b1d3038fd2b479a9"
     }
   ],
-  "workerSha256": "d4bdd9af1c85a2c38d1e4f1fccd74b86b350779ef9ee2d4091b157c024aec9af"
+  "workerSha256": "05f1236bc0e424c88e16d848567f7d36983de1972e68f73638db3087b6f453b7"
 }

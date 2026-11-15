@@ -273,8 +273,8 @@
   }
   function createPurchaseDialog() {
     const text={
-      en:{train:'Train this unit?',research:'Research this upgrade?',upgrade:'Upgrade this building?',ok:'OK',cancel:'Cancel'},
-      ru:{train:'Обучить этого бойца?',research:'Изучить улучшение?',upgrade:'Улучшить здание?',ok:'ОК',cancel:'Отмена'},
+      en:{train:'Train this unit?',research:'Research this upgrade?',upgrade:'Upgrade this building?',ok:'Buy',cancel:'Cancel'},
+      ru:{train:'Обучить этого бойца?',research:'Изучить улучшение?',upgrade:'Улучшить здание?',ok:'Купить',cancel:'Отмена'},
     };
     const current=global.WarcraftLanguage?.current()==='ru'?'ru':'en';
     const labels=text[current],font=global.WarcraftSessionText;
@@ -298,7 +298,7 @@
     const makeButton=key=>{
       const button=document.createElement('button');
       button.type='button';button.textContent=labels[key];button.setAttribute('aria-label',labels[key]);
-      art?.then(atlas=>button.replaceChildren(caption(key==='ok'?'OK':labels[key],atlas))).catch(()=>{});
+      art?.then(atlas=>button.replaceChildren(caption(labels[key],atlas))).catch(()=>{});
       return button;
     };
     const cancel=makeButton('cancel'),ok=makeButton('ok');
@@ -321,7 +321,7 @@
         event.preventDefault();event.stopImmediatePropagation();
       }
     },{capture:true});
-    controls.append(cancel,ok);
+    controls.append(ok,cancel);
     panel.append(title,description,icon,costs,controls);
     layer.append(panel);
     frame.append(layer);
