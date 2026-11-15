@@ -5,7 +5,8 @@
   const campaigns = Object.freeze({
     'human-tod':14, 'orc-tod':14, 'human-btdp':12, 'orc-btdp':12,
   });
-  const validMission = (campaign, mission) => Object.hasOwn(campaigns, campaign) &&
+  const validCampaign = id => typeof id === 'string' && Object.hasOwn(campaigns, id);
+  const validMission = (campaign, mission) => validCampaign(campaign) &&
     Number.isInteger(mission) && mission >= 1 && mission <= campaigns[campaign];
   function normalizeSlot(value) {
     if (value?.kind === 'campaign' && validMission(value.campaign, value.mission)) {
@@ -24,7 +25,9 @@
       return [id, Array.isArray(missions) ? [...new Set(missions.filter(m => validMission(id,m)))].sort((a,b) => a - b) : []];
     }));
     const slot = normalizeSlot(value?.slot);
-    return {completed, slot};
+    const lastCampaign = validCampaign(value?.lastCampaign) ? value.lastCampaign :
+      slot?.kind === 'campaign' ? slot.campaign : null;
+    return lastCampaign ? {completed, slot, lastCampaign} : {completed, slot};
   }
   function create(storage) {
     let current;
@@ -50,7 +53,9 @@
     function start(value) {
       const slot = normalizeSlot(value);
       if (!slot || (slot.kind === 'campaign' && !canStart(slot.campaign, slot.mission))) return false;
-      return write({...read(), slot});
+      const state = {...read(), slot};
+      if (slot.kind === 'campaign') state.lastCampaign = slot.campaign;
+      return write(state);
     }
     function win({campaign, mission}) {
       if (!validMission(campaign, mission)) return false;
@@ -68,7 +73,7 @@
       return write({...state, slot:null});
     }
     function importProgress(state) {
-      return write(normalize(state));
+      return write(normalize({...state, lastCampaign:read().lastCampaign}));
     }
     return Object.freeze({read, canStart, start, win, lose, importProgress});
   }

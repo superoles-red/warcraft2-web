@@ -56,9 +56,9 @@
     return Array.from(new Uint8Array(bytes), n => n.toString(16).padStart(2,'0')).join('');
   }
 
-  async function makeFile(state, session, portableFastSlot) {
-    const limited = state.slot?.kind === 'fast' && !portableFastSlot?.(state.slot);
-    const payload = checkedState(limited ? {...state, slot:null} : state, session, portableFastSlot);
+  async function makeFile({completed, slot}, session, portableFastSlot) {
+    const limited = slot?.kind === 'fast' && !portableFastSlot?.(slot);
+    const payload = checkedState({completed, slot:limited ? null : slot}, session, portableFastSlot);
     const body = {format, version, payload};
     const text = JSON.stringify({...body, checksum:await digest(body)}, null, 2) + '\n';
     if (encoder.encode(text).length > maxBytes) throw new Error('Save file is too large');
@@ -167,7 +167,7 @@
         if (file.size > maxBytes) throw new Error('Save file is too large');
         const payload = await readFile(await file.text(), stateAPI, portableFastSlot);
         if (!current || subpage !== 'files') return;
-        const contents = payload.slot ? art.slotName(payload.slot) : [label.progress];
+        const contents = payload.slot ? art.slotLines(payload.slot) : [label.progress];
         subpage = 'confirm';
         showSession({heading:label.confirm, lines:[...contents,label.replace], back:() => {
           subpage = 'files';

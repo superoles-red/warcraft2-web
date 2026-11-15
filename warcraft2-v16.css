@@ -12,6 +12,28 @@
 #screen-canvas-stack.warcraft-owns-presentation :is(#screen-present, #screen) { opacity: 0 !important; }
 #warcraft-menu-navigation { position: absolute; inset: 0; z-index: 3; }
 #warcraft-menu-navigation[hidden] { display: none !important; }
+.warcraft-menu-section-heading {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  pointer-events: none;
+}
+.warcraft-menu-section-heading[hidden] { display: none; }
+.warcraft-menu-section-heading canvas {
+  display: block;
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.warcraft-menu-section-heading canvas,
+.warcraft-session-panel h2 img,
+.session-confirmation p:not([data-highlight]) img,
+.warcraft-purchase-panel h2 img {
+  filter: grayscale(1) brightness(1.42);
+}
 #warcraft-menu-navigation button {
   position: absolute;
   border: 0;

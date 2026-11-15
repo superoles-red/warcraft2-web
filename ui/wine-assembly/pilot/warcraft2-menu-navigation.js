@@ -31,11 +31,17 @@
   const optionPages = {
     options: [{label:'Sound', glyph:'sound', soundOptions:true}, submenu('Language'), submenu('Story')],
     story: [nativeButton(312, 'Replay Introduction'), nativeButton(348, 'Show Credits'),
-      {label: 'Replay Demo', glyph: 'replay-demo', demo: true}],
+      {label: 'Replay Demo', caption: 'replayDemo', demo: true}],
   };
   const parentPage = {options: 'title', story: 'options', language: 'options',
     'language-pack': 'language', 'language-download': 'language', 'language-delete': 'language-pack'};
-  const localizedGlyphs = new Set(['options', 'fast-scenario', 'replay-demo', 'story', 'sound', 'language']);
+  const sectionTitles = {
+    en: {single:'Single Player Game', campaign:'Campaign', options:'Options', story:'Story', language:'Language',
+      'language-pack':'Russian', 'language-download':'Download Language', 'language-delete':'Delete Language'},
+    ru: {single:'Одиночная игра', campaign:'Кампания', options:'Настройки', story:'История', language:'Язык',
+      'language-pack':'Русский', 'language-download':'Скачать язык', 'language-delete':'Удалить язык'},
+  };
+  const localizedGlyphs = new Set(['options', 'fast-scenario', 'story', 'sound', 'language']);
   const packGlyphs = ['download', 'delete', 'cancel', 'use', 'download-language', 'delete-language'];
   for (const name of packGlyphs) localizedGlyphs.add(name);
   const language = () => window.WarcraftLanguage;
@@ -322,14 +328,15 @@
     const sessionCaptions = new Map();
     let resume = null, resumeTimer = 0;
     let scenarioPickerOpen = false, scenarioCloseTimer = 0;
-    if (session) for (const locale of ['en', 'ru']) {
+    for (const locale of ['en', 'ru']) {
       window.WarcraftSessionText.load(locale).then(atlas => {
         sessionAtlases.set(locale, atlas);
         repaint();
       }).catch(console.error);
     }
     const images = Object.fromEntries(['orc-texture', 'title-version-clean', 'title-landscape-art', 'title-logo', 'title-button', 'title-button-pressed', 'menu-back-orc', 'menu-back-orc-pressed',
-      'label-options', 'label-fast-scenario', 'label-replay-demo',
+      'title-accept-button', 'title-accept-button-pressed',
+      'label-options', 'label-fast-scenario',
       'label-story', 'label-sound', 'label-language', 'label-english',
       'label-russian', 'label-russian-text', 'language-selected', 'language-unselected',
       'language-disabled',
@@ -345,6 +352,9 @@
     message.className = 'warcraft-language-status';
     message.setAttribute('role', 'status');
     message.hidden = true;
+    const sectionHeading = document.createElement('h2');
+    sectionHeading.className = 'warcraft-menu-section-heading';
+    sectionHeading.hidden = true;
 
     function clearPending() {
       pending = false;
@@ -455,8 +465,8 @@
     }
 
     function confirm(slot, start, back, continuing = false, ready) {
-      const {text, slotName} = sessionArt;
-      const lines = slotName(slot);
+      const {text, slotLines} = sessionArt;
+      const lines = slotLines(slot);
       if (!continuing && session.store.read().slot) lines.push(text('replace'));
       showSession({
         heading:text(continuing ? 'resume' : 'newGame'),
@@ -603,10 +613,10 @@
       return button;
     }
 
-    function setButtons(items, boxes, home) {
+    function setButtons(items, boxes, home, preferredCampaign) {
       const labels = items.map(i => i.label).join('|');
       if (layer.dataset.buttons !== labels) {
-        layer.replaceChildren();
+        layer.replaceChildren(sectionHeading);
         buttons = items.map(makeButton);
         layer.append(message);
         layer.dataset.buttons = labels;
@@ -617,7 +627,8 @@
         const item = items[i], control = buttons[i];
         control.disabled = pending || languageBusy || !!item.disabled ||
           !!(item.language === 'ru' && !language()?.available?.('ru'));
-        control.toggleAttribute('data-warcraft-default', home && i === 0);
+        control.toggleAttribute('data-warcraft-default', home && i === 0 ||
+          !!preferredCampaign && item.campaign === preferredCampaign);
         if (item.language) control.setAttribute('aria-pressed',
           String(item.language === (language()?.current?.() || 'en')));
       });
@@ -625,7 +636,7 @@
 
     function place(width, height, count, {portrait, campaign, hasBack, hasHeading, hasMessage, safeBottom, showLogo}) {
       const standardHeight = window.WarcraftAssemblyDialogLayout.menuButtonHeight(width,height);
-      const gap = Math.min(8,standardHeight*.16);
+      const gap = Math.min(!portrait&&count>4?5:8,standardHeight*.16);
       const corner = backBox(width, height);
       const back = {x:corner.x+corner.w-standardHeight,
         y:Math.min(corner.y+corner.h,height-safeBottom)-standardHeight,w:standardHeight,h:standardHeight};
@@ -643,30 +654,37 @@
       const w = 224*scale;
       const buttonBottom = (portrait && hasBack ? back.y : height-safeBottom)-gap;
       const messageRoom = hasMessage ? 28 : 0;
-      const headingHeight = hasHeading ? Math.max(22,28*scale)+6 : 0;
+      const headingHeight = hasHeading ? Math.max(16,Math.min(27,19*scale)) : 0;
+      const sectionRoom = hasHeading ? headingHeight+gap : 0;
       let logo = null;
       if (showLogo) {
         const image = images['title-logo'];
         const ratio = image.naturalWidth/image.naturalHeight;
+        const rows = count + (campaign ? .84 : 0);
         const homeTop = height-safeBottom-gap-3*standardHeight-2*gap;
+        const sectionTop = buttonBottom-messageRoom-rows*Math.min(standardHeight,count>4?40:44)-
+          (count-1)*gap-sectionRoom;
+        const logoBottom = hasHeading ? sectionTop : homeTop;
+        const logoRoom = Math.max(hasHeading ? height*.12 : 0,logoBottom-artTop-gap);
         const logoWidth = portrait ? Math.min(width*.67,height*.36,326) :
-          Math.min(width*.45,height*.64,326,Math.max(0,homeTop-artTop-gap)*ratio);
+          Math.min(width*.45,height*.64,326,logoRoom*ratio);
         if (logoWidth > 0) logo = {x:(width-logoWidth)/2,y:artTop,w:logoWidth,h:logoWidth/ratio};
       }
       const artEnd = artTop + heroHeight;
       const logoEnd = logo ? logo.y + logo.h : artTop;
-      const panelTop = (portrait ? Math.max(artEnd,logoEnd) : logoEnd)+gap+headingHeight;
+      const panelTop = (portrait ? Math.max(artEnd,logoEnd) : logoEnd)+gap+sectionRoom;
       const panelBottom = buttonBottom-messageRoom;
       const rowUnits = count + (campaign ? .84 : 0);
       const rowGap = Math.min(gap,Math.max(1,(panelBottom-panelTop)/(count*6)));
       const h = Math.min(standardHeight,Math.max(1,(panelBottom-panelTop-(count-1)*rowGap)/rowUnits));
       const headingRoom = campaign ? h*.42 : 0;
       const span = count*h+(count-1)*rowGap+2*headingRoom;
-      const centered = (Math.max(artEnd,logoEnd)+height)/2-span/2;
+      const centered = (Math.max(artEnd,logoEnd)+height-span+sectionRoom)/2;
       const top = (portrait ? Math.max(panelTop,Math.min(panelBottom-span,centered)) : panelBottom-span)+headingRoom;
       const boxes = Array.from({length:count},(_,i)=>({x:(width-w)/2,
         y:top+i*(h+rowGap)+(i>=2?headingRoom:0),w,h}));
-      return {picture, boxes, back, scale, logo};
+      const heading = hasHeading ? {x:(width-w)/2,y:top-headingRoom-sectionRoom,w,h:headingHeight} : null;
+      return {picture, boxes, back, scale, logo, heading};
     }
 
     function drawImage(context, image, box, source) {
@@ -689,6 +707,25 @@
       return drawImage(context, glyph, {x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h});
     }
 
+    function captionInk(label) {
+      const locale = sessionArt.locale(), id = locale + ':' + label;
+      if (!sessionCaptions.has(id)) sessionCaptions.set(id,
+        window.WarcraftSessionText.ink(label, sessionAtlases.get(locale)));
+      return sessionCaptions.get(id);
+    }
+
+    function updateSectionHeading(label, box) {
+      sectionHeading.hidden = !box;
+      if (!box) return;
+      const glyph = captionInk(label);
+      if (sectionHeading.firstChild !== glyph) {
+        sectionHeading.setAttribute('aria-label', label);
+        sectionHeading.replaceChildren(glyph);
+      }
+      const {x,y,w,h} = box;
+      Object.assign(sectionHeading.style, {left:x+'px',top:y+'px',width:w+'px',height:h+'px'});
+    }
+
     function languagePage() {
       if (!languagePack || page === 'language') return languages();
       if (page === 'language-download') return [
@@ -706,15 +743,16 @@
     function drawButton(context, image, item, box, captionScale, home = false) {
       if (item.source && !item.glyph && !item.caption) {
         const blank = images[pressed === item.label ? 'title-button-pressed' : 'title-button'];
-        return window.WarcraftAssemblyDialogLayout.paintTallButton(context,image,item.source,box,blank,captionScale,false,!home);
+        // The web menu owns the highlight in the campaign chooser and Story.
+        const ignoreNativeFocus = !!item.campaign || page === 'story';
+        return window.WarcraftAssemblyDialogLayout.paintTallButton(context,image,item.source,box,blank,captionScale,false,
+          !home&&!ignoreNativeFocus,false,ignoreNativeFocus);
       }
-      const base = images[pressed === item.label ? 'title-button-pressed' : 'title-button'];
+      const face = item.resume ? 'title-accept-button' : 'title-button';
+      const base = images[pressed === item.label ? face+'-pressed' : face];
       drawImage(context, base, box);
       if (item.caption) {
-        const locale = sessionArt.locale(), id = locale + ':' + item.caption;
-        if (!sessionCaptions.has(id)) sessionCaptions.set(id,
-          window.WarcraftSessionText.ink(sessionArt.text(item.caption), sessionAtlases.get(locale)));
-        const glyph = sessionCaptions.get(id);
+        const glyph = captionInk(sessionArt.text(item.caption));
         const scale = Math.min(captionScale, box.w / (glyph.width + 40));
         const w = glyph.width * scale, h = glyph.height * scale;
         drawImage(context, glyph, {x:box.x + (box.w-w)/2,y:box.y + (box.h-h)/2,w,h});
@@ -765,7 +803,8 @@
       const campaignLabels = ['Orc: Tides of Darkness', 'Human: Tides of Darkness',
         'Orc: Beyond the Dark Portal', 'Human: Beyond the Dark Portal'];
       const languageMenu = page.startsWith('language');
-      const titleItems = session?.store.read().slot ? [continueItem,...title] : title;
+      const saved = session?.store.read();
+      const titleItems = saved?.slot ? [continueItem,...title] : title;
       const options = page === 'options' && session
         ? [...optionPages.options, ...(window.WarcraftFiles ? [filesItem] : []), aboutItem] : optionPages[page];
       const items = campaign
@@ -775,14 +814,14 @@
       const home = scene.mode === 'title' && page === 'title';
       const feedback = session && scene.mode === 'title' && page === 'options';
       advanceResume(scene.mode, originals);
-      const heading = !languageMenu ? null : page === 'language-pack' ? 'russian' :
-        page === 'language-download' ? 'download-language' : page === 'language-delete' ? 'delete-language' : null;
+      const sectionTitle = sectionTitles[sessionArt.locale()][scene.mode === 'title' ? page : scene.mode];
       const hasBack = parentPage[page] || scene.mode === 'single' || campaign;
       if (!images['orc-texture'].naturalWidth || !images['title-version-clean'].naturalWidth ||
           !images['title-button'].naturalWidth || !images['title-button-pressed'].naturalWidth ||
+          (home && titleItems[0].resume &&
+            (!images['title-accept-button'].naturalWidth || !images['title-accept-button-pressed'].naturalWidth)) ||
           items.some(item => item.glyph && !labelImage(item)?.naturalWidth) ||
-          ((feedback || items.some(item => item.caption)) && !sessionAtlases.has(sessionArt.locale())) ||
-          (heading && !labelImage({glyph: heading})?.naturalWidth) ||
+          ((sectionTitle || feedback || items.some(item => item.caption)) && !sessionAtlases.has(sessionArt.locale())) ||
           (hasBack && (!images['menu-back-orc'].naturalWidth || !images['menu-back-orc-pressed'].naturalWidth))) {
         layer.hidden = true;
         return null;
@@ -791,8 +830,8 @@
       const portrait = width < height;
       if (!images['title-landscape-art'].complete || !images['title-logo'].complete) return null;
       const useSeparatedArt = !!images['title-landscape-art'].naturalWidth && !!images['title-logo'].naturalWidth;
-      const {picture, boxes, back, scale, logo} = place(contentWidth,height,items.length,
-        {portrait,campaign,hasBack,hasHeading:!!heading,hasMessage:languageMenu&&!message.hidden,
+      const {picture, boxes, back, scale, logo, heading} = place(contentWidth,height,items.length,
+        {portrait,campaign,hasBack,hasHeading:!!sectionTitle,hasMessage:languageMenu&&!message.hidden,
           safeBottom:Math.max(8,bottomInset),showLogo:useSeparatedArt});
       let feedbackBox;
       if (feedback) {
@@ -805,6 +844,7 @@
       }
       picture.x += leftInset;
       if (logo) logo.x += leftInset;
+      if (heading) heading.x += leftInset;
       back.x += leftInset;
       for (const box of boxes) box.x += leftInset;
       active = true;
@@ -835,11 +875,6 @@
         const last = boxes.at(-1);
         message.style.cssText = `position:absolute;left:${last.x}px;width:${last.w}px;` +
           `top:${last.y + last.h + 8}px;margin:0;text-align:center;color:#f4d343;font:14px/1.2 system-ui`;
-        const first = boxes[0];
-        if (heading) {
-          const h = Math.max(22, 28*scale), y = Math.max(4, first.y - h - 6);
-          drawLabel(context, {glyph: heading}, {...first, y, h}, scale);
-        }
       }
       items.forEach((item, i) => drawButton(context, image, item, boxes[i], scale, home));
       const controls = [...items];
@@ -855,8 +890,9 @@
         const arrow = images[pressed === 'Back' ? 'menu-back-orc-pressed' : 'menu-back-orc'];
         drawImage(context, arrow, back);
       }
-      presented = {picture, logo, controls, boxes, page};
-      setButtons(controls, boxes, home);
+      presented = {picture, logo, controls, boxes, page, heading: heading && {label:sectionTitle,box:heading}};
+      setButtons(controls, boxes, home, campaign ? saved?.lastCampaign ?? campaignIds[0] : null);
+      updateSectionHeading(sectionTitle, heading);
       return true;
     }
 

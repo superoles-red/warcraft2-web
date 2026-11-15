@@ -137,6 +137,10 @@
     0xf7e323,0xd3c31f,0xab8f13,0x5f3300,0xfffbf3,0x9f9f9f,0x6f6f6f,
     0xf4e020,0xd0c01c,0xa88c10,0x5c3000,0xfcf8f0,0x9c9c9c,0x6c6c6c,
   ]);
+  const UNFOCUSED_BUTTON_INK = new Map([
+    [0xfffbf3,0xf7e323],[0x9f9f9f,0xd3c31f],[0x6f6f6f,0xab8f13],
+    [0xfcf8f0,0xf4e020],[0x9c9c9c,0xd0c01c],[0x6c6c6c,0xa88c10],
+  ]);
   // Credits and briefing use neutral grayscale UI art; stone there never
   // exceeds gray 135. Keep the original light grayscale lettering ramp.
   const PAPER_BUTTON_INK = new Set([0xffffff,0xdbdbdb,0xbbbbbb,0x9b9b9b]);
@@ -153,7 +157,8 @@
     return artwork(width > 106 ? 'title-accept-button' : faction + '-accept-button');
   }
   let inkCanvas;
-  function paintTallButton(context,image,source,target,blank,captionScale,paper=false,useNativeFrame=true,preserveFocus=false) {
+  function paintTallButton(context,image,source,target,blank,captionScale,paper=false,useNativeFrame=true,preserveFocus=false,
+    useUnfocusedInk=false) {
     const {x:sx,y:sy,w:sw,h:sh}=source, {x,y,w,h}=target;
     const scale = Math.min(w/sw,h/sh);
     const rim = Math.min(4,sh/4), edge = rim*scale;
@@ -176,6 +181,12 @@
     for (let row=4;row<sh-4;row++) for(let col=6;col<sw-6;col++) {
       const i=row*sw+col,rgb=asRgb(i);
       text[i]=(paper?PAPER_BUTTON_INK:BUTTON_INK).has(rgb)?1:0;
+      const ink = useUnfocusedInk && UNFOCUSED_BUTTON_INK.get(rgb);
+      if (ink) {
+        data[i*4]=ink>>16;
+        data[i*4+1]=(ink>>8)&255;
+        data[i*4+2]=ink&255;
+      }
     }
     for (let row=1;row<sh;row++) for(let col=1;col<sw;col++) {
       const i=row*sw+col;
