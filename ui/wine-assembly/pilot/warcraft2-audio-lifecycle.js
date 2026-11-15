@@ -2,6 +2,8 @@
 (() => {
   'use strict';
   const CHECK_MS = 450;
+  const RESUME_RETRY_MS = 250;
+  const RESUME_TIMEOUT_MS = 1000;
 
   function isAppleMobile(nav) {
     return /iPhone|iPad|iPod/.test(nav.userAgent) ||
@@ -21,10 +23,13 @@
     const appleMobile = page.navigator && isAppleMobile(page.navigator);
     let context = null, pending = null, suspension = null, resumeTimeout = 0, check = 0;
     let needsSync = false, synced = false, nudged = false, leftPage = false, blurred = false;
+    let restartPending = false, autoResumes = 0;
     const hidden = () => doc.hidden || leftPage;
     const blocked = () => hidden() || session?.state === 'interrupted';
     wine.pauseAudibleWhenHidden = true;
     wine.foregroundAudioBlocked = blocked;
+    wine.holdsForegroundAudioCursor = () => !!(appleMobile && needsSync &&
+      (hidden() || pending || suspension));
 
     function visibleAgain() {
       blurred = false;
@@ -46,6 +51,10 @@
       needsSync = true;
       synced = false;
       nudged = false;
+      autoResumes = 0;
+      // Safari sometimes keeps a context "running" after an audio interruption.
+      // A previously audible worklet still needs its output route restarted.
+      restartPending = appleMobile && wine.hostCtx?._voices?._outputProgress?.()?.bytes > 0;
       clearResume();
       clearCheck();
     }
@@ -68,7 +77,7 @@
           recover();
         }
       };
-      attempt.timer = page.setTimeout(finish, 1000);
+      attempt.timer = page.setTimeout(finish, RESUME_TIMEOUT_MS);
       try { Promise.resolve(ac.suspend()).then(finish, finish); }
       catch (_) { finish(); }
     }
@@ -80,14 +89,13 @@
     }
 
     function observe() {
+      if (context?.state === 'suspended') clearSuspension();
       if (blocked()) {
         interrupt();
-      } else if (context?.state === 'interrupted') {
-        needsSync = true;
-        synced = false;
-      } else if (needsSync) {
-        recover();
+        return;
       }
+      if (context?.state === 'interrupted' && (!needsSync || synced)) markInterruption();
+      if (needsSync) recover();
     }
 
     function bind(next) {
@@ -95,6 +103,7 @@
       context?.removeEventListener('statechange', observe);
       context = next;
       synced = false;
+      autoResumes = 0;
       clearResume();
       clearSuspension();
       clearCheck();
@@ -132,24 +141,40 @@
     function recover(trusted = false) {
       const ac = context;
       if (!ac || blocked() || blurred || ac.state === 'closed' ||
-          (suspension && ac.state === 'running' && !trusted)) return;
+          (suspension && ac.state === 'running')) return;
       if (ac.state === 'running') {
+        clearResume();
+        autoResumes = 0;
+        if (restartPending) {
+          restartPending = false;
+          nudged = true;
+          suspendOutput(ac);
+          return;
+        }
         checkClock(ac);
         return;
       }
       if (pending && (!trusted || pending.trusted)) return;
+      if (appleMobile && !trusted && autoResumes >= 2) return;
+      // A context that actually stopped needs only the direct resume path.
+      restartPending = false;
       clearResume();
       const attempt = {trusted};
       pending = attempt;
-      resumeTimeout = page.setTimeout(clearResume, 1000);
-      // A trusted release must reach resume() in the gesture handler itself.
-      ac.resume().then(() => {
-        if (pending !== attempt) return;
+      const retry = appleMobile && !trusted && ++autoResumes === 1;
+      resumeTimeout = page.setTimeout(() => {
         clearResume();
-        if (context === ac && !blocked()) checkClock(ac);
-      }, () => {
-        if (pending === attempt) clearResume();
-      });
+        if (retry && context === ac) recover();
+      }, retry ? RESUME_RETRY_MS : RESUME_TIMEOUT_MS);
+      // A trusted release must reach resume() in the gesture handler itself.
+      const failed = () => { if (pending === attempt && !retry) clearResume(); };
+      try {
+        Promise.resolve(ac.resume()).then(() => {
+          if (pending !== attempt) return;
+          if (context === ac && ac.state === 'running') recover();
+          else failed();
+        }, failed);
+      } catch (_) { failed(); }
     }
 
     function gesture(event) {
@@ -167,7 +192,7 @@
     if (appleMobile) {
       page.addEventListener('blur', () => {
         blurred = true;
-        markInterruption();
+        if (!needsSync || synced) markInterruption();
       }, options);
       page.addEventListener('touchend', gesture, {...options,capture:true,passive:true});
     }
@@ -187,6 +212,7 @@
       bind(null);
       delete wine.pauseAudibleWhenHidden;
       delete wine.foregroundAudioBlocked;
+      delete wine.holdsForegroundAudioCursor;
       delete wine.bindForegroundAudio;
       delete wine.recoverForegroundAudio;
     };

@@ -1,5 +1,5 @@
 {
-  "version": "bab134f46d0f0c4816dcbe38",
+  "version": "32af760a14c4b4bccae94204",
   "files": [
     {
       "path": "LICENSE.wine-assembly",
@@ -128,8 +128,8 @@
     },
     {
       "path": "host.js",
-      "bytes": 387847,
-      "sha256": "939aabed8efd1ae1742f0833e8b8e0b002e2691c6b2be44e1b555b3373a68859"
+      "bytes": 387933,
+      "sha256": "7384c20e1fcd35ad4a2ab2923c629104d9d04e4d54ac2cb6151ed064193d911f"
     },
     {
       "path": "icons/apple-touch-icon.png",
@@ -458,8 +458,8 @@
     },
     {
       "path": "lib/host-audio.js",
-      "bytes": 211374,
-      "sha256": "7cfe1bc9aa105f3368644bf17bfd9daed3b027fc5a330565a051202dd0852178"
+      "bytes": 211743,
+      "sha256": "01a9c85d6c4e22ff52f4d0ed870266e3a47225c0faae2f21b15242f94742a669"
     },
     {
       "path": "lib/host-import-sigs.generated.json",
@@ -1328,8 +1328,8 @@
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-audio-lifecycle.js",
-      "bytes": 6675,
-      "sha256": "811d14b2324ce4b7f543a005c97fe99b83c100958c571cd593b8ea23c617c69b"
+      "bytes": 7974,
+      "sha256": "2d93a25ed9eff4af059b0493986a8a25b4b455f654b95b31c3e55ac95fab0299"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-briefing-layout.js",
@@ -1432,5 +1432,5 @@
       "sha256": "28ebe22c808997fa58cf2ffa28179fe6c9d48d3919736e823086940ebcbfdbd3"
     }
   ],
-  "workerSha256": "8181369e796c5e619bb46fc13c959f05e0805a50c66c7c22e3cfa419788b491f"
+  "workerSha256": "2bce64753af2feb38bb1856411f7599ccdec5fb590fed02143eed92634c1b0b9"
 }

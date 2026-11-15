@@ -2011,6 +2011,7 @@ class WineAssembly {
       get _audioCtx() { return self._audioCtx; },
       set _audioCtx(v) { self._audioCtx = v; self.bindForegroundAudio?.(v); },
       isForegroundAudioBlocked: () => self.foregroundAudioBlocked?.() === true,
+      holdsForegroundAudioCursor: () => self.holdsForegroundAudioCursor?.() === true,
       // The two seams that make the AudioContext lazy. host-audio owns the
       // context; the host owns the policy about when one should exist.
       markAudioRequested: () => self.markAudioRequested(),
