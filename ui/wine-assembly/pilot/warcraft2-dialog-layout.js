@@ -91,7 +91,7 @@
     const value=guestView(wine,address,64);
     if(!value)return '';
     const bytes=new Uint8Array(value.buffer,value.byteOffset,value.byteLength),end=bytes.indexOf(0);
-    return end>0&&!bytes.subarray(0,end).some(byte=>byte<32) ? nativeText.decode(bytes.subarray(0,end)) : '';
+    return end>0&&!bytes.subarray(0,end).some(byte=>byte<32) ? nativeText.decode(bytes.slice(0,end)) : '';
   }
 
   function readControls(wine, front, wantedTypes) {
