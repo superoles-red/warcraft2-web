@@ -11,6 +11,7 @@
   const selectedLevel = 0x48f780, finishedState = 0x48f782, finishedLevel = 0x48f784;
   const campaignCode = 0x48f7a0, outcomeCode = 0x48f7d0;
   const fastSetup = 0x4ad960, fastRoot = 0x4ad9c4;
+  const fastSetupPending = 0x4ad78c;
   const selectedMap = 0x4ad678, startUnits = 0x4ad78d, race = 0x4ad78e;
   const commandLineMap = 0x4ad9d0;
   const pickerHandler = 0x41d490, builtInList = 0x4964a0;
@@ -236,8 +237,9 @@
       if (!(file.attrs & 1) || file._provider || !fullPath.startsWith(mapRoot)) continue;
       const path = fullPath.slice(mapRoot.length);
       if (!packagedMapPath.test(path)) continue;
-      const filename = path.split('\\').at(-1), data = filename.length <= 31 && readPud(file.data);
-      if (data) entries.set(path, {...data,filename,path,title:mapTitle(filename),id:path});
+      const parts = path.split('\\'), filename = parts.at(-1), data = filename.length <= 31 && readPud(file.data);
+      const category = parts.slice(1,-1).join('/') || 'bne';
+      if (data) entries.set(path, {...data,filename,path,category,title:mapTitle(filename),id:path});
     }
     return entries;
   }
@@ -308,6 +310,11 @@
       const root = dword(fastRoot);
       return word(gameState) === 12 && offline() && root && dword(root + 0x2a) === 0x415640;
     }
+    function fastSetupReady() {
+      // The original setup poll at 0x414533 applies a pending map change.
+      // Starting before it runs lets that change cancel the native Start.
+      return Boolean(openFastSetup()) && byte(fastSetupPending) === 0;
+    }
     function openPicker(front) {
       return front?.slot === 4 && front.handler === pickerHandler && word(front.root + 0x20) === 4 &&
         dword(front.root + 0x2a) === pickerHandler && openFastSetup();
@@ -322,7 +329,7 @@
         const record = octets(view).slice(), size = record[1], players = record[2];
         const id = view.getUint16(6, true), title = nativeText(record.subarray(16));
         if (record[0] || builtInSizes[id - firstBuiltIn] !== size || !players || players > 8 || !title) return [];
-        entries.push({id:`builtin:${id}`,title,size,players,description:'',record});
+        entries.push({id:`builtin:${id}`,title,size,players,category:'builtin',description:'',record});
       }
       return entries;
     }
@@ -334,8 +341,8 @@
       const activePath = readSelectedPath();
       const selectedId = record[0] === 0 ? `builtin:${setup.getUint16(6,true)}` :
         activePath || `maps\\${filename}`;
-      return {selectedId, entries:[...builtIns, ...maps.values()].map(({id,title,size,players,description}) =>
-        ({id,title,size,players,description}))};
+      return {selectedId, entries:[...builtIns, ...maps.values()].map(({id,title,size,players,category,description}) =>
+        ({id,title,size,players,category,description}))};
     }
     function selectScenario(id, front) {
       if (!openPicker(front)) return false;
@@ -498,7 +505,7 @@
       if (resuming) nativeView(wine, continueRequest, 1)?.setUint8(0, 0);
       resuming = null;
     }
-    return {armCampaign,tick,scenarioChoices,selectScenario,snapshotFast,restoreFast,continueSlot,clearCheckpoint,readSession:() => active,
+    return {armCampaign,tick,scenarioChoices,selectScenario,snapshotFast,fastSetupReady,restoreFast,continueSlot,clearCheckpoint,readSession:() => active,
       armFast(slot) { pendingFast = slot?.kind === 'fast' ? slot : null; }};
   }
 

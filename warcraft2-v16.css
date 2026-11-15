@@ -369,6 +369,38 @@
   gap: 6px;
   scrollbar-color: #a7844e #28140b;
 }
+.warcraft-scroll-region {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+}
+.warcraft-scroll-body {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.warcraft-scroll-body::-webkit-scrollbar { display: none; }
+.has-scrollbar > .warcraft-scroll-body { padding-inline-end: 11px; }
+.warcraft-scrollbar {
+  position: absolute;
+  inset: 2px 1px 2px auto;
+  width: 8px;
+  overflow: hidden;
+  background: #28140b;
+  border: 1px solid #76522b;
+  box-sizing: border-box;
+  pointer-events: none;
+}
+.warcraft-scrollbar[hidden] { display: none; }
+.warcraft-scroll-thumb {
+  display: block;
+  width: 100%;
+  background: #c09751;
+  box-shadow: inset 1px 0 #efd28b, inset -1px 0 #916123;
+}
 .warcraft-session-choice {
   border: 0;
   display: grid;
@@ -435,21 +467,51 @@
   align-items: center;
   gap: 5px;
 }
-.warcraft-scenario-filter { position: relative; }
-.warcraft-scenario-filter > button, .warcraft-scenario-sizes > button { width: 100%; }
-.warcraft-scenario-sizes {
+.warcraft-scenario-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+.warcraft-scenario-filter { position: relative; min-width: 0; }
+.warcraft-scenario-filter .warcraft-session-choice {
+  width: 100%;
+  background-image: url("./menu-art/human-wide-button.png");
+}
+.warcraft-scenario-filter .warcraft-session-choice:active { filter: brightness(.85); }
+.warcraft-scenario-filter-toggle {
+  position: relative;
+  padding-right: 29px;
+}
+.warcraft-scenario-filter-toggle::after {
+  content: "";
+  position: absolute;
+  right: 7px;
+  top: calc(50% - 9px);
+  width: 18px;
+  height: 18px;
+  image-rendering: pixelated;
+  background: url("./menu-art/orc-back.png") center / contain no-repeat;
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+.warcraft-scenario-filter-toggle[aria-expanded="true"]::after { transform: rotate(90deg); }
+.warcraft-scenario-filter-options {
   position: absolute;
   z-index: 1;
   inset: calc(100% + 3px) 0 auto;
-  max-height: min(55vh, 320px);
-  overflow-y: auto;
+  max-height: min(65vh, 540px);
+  overflow: hidden;
+  touch-action: pan-y;
   padding: 3px;
   background: #4a3015 url("./menu-art/orc-texture.png") center / cover;
   border: 2px ridge #a47a3f;
 }
-.scenario-picker .warcraft-session-content, .warcraft-scenario-sizes { scrollbar-width: none; }
-.scenario-picker .warcraft-session-content::-webkit-scrollbar, .warcraft-scenario-sizes::-webkit-scrollbar {
-  display: none;
+.warcraft-scenario-filter-options > .warcraft-scroll-body { touch-action: pan-y; }
+.warcraft-scenario-filter-options.has-scrollbar > .warcraft-scroll-body { padding-inline-end: 9px; }
+.warcraft-scenario-filter-options .warcraft-session-choice { height: clamp(44px, var(--warcraft-menu-row-height), 56px); }
+.scenario-picker .warcraft-session-content {
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
 }
 .scenario-picker .warcraft-session-choice[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #e4c43e; }
 .scenario-picker .warcraft-session-choice img { max-height: 100%; object-fit: contain; }
@@ -463,15 +525,13 @@
 .scenario-picker .warcraft-session-footer .warcraft-session-choice:active {
   background-image: url("./menu-art/title-accept-button-pressed.png");
 }
-@media (orientation: landscape) {
-  .warcraft-scenario-heading { grid-template-columns: minmax(0, 1fr) minmax(0, 12rem); }
-}
 @media (orientation: landscape) and (min-width: 560px) {
+  .warcraft-scenario-heading { grid-template-columns: minmax(0, 1fr) minmax(0, 20rem); }
   .warcraft-session-panel.scenario-picker {
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-rows: auto minmax(0, 1fr) auto;
   }
-  .scenario-picker > :is(.warcraft-scenario-heading, .warcraft-session-content) { grid-column: 1 / -1; }
+  .scenario-picker > :is(.warcraft-scenario-heading, .warcraft-scroll-region) { grid-column: 1 / -1; }
   .warcraft-scenario-details { grid-column: 2; align-self: center; }
   .scenario-picker .warcraft-session-footer { display: contents; }
   .scenario-picker .warcraft-session-footer .warcraft-session-choice {

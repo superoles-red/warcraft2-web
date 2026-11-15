@@ -68,6 +68,8 @@
   const LOAD_CONTROL_TYPES = new Set([1, 2, 7, 10, 12]);
   const CUSTOM_HEADING = {x: 160, y: 220, w: 320, h: 20};
   const CUSTOM_SCENARIO_TEXT = {x: 8, y: 402, w: 380, h: 74};
+  const CUSTOM_POPUP_ROW = 18;
+  const CUSTOM_POPUP_EDGE = 2;
 
   function menuButtonHeight(width,height) {
     const portrait=width<height;
@@ -211,6 +213,35 @@
       x+w-(arrowWidth+4)*scale,middle+2*scale,arrowWidth*scale,lineH-4*scale);
   }
 
+  function paintCustomPopup(context, image, {source:s, target:t, rowCount}, background) {
+    if (!background?.naturalWidth) {
+      context.drawImage(image, s.x, s.y, s.w, s.h, t.x, t.y, t.w, t.h);
+      return;
+    }
+    const edge = CUSTOM_POPUP_EDGE;
+    const scaleX = t.w / s.w, scaleY = t.h / s.h;
+    const rim = edge * scaleX;
+    const rowH = CUSTOM_POPUP_ROW * scaleY;
+    const inkH = CUSTOM_POPUP_ROW - 1;
+    const inkScale = Math.min(scaleX, (rowH - 3) / inkH);
+    const innerW = t.w - 2 * rim;
+    for (let row = 0; row < rowCount; row++) {
+      const sourceY = s.y + edge + row * CUSTOM_POPUP_ROW;
+      const y = t.y + edge * scaleY + row * rowH;
+      context.drawImage(background, 4, 4, background.width - 8, background.height - 8,
+        t.x + rim, y, innerW, rowH);
+      paintControlInk(context, image, {x:s.x + edge, y:sourceY, w:s.w - 2 * edge, h:inkH},
+        {x:t.x + rim, y:y + (rowH - inkH * inkScale) / 2, w:(s.w - 2 * edge) * inkScale, h:inkH * inkScale});
+      context.drawImage(image, s.x + edge, sourceY + inkH, s.w - 2 * edge, 1,
+        t.x + rim, y + rowH - 1, innerW, 1);
+    }
+    context.drawImage(image, s.x, s.y, edge, s.h, t.x, t.y, rim, t.h);
+    context.drawImage(image, s.x + s.w - edge, s.y, edge, s.h, t.x + t.w - rim, t.y, rim, t.h);
+    context.drawImage(image, s.x, s.y, s.w, edge, t.x, t.y, t.w, edge * scaleY);
+    context.drawImage(image, s.x, s.y + s.h - edge, s.w, edge,
+      t.x, t.y + t.h - edge * scaleY, t.w, edge * scaleY);
+  }
+
   // The controls are the original sound-dialog children. Their displayed
   // body slots can be wider on a short screen so labels stay at native scale.
   const SOUND_ROWS = [
@@ -325,7 +356,10 @@
       if (!same(live.source, field.control)) {
         if (expanded || !contains(live.source, field.control) ||
             live.source.x !== field.control.x || live.source.w !== field.control.w) return null;
-        expanded = {id: field.id, source: live.source};
+        // The original list has two outline pixels and 18 pixels per option.
+        const rowCount = (live.source.h - 2 * CUSTOM_POPUP_EDGE) / CUSTOM_POPUP_ROW;
+        if (!Number.isInteger(rowCount) || rowCount < 2) return null;
+        expanded = {id: field.id, source: live.source, rowCount};
       }
     }
     for (const button of CUSTOM_BUTTONS) {
@@ -357,6 +391,7 @@
       top += region.target.h + gap * fit;
     }
     center(CUSTOM_HEADING, titleScale * fit, false);
+    const popupTop = landscape ? inset : top;
     const scale = formScale * fit;
     let popup = null;
     for (let index = 0; index < fields.length; index++) {
@@ -366,13 +401,15 @@
       crop(field.label, left, top, scale, false);
       const control = crop(field.control,left+4*scale,top+18*scale,scale,true,'dropdown');
       if (expanded?.id === field.id) {
-        const {source} = expanded;
-        const popupScale = Math.min(scale, (height - 2 * inset) / source.h);
-        const y = control.target.y+(control.target.h-field.control.h*popupScale)/2+
-          (source.y-field.control.y)*popupScale;
-        popup = {source, interactive: true, foreground: false, wideHeldInput: true, target: {
-          x: control.target.x, y: Math.max(inset, Math.min(y, height - inset - source.h * popupScale)),
-          w: source.w * popupScale, h: source.h * popupScale,
+        const {source, rowCount} = expanded;
+        const bottom = height - Math.max(bottomInset, inset);
+        const popupH = Math.min(source.h * 48 / CUSTOM_POPUP_ROW, bottom - popupTop);
+        const popupW = Math.min(columnW, Math.max(control.target.w, source.w * 1.4));
+        const anchor = control.target.y + control.target.h / 2;
+        const selectedRowCenter = field.control.y + field.control.h / 2 - source.y;
+        const y = Math.max(popupTop, Math.min(anchor - selectedRowCenter * popupH / source.h, bottom - popupH));
+        popup = {source, rowCount, decoration:'custom-popup', wideHeldInput:true, target:{
+          x:Math.min(left, width - inset - popupW), y, w:popupW, h:popupH,
         }};
       }
       if (index === fields.length - 1) {
@@ -393,25 +430,26 @@
       ? Math.max(inset, Math.min(centeredAction, backTarget.x - actionGap - actionWidth)) : centeredAction;
     for (let index = 0; index < actions.length; index++) {
       const col = index % buttonColumns;
-      crop(actions[index].source, actionLeft + col * (actionW + actionGap), top,
+      const action = actions[index];
+      const button = crop(action.source, actionLeft + col * (actionW + actionGap), top,
         actionScale, true, 'tall-button');
+      if (action.id === 2) button.accept = true;
       if (col === buttonColumns - 1) top += desiredButtonH + actionGap;
     }
 
-    if (!popup) {
-      if (backTarget) {
-        const size = desiredButtonH;
-        const back = {source: CUSTOM_BUTTONS[2].source, target: {x:backTarget.x+backTarget.w-size,
-          y:backBottom-size,w:size,h:size}, decoration:'back'};
-        regions.push(back);
-        paintRegions.push(back);
-      }
-      return {...chart, reflow: true, regions, paintRegions};
+    if (backTarget) {
+      const size = desiredButtonH;
+      const back = {source: CUSTOM_BUTTONS[2].source, target: {x:backTarget.x+backTarget.w-size,
+        y:backBottom-size,w:size,h:size}, decoration:'back'};
+      regions.push(back);
+      paintRegions.push(back);
     }
-    // The original raster already contains the open menu over its old
-    // neighbors. Drop overlapping source crops and paint the popup once.
-    return {...chart, reflow: true, regions: [popup],
-      paintRegions: [...paintRegions.filter(region => !overlaps(region.source, popup.source)), popup]};
+    const form = {...chart, reflow:true, customFrame:CUSTOM_CONTENT, regions, paintRegions};
+    if (!popup) return form;
+    // Native drawing overwrites underlying controls. The closed frame keeps
+    // the form stable while the expanded list alone receives input.
+    const body = paintRegions.map(region => ({...region, previous:true}));
+    return {...form, regions:[popup], paintRegions:[...body, popup]};
   }
 
   function reflowLoad(chart, controls, inset) {
@@ -666,7 +704,7 @@
 
   const isAdaptedHandler = handler => HELD_CONTROLS.has(handler);
   const api = Object.freeze({layout, wantsImmediatePress, isAdaptedHandler, paintTallButton, menuButtonHeight,
-    paintDropdown,soundRows,paintSoundControl,paintControlInk});
+    paintDropdown,paintCustomPopup,soundRows,paintSoundControl,paintControlInk});
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WarcraftAssemblyDialogLayout = api;
 })(globalThis);

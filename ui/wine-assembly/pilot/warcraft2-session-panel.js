@@ -4,12 +4,14 @@
   const label = {
     en: {about:'About', files:'Files', feedback:'Feedback', campaign:'Campaign', continue:'Continue', start:'Start', newGame:'Start a new game?',
       resume:'Continue the last session?', replace:'Your previous session will be replaced.',
-      selectScenario:'Select Scenario', mapSize:'Map size', anySize:'Any size', noScenarios:'No scenarios available.',
+      selectScenario:'Select Scenario', mapSize:'Map size', anySize:'Any size', mapCategory:'Category',
+      allCategories:'All categories', noScenarios:'No scenarios match these filters.',
       scenarioFailed:'Could not select this map.', ok:'OK', mission:'Mission', locked:'Locked', completed:'Completed', fast:'Fast Scenario', back:'Back',
       failed:'The game could not start. The previous session is still available.'},
     ru: {about:'Об игре', files:'Файлы', feedback:'Отзыв', campaign:'Кампания', continue:'Продолжить', start:'Начать', newGame:'Начать новую игру?',
       resume:'Продолжить игру?', replace:'Предыдущая игра будет заменена.',
-      selectScenario:'Выбор сценария', mapSize:'Размер карты', anySize:'Любой размер', noScenarios:'Нет доступных сценариев.',
+      selectScenario:'Выбор сценария', mapSize:'Размер карты', anySize:'Любой размер', mapCategory:'Категория',
+      allCategories:'Все категории', noScenarios:'Нет сценариев с такими фильтрами.',
       scenarioFailed:'Не удалось выбрать эту карту.', ok:'ОК', mission:'Миссия', locked:'Закрыта', completed:'Пройдена', fast:'Быстрая игра', back:'Назад',
       failed:'Не удалось запустить игру. Предыдущая сессия доступна.'},
   };
@@ -18,6 +20,12 @@
       'orc-btdp':'Orcs · Beyond the Dark Portal', 'human-btdp':'Humans · Beyond the Dark Portal'},
     ru: {'orc-tod':'Орки · Приливы Тьмы', 'human-tod':'Люди · Приливы Тьмы',
       'orc-btdp':'Орки · За Тёмным порталом', 'human-btdp':'Люди · За Тёмным порталом'},
+  };
+  const categoryLabels = {
+    en: {builtin:'Built-in', bne:'Battle.net Edition', classic:'Classic', 'classic/expansion':'Expansion',
+      'classic/scenario':'Classic scenarios', 'classic/expansion/scenario':'Expansion scenarios', ladder:'Ladder', scenario:'Scenarios'},
+    ru: {builtin:'Встроенные', bne:'Battle.net Edition', classic:'Классика', 'classic/expansion':'Дополнение',
+      'classic/scenario':'Сценарии классики', 'classic/expansion/scenario':'Сценарии дополнения', ladder:'Ладдер', scenario:'Сценарии'},
   };
   const locale = () => window.WarcraftLanguage?.current() === 'ru' ? 'ru' : 'en';
   const text = key => label[locale()][key];
@@ -35,9 +43,10 @@
     return glyph;
   }
 
-  function scrollingContent() {
+  function scrollingContent({nativeScroll = false} = {}) {
     const content = document.createElement('div');
     content.className = 'warcraft-session-content';
+    if (nativeScroll) return content;
     let touch = null, dragged = false;
     content.addEventListener('pointerdown', event => {
       if (event.pointerType !== 'touch' || !event.isPrimary) return;
@@ -82,9 +91,50 @@
     layer.append(panel);
     frame.append(layer);
     let token = 0, backAction;
+    const scrollUpdates = new Map();
+    const scrollObserver = new ResizeObserver(changes => {
+      requestAnimationFrame(() => {
+        for (const {target} of changes) scrollUpdates.get(target)?.();
+      });
+    });
+    function clearScrollIndicators() {
+      scrollObserver.disconnect();
+      scrollUpdates.clear();
+    }
+    function scrollRegion(content, box = document.createElement('div')) {
+      box.classList.add('warcraft-scroll-region');
+      content.classList.add('warcraft-scroll-body');
+      const track = document.createElement('span');
+      const thumb = document.createElement('span');
+      track.className = 'warcraft-scrollbar';
+      track.setAttribute('aria-hidden', 'true');
+      track.hidden = true;
+      thumb.className = 'warcraft-scroll-thumb';
+      track.append(thumb);
+      box.append(content,track);
+      function update() {
+        const height = content.clientHeight;
+        const max = content.scrollHeight - height;
+        const scrollable = height > 0 && max > 1;
+        box.classList.toggle('has-scrollbar',scrollable);
+        track.hidden = !scrollable;
+        if (!scrollable) return;
+        const extent = track.clientHeight;
+        const length = Math.min(extent,Math.max(18,extent*height/(height+max)));
+        const progress = Math.max(0,Math.min(1,content.scrollTop/max));
+        thumb.style.height = `${length}px`;
+        thumb.style.transform = `translateY(${progress*(extent-length)}px)`;
+      }
+      scrollObserver.observe(content,{box:'border-box'});
+      scrollUpdates.set(content,update);
+      content.addEventListener('scroll',update,{passive:true});
+      return box;
+    }
+
     function hide() {
       token++;
       layer.hidden = true;
+      clearScrollIndicators();
       panel.replaceChildren();
       backAction = null;
     }
@@ -125,13 +175,22 @@
       const choose = accept && button(accept.title,() => {
         if (accept.action() === false && id === token) show({heading,lines:[...lines,text('failed')],rows,accept,back,list,prose});
       },controls);
+      if (choose && accept.ready) {
+        const updateReady = () => {
+          if (id !== token) return;
+          choose.disabled = !accept.ready();
+          if (choose.disabled) requestAnimationFrame(updateReady);
+        };
+        updateReady();
+      }
       const arrow = document.createElement('button');
       arrow.type = 'button';
       arrow.className = 'warcraft-session-back';
       arrow.setAttribute('aria-label',text('back'));
       arrow.addEventListener('click',back,{once:true});
       controls.append(arrow);
-      panel.replaceChildren(title,content,controls);
+      clearScrollIndicators();
+      panel.replaceChildren(title,list ? scrollRegion(content) : content,controls);
       panel.classList.remove('scenario-picker');
       panel.classList.toggle('mission-list',list);
       panel.classList.toggle('session-actions',!list&&rows.length>1);
@@ -142,7 +201,7 @@
       layer.setAttribute('aria-label',heading);
       content.scrollTop = 0;
       if (list) content.querySelector('button:not(:disabled)')?.focus({preventScroll:true});
-      else (choose || arrow).focus({preventScroll:true});
+      else (choose && !choose.disabled ? choose : arrow).focus({preventScroll:true});
     }
     async function showScenarios({entries, selectedId, accept, back}) {
       const id = ++token, language = locale(), labels = label[language];
@@ -164,25 +223,20 @@
       const title = document.createElement('h2');
       title.setAttribute('aria-label', labels.selectScenario);
       title.append(print(labels.selectScenario));
-      const filter = document.createElement('div');
-      filter.className = 'warcraft-scenario-filter';
-      const choices = document.createElement('div');
-      choices.className = 'warcraft-scenario-sizes';
-      choices.hidden = true;
-      const toggle = makeButton(labels.anySize, () => openFilter(choices.hidden), 160);
-      toggle.setAttribute('aria-expanded', 'false');
-      toggle.setAttribute('aria-controls', 'warcraft-scenario-sizes');
-      choices.id = 'warcraft-scenario-sizes';
-      filter.append(toggle, choices);
-      heading.append(title, filter);
+      const filters = document.createElement('div');
+      filters.className = 'warcraft-scenario-filters';
+      heading.append(title, filters);
 
-      const content = scrollingContent();
+      clearScrollIndicators();
+      const content = scrollingContent({nativeScroll:true});
+      const list = scrollRegion(content);
       const details = document.createElement('div');
       details.className = 'warcraft-scenario-details';
       details.setAttribute('aria-live', 'polite');
       const footer = document.createElement('div');
       footer.className = 'warcraft-session-footer';
-      let size = null, choice = entries.find(entry => entry.id === selectedId);
+      let size = null, category = null, openDropdown = null;
+      let choice = entries.find(entry => entry.id === selectedId);
       function showDetails(messages) {
         details.replaceChildren(...messages.map(message => {
           const row = document.createElement('p');
@@ -205,54 +259,102 @@
       arrow.className = 'warcraft-session-back';
       arrow.setAttribute('aria-label', labels.back);
       const goBack = () => {
-        if (choices.hidden) back();
-        else { openFilter(false); toggle.focus({preventScroll:true}); }
+        if (!openDropdown) back();
+        else {
+          const {toggle} = openDropdown;
+          openFilter(null);
+          toggle.focus({preventScroll:true});
+        }
       };
       arrow.addEventListener('click', goBack);
       footer.append(choose, arrow);
 
       const rows = entries.map(entry => ({entry, button:makeButton(entry.title, () => {
         choice = entry;
+        openFilter(null);
         refresh();
       })}));
       content.append(...rows.map(row => row.button));
       const sizes = [null, ...[...new Set(entries.map(entry => entry.size).filter(Number.isInteger))].sort((a,b) => a-b)];
       const sizeText = value => value === null ? labels.anySize : `${value} x ${value}`;
-      const options = sizes.map(value => ({value, button:makeButton(sizeText(value), () => {
-        size = value;
-        refresh();
-        content.scrollTop = 0;
-        openFilter(false);
-        toggle.focus({preventScroll:true});
-      }, 160)}));
-      choices.append(...options.map(option => option.button));
-      function openFilter(open) {
-        choices.hidden = !open;
-        toggle.setAttribute('aria-expanded', String(open));
+      const localizedGroups = categoryLabels[language];
+      const groups = new Set(entries.map(entry => entry.category).filter(Boolean));
+      const knownGroups = Object.keys(localizedGroups).filter(group => groups.delete(group));
+      const categories = [null, ...knownGroups, ...groups];
+      const categoryText = value => value === null ? labels.allCategories :
+        (Object.hasOwn(localizedGroups,value) ? localizedGroups[value] : value);
+      const categoryFilter = makeFilter('category', labels.mapCategory, categories, categoryText, value => category = value);
+      const sizeFilter = makeFilter('size', labels.mapSize, sizes, sizeText, value => size = value);
+
+      function makeFilter(key, name, values, format, chooseValue) {
+        const filter = document.createElement('div');
+        filter.className = 'warcraft-scenario-filter';
+        const menu = document.createElement('div');
+        menu.className = 'warcraft-scenario-filter-options';
+        menu.id = `warcraft-scenario-${key}`;
+        menu.hidden = true;
+        const toggle = makeButton(format(values[0]), () => openFilter(openDropdown === control ? null : control), 152);
+        toggle.classList.add('warcraft-scenario-filter-toggle');
+        toggle.setAttribute('aria-expanded', 'false');
+        toggle.setAttribute('aria-controls', menu.id);
+        const options = values.map(value => ({value, button:makeButton(format(value), () => {
+          chooseValue(value);
+          refresh();
+          content.scrollTop = 0;
+          openFilter(null);
+          toggle.focus({preventScroll:true});
+        }, 152)}));
+        const items = document.createElement('div');
+        items.append(...options.map(option => option.button));
+        scrollRegion(items,menu);
+        filter.append(toggle, menu);
+        filters.append(filter);
+        let rendered;
+        const control = {toggle, menu, update(value) {
+          if (value === rendered) return;
+          rendered = value;
+          for (const option of options) option.button.setAttribute('aria-pressed', String(option.value === value));
+          toggle.setAttribute('aria-label', `${name} – ${format(value)}`);
+          toggle.replaceChildren(print(format(value), 152));
+        }};
+        return control;
+      }
+      function openFilter(next) {
+        if (openDropdown) {
+          openDropdown.menu.hidden = true;
+          openDropdown.toggle.setAttribute('aria-expanded', 'false');
+        }
+        openDropdown = next;
+        if (next) {
+          next.menu.hidden = false;
+          next.toggle.setAttribute('aria-expanded', 'true');
+        }
       }
       function refresh() {
+        const matches = entry => (size === null || entry.size === size) && (category === null || entry.category === category);
+        let matching = 0;
         for (const {entry,button} of rows) {
-          button.hidden = size !== null && entry.size !== size;
+          button.hidden = !matches(entry);
+          if (!button.hidden) matching++;
           button.setAttribute('aria-pressed', String(entry === choice));
         }
-        for (const {value,button} of options) button.setAttribute('aria-pressed', String(value === size));
-        const sizeCaption = sizeText(size);
-        toggle.setAttribute('aria-label', `${labels.mapSize} – ${sizeCaption}`);
-        toggle.replaceChildren(print(sizeCaption, 160));
-        const selected = choice && (size === null || choice.size === size) && choice;
+        sizeFilter.update(size);
+        categoryFilter.update(category);
+        const selected = choice && matches(choice) ? choice : null;
         choose.disabled = !selected;
         const players = selected?.players;
         const metadata = [selected?.size && sizeText(selected.size), players && (language === 'ru'
           ? `${players} ${players === 1 ? 'игрок' : players < 5 ? 'игрока' : 'игроков'}`
           : `${players} ${players === 1 ? 'player' : 'players'}`)].filter(Boolean).join(' · ');
-        showDetails(entries.length ? [metadata, selected?.description].filter(Boolean) : [labels.noScenarios]);
+        showDetails(matching ? [metadata, selected?.description].filter(Boolean) : [labels.noScenarios]);
+        scrollUpdates.get(content)?.();
       }
 
       panel.classList.remove('mission-list','session-actions','session-confirmation','session-prose');
       panel.classList.add('scenario-picker');
-      panel.replaceChildren(heading, content, details, footer);
-      refresh();
+      panel.replaceChildren(heading, list, details, footer);
       layer.hidden = false;
+      refresh();
       layer.setAttribute('aria-label', labels.selectScenario);
       backAction = goBack;
       const selected = rows.find(row => row.entry === choice)?.button;

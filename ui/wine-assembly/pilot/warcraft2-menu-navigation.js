@@ -4,6 +4,7 @@
 
   const artPath = './menu-art/';
   const art = {x: 0, y: 0, w: 640, h: 480};
+  const portraitArt = {x: 0, y: 0, w: 400, h: 832};
   const originalVersion = 'Warcraft II BNE v2.02';
   const nativeButton = (y, label) => ({label, source: {x: 208, y, w: 224, h: 28}});
   const submenu = (label, page = label.toLowerCase()) => ({label, page, glyph: page});
@@ -57,27 +58,91 @@
     return true;
   }
 
-  const pictures = new WeakMap();
+  function featherArtwork(context, width, height, edge) {
+    context.save();
+    context.globalCompositeOperation = 'destination-in';
+    for (const axis of ['x', 'y']) {
+      const length = axis === 'x' ? width : height;
+      const fade = context.createLinearGradient(0, 0, axis === 'x' ? length : 0, axis === 'y' ? length : 0);
+      for (const [position, opacity] of [[0, 0], [edge / length, 1], [1 - edge / length, 1], [1, 0]]) {
+        fade.addColorStop(position, `rgba(0,0,0,${opacity})`);
+      }
+      context.fillStyle = fade;
+      context.fillRect(0, 0, width, height);
+    }
+    context.restore();
+  }
+
+  const pictures = new WeakMap(), portraitPictures = new WeakMap();
   function softenedArtwork(original, cleanVersion) {
     const previous = pictures.get(original);
     if (previous) return previous;
     const picture = document.createElement('canvas');
-    picture.width = art.w;
-    picture.height = art.h;
+    picture.width = original.naturalWidth || original.width;
+    picture.height = original.naturalHeight || original.height;
     const context = picture.getContext('2d');
     context.drawImage(original, 0, 0);
     if (cleanVersion) context.drawImage(cleanVersion, 58, 458);
-    context.globalCompositeOperation = 'destination-in';
-    for (const axis of ['x', 'y']) {
-      const length = axis === 'x' ? art.w : art.h;
-      const fade = context.createLinearGradient(0, 0, axis === 'x' ? length : 0, axis === 'y' ? length : 0);
-      for (const [position, opacity] of [[0, 0], [10 / length, 1], [1 - 10 / length, 1], [1, 0]]) {
-        fade.addColorStop(position, `rgba(0,0,0,${opacity})`);
-      }
-      context.fillStyle = fade;
-      context.fillRect(0, 0, art.w, art.h);
-    }
+    featherArtwork(context, picture.width, picture.height, 10);
     pictures.set(original, picture);
+    return picture;
+  }
+
+  function paintPortraitRim(context, original, width, height) {
+    // Stretch only the original grain at the four edges. The source strips
+    // stop outside the drawings, and the four corners keep their own pixels.
+    const x = [0, 28, art.w-18, art.w], y = [0, 30, art.h-23, art.h];
+    const edgesX = [0, 42, width-42, width], edgesY = [0, 40, height-40, height];
+    const rim = document.createElement('canvas');
+    rim.width = width;
+    rim.height = height;
+    const border = rim.getContext('2d');
+    for (let row=0;row<3;row++) for (let col=0;col<3;col++) {
+      if (row===1 && col===1) continue;
+      border.drawImage(original,x[col],y[row],x[col+1]-x[col],y[row+1]-y[row],
+        edgesX[col],edgesY[row],edgesX[col+1]-edgesX[col],edgesY[row+1]-edgesY[row]);
+    }
+    // Blend the inner edges with the matching parchment under the drawings.
+    // The edge color itself comes from the original plate.
+    const pixels = border.getImageData(0,0,width,height), bytes = pixels.data;
+    for (let py=0;py<height;py++) {
+      const vertical = Math.min(py,height-1-py)/40;
+      for (let px=0;px<width;px++) {
+        const horizontal = Math.min(px,width-1-px)/42;
+        const position = 4*(py*width+px)+3;
+        bytes[position] *= Math.max(0,Math.min(1,1.6*(1-Math.min(horizontal,vertical))));
+      }
+    }
+    border.putImageData(pixels,0,0);
+    context.drawImage(rim,0,0);
+  }
+
+  function portraitArtwork(original) {
+    const previous = portraitPictures.get(original);
+    if (previous) return previous;
+    const {w, h} = portraitArt;
+    const picture = document.createElement('canvas');
+    picture.width = w;
+    picture.height = h;
+    const context = picture.getContext('2d');
+    // Use the clear parchment between the two drawings. Both figures use a
+    // uniform scale, with the orc above and to the right of the archer.
+    context.drawImage(original, 276, 160, 101, 260, 0, 0, w, h);
+    const fragment = document.createElement('canvas');
+    for (const [sx, sy, sw, sh, x, y, scale] of [
+      [280, 10, 360, 442, 112, 69, .8],
+      [4, 166, 303, 314, 10, 315, .84],
+    ]) {
+      fragment.width = sw;
+      fragment.height = sh;
+      const ink = fragment.getContext('2d');
+      ink.drawImage(original,sx,sy,sw,sh,0,0,sw,sh);
+      featherArtwork(ink, sw, sh, 23);
+      context.drawImage(fragment, x, y, sw*scale, sh*scale);
+    }
+    paintPortraitRim(context,original,w,h);
+    featherArtwork(context,w,h,10);
+    portraitPictures.set(original,picture);
     return picture;
   }
 
@@ -329,7 +394,10 @@
           if (item.packAction !== 'download' || total <= 0) return;
           const label = settings.current() === 'ru' ? 'Загрузка' : 'Downloading';
           message.textContent = `${label}… ${Math.floor(100 * loaded / total)}%`;
-          message.hidden = false;
+          if (message.hidden) {
+            message.hidden = false;
+            repaint();
+          }
         },
       }));
     }
@@ -380,14 +448,14 @@
       });
     }
 
-    function confirm(slot, start, back, continuing = false) {
+    function confirm(slot, start, back, continuing = false, ready) {
       const {text, slotName} = sessionArt;
       const lines = slotName(slot);
       if (!continuing && session.store.read().slot) lines.push(text('replace'));
       showSession({
         heading:text(continuing ? 'resume' : 'newGame'),
         lines,
-        accept:{title:text(continuing ? 'continue' : 'start'), action() {
+        accept:{title:text(continuing ? 'continue' : 'start'), ready, action() {
           if (!start()) return false;
           closeSession();
           return true;
@@ -478,7 +546,7 @@
       confirm(slot, () => {
         session.native.armFast(slot);
         return start();
-      },closeSession);
+      },closeSession,false,session.native.fastSetupReady);
       return true;
     }
 
@@ -547,49 +615,50 @@
       });
     }
 
-    function place(width, height, count, campaign, home, safeBottom, showLogo) {
-      const portrait = width < height;
-      const overlay = !portrait && home;
-      const h = window.WarcraftAssemblyDialogLayout.menuButtonHeight(width,height);
-      const gap = Math.min(8,h*.16);
-      const headingRoom = campaign ? h*.42 : 0;
-      const span = count*h+(count-1)*gap+2*headingRoom;
+    function place(width, height, count, {portrait, campaign, hasBack, hasHeading, hasMessage, safeBottom, showLogo}) {
+      const standardHeight = window.WarcraftAssemblyDialogLayout.menuButtonHeight(width,height);
+      const gap = Math.min(8,standardHeight*.16);
       const corner = backBox(width, height);
-      const back = {x:corner.x+corner.w-h,y:corner.y+corner.h-h,w:h,h};
+      const back = {x:corner.x+corner.w-standardHeight,
+        y:Math.min(corner.y+corner.h,height-safeBottom)-standardHeight,w:standardHeight,h:standardHeight};
       const artTop = Math.min(16, height * .025);
-      const rail = portrait ? 0 : Math.max(h+gap,Math.min(124,width*.18));
-      const pictureSpace = portrait || overlay ? width : (width-rail)*.51;
-      const controlSpace = portrait || overlay ? width : width-pictureSpace-rail;
-      const controlCenter = portrait || overlay ? width/2 : pictureSpace+controlSpace/2;
-      // Leave room for the five Options rows and a separate corner button on every title page.
-      const artLimit = portrait ? Math.min(height*.43,back.y-5*h-6*gap-artTop) : height*.94;
-      const pictureScale = Math.min((pictureSpace-16) / art.w,artLimit/art.h);
-      const picture = {x: (pictureSpace-art.w*pictureScale)/2, y: portrait ? artTop : (height-art.h*pictureScale)/2,
-        w: art.w * pictureScale, h: art.h * pictureScale};
-      if (overlay) {
-        const scale = Math.min(1.25, (width-24)/224, height*.49/172);
-        const w = 224*scale;
-        const y = Math.max(artTop, height-safeBottom-gap-span);
-        const boxes = Array.from({length:count},(_,i) => ({x:(width-w)/2, y:y+i*(h+gap), w, h}));
+      const artLimit = portrait ? Math.min(height*.43,corner.y+corner.h-6*standardHeight-6*gap-artTop) : height*.94;
+      const heroHeight = Math.min((width-16)*art.h/art.w,Math.max(1,artLimit));
+      const pictureSource = portrait && showLogo ? portraitArt : art;
+      const pictureLimit = portrait && showLogo ? height*.98 : heroHeight;
+      const pictureScale = Math.min((width-16)/pictureSource.w,pictureLimit/pictureSource.h);
+      const picture = {x:(width-pictureSource.w*pictureScale)/2,
+        y:portrait&&!showLogo ? artTop : (height-pictureSource.h*pictureScale)/2,
+        w:pictureSource.w*pictureScale,h:pictureSource.h*pictureScale};
+      const sideRoom = !portrait && hasBack ? Math.max(24,2*(width-back.x+gap)) : portrait ? 28 : 24;
+      const scale = Math.max(.1,Math.min(portrait?1.6:1.25,(width-sideRoom)/224,portrait?Infinity:height*.49/172));
+      const w = 224*scale;
+      const buttonBottom = (portrait && hasBack ? back.y : height-safeBottom)-gap;
+      const messageRoom = hasMessage ? 28 : 0;
+      const headingHeight = hasHeading ? Math.max(22,28*scale)+6 : 0;
+      let logo = null;
+      if (showLogo) {
         const image = images['title-logo'];
         const ratio = image.naturalWidth/image.naturalHeight;
-        const logoWidth = Math.min(width*.45,height*.64,326,Math.max(0,y-artTop-gap)*ratio);
-        const logo = showLogo && logoWidth > 0 ? {x:(width-logoWidth)/2, y:artTop,
-          w:logoWidth, h:logoWidth/ratio} : null;
-        return {picture, boxes, back, scale, rail, logo};
+        const homeTop = height-safeBottom-gap-3*standardHeight-2*gap;
+        const logoWidth = portrait ? Math.min(width*.67,height*.36,326) :
+          Math.min(width*.45,height*.64,326,Math.max(0,homeTop-artTop-gap)*ratio);
+        if (logoWidth > 0) logo = {x:(width-logoWidth)/2,y:artTop,w:logoWidth,h:logoWidth/ratio};
       }
-      const panelTop = portrait ? picture.y+picture.h+gap : gap;
-      const panelBottom = (portrait ? home ? height-safeBottom : back.y : height)-gap;
-      const scale = Math.max(.1, Math.min(1.6,
-        (controlSpace-(portrait ? 28 : 18))/224,portrait ? Infinity : height*.49/172));
-      const w = 224*scale;
-      const centered = portrait
-        ? (home ? (picture.y+picture.h+height)/2 : height/2)
-        : (panelTop+panelBottom)/2;
-      const top = headingRoom+Math.max(panelTop,Math.min(panelBottom-span,centered-span/2));
-      const boxes = Array.from({length:count},(_,i)=>({x:controlCenter-w/2,
-        y:top+i*(h+gap)+(i>=2 ? headingRoom : 0),w,h}));
-      return {picture, boxes, back, scale, rail};
+      const artEnd = artTop + heroHeight;
+      const logoEnd = logo ? logo.y + logo.h : artTop;
+      const panelTop = (portrait ? Math.max(artEnd,logoEnd) : logoEnd)+gap+headingHeight;
+      const panelBottom = buttonBottom-messageRoom;
+      const rowUnits = count + (campaign ? .84 : 0);
+      const rowGap = Math.min(gap,Math.max(1,(panelBottom-panelTop)/(count*6)));
+      const h = Math.min(standardHeight,Math.max(1,(panelBottom-panelTop-(count-1)*rowGap)/rowUnits));
+      const headingRoom = campaign ? h*.42 : 0;
+      const span = count*h+(count-1)*rowGap+2*headingRoom;
+      const centered = (Math.max(artEnd,logoEnd)+height)/2-span/2;
+      const top = (portrait ? Math.max(panelTop,Math.min(panelBottom-span,centered)) : panelBottom-span)+headingRoom;
+      const boxes = Array.from({length:count},(_,i)=>({x:(width-w)/2,
+        y:top+i*(h+rowGap)+(i>=2?headingRoom:0),w,h}));
+      return {picture, boxes, back, scale, logo};
     }
 
     function drawImage(context, image, box, source) {
@@ -711,15 +780,19 @@
         return null;
       }
       const contentWidth = width - leftInset - rightInset;
-      const useLandscapeArt = home && contentWidth >= height &&
-        !!images['title-landscape-art'].naturalWidth && !!images['title-logo'].naturalWidth;
-      const {picture, boxes, back, scale, rail, logo} = place(contentWidth,height,items.length,campaign,home,
-        Math.max(8,bottomInset),useLandscapeArt);
+      const portrait = width < height;
+      if (!images['title-landscape-art'].complete || !images['title-logo'].complete) return null;
+      const useSeparatedArt = !!images['title-landscape-art'].naturalWidth && !!images['title-logo'].naturalWidth;
+      const {picture, boxes, back, scale, logo} = place(contentWidth,height,items.length,
+        {portrait,campaign,hasBack,hasHeading:!!heading,hasMessage:languageMenu&&!message.hidden,
+          safeBottom:Math.max(8,bottomInset),showLogo:useSeparatedArt});
       let feedbackBox;
       if (feedback) {
         const first = boxes[0];
-        const w = Math.min(124,rail?rail-14:first.w*.38);
-        feedbackBox = {x:contentWidth-w-12,y:12,w,h:first.h};
+        const room = logo ? contentWidth-logo.x-logo.w-22 : Infinity;
+        const w = Math.min(portrait?124:110,first.w*.38,Math.max(44,room));
+        const y = room < 44 ? logo.y+logo.h+6 : 12;
+        feedbackBox = {x:contentWidth-w-12,y,w,h:portrait?Math.min(first.h,w*.67):first.h};
         feedbackBox.x += leftInset;
       }
       picture.x += leftInset;
@@ -729,8 +802,12 @@
       active = true;
       layer.hidden = false;
       paintTexture(context, images['orc-texture'], width, height);
-      const artwork = useLandscapeArt ? images['title-landscape-art'] : backdrop.canvas;
-      drawImage(context, softenedArtwork(artwork,useLandscapeArt ? null : images['title-version-clean']), picture, art);
+      const artwork = useSeparatedArt ? images['title-landscape-art'] : backdrop.canvas;
+      if (useSeparatedArt && portrait) {
+        drawImage(context,portraitArtwork(artwork),picture,portraitArt);
+      } else {
+        drawImage(context,softenedArtwork(artwork,useSeparatedArt ? null : images['title-version-clean']),picture,art);
+      }
       if (logo) drawImage(context,images['title-logo'],logo);
       if (campaign) {
         const headings = scene.controls.filter(control => control.text).sort((a, b) => a.y - b.y);
@@ -740,9 +817,10 @@
           const nextButton = originals[i * 2];
           if (!nextButton) return;
           const trimmed = {...source, h: Math.min(source.h, nextButton.y - source.y - 2)};
-          const w = trimmed.w * scale, h = trimmed.h * scale;
+          const captionScale = Math.min(scale,(slot.h*.42-2)/trimmed.h);
+          const w = trimmed.w * captionScale, h = trimmed.h * captionScale;
           if (h > 0) foreground(image, {source: trimmed,
-            target: {x: slot.x+(slot.w-w)/2, y: slot.y - h - 5, w, h}});
+            target: {x: slot.x+(slot.w-w)/2, y: slot.y - h - 2, w, h}});
         });
       }
       if (languageMenu) {

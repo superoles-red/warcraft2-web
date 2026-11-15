@@ -159,8 +159,10 @@
       ({header,minimap}=global.WarcraftHudLayout.alignMinimapToHeader(fields,headerOptions,header,minimap));
     const commandScale=board?board.commandScale:scale;
     const gridTop=board?board.gridTop:lowerEdge-140*commandScale;
-    const nativeCommands=global.WarcraftHudLayout.createV14CommandRegions(packet,
-      {left,top:gridTop,scale:commandScale,separateCancel:true,cancelRight:rightEdge,cancelBottom:lowerEdge});
+    // BNE clears the selection before repainting and retiring the command
+    // children. A surviving rect can otherwise crop bare panel pixels as an icon.
+    const nativeCommands=state.selectionCount>0?global.WarcraftHudLayout.createV14CommandRegions(packet,
+      {left,top:gridTop,scale:commandScale,separateCancel:true,cancelRight:rightEdge,cancelBottom:lowerEdge}):[];
     if(!nativeCommands)return null;
     const placing=placement&&state.buildingPending&&state.inputAllowed!==false;
     const commands=placing?nativeCommands.filter(region=>!region.isCancel):nativeCommands;
@@ -485,21 +487,27 @@
   function endMenuRows(packet, rect) {
     if(!packet?.usable||!rect||rect.right-rect.left!==255||rect.bottom-rect.top!==287||
         rect.right>=packet.screen.width||rect.bottom>=packet.screen.height)return null;
-    const columns=packet.screen.width,x=rect.left+24;
-    // Sample two original End-menu button backgrounds that are bare stone in
-    // Quit/Restart. Start away from the caption, focus border and mouse cursor.
-    return [60,158].map(dy=>{
-      const from=(rect.top+dy)*columns+x;
+    const columns=packet.screen.width;
+    // The first two strips are End buttons that become stone in Quit/Restart.
+    // The last two are stone until the Pause screen's bottom button is drawn.
+    // Sample opposite sides there so a cursor can't change both strips.
+    return [[24,60],[24,158],[24,196],[220,196]].map(([dx,dy])=>{
+      const from=(rect.top+dy)*columns+rect.left+dx;
       return packet.indices.slice(from,from+12);
     });
   }
-  function hasConfirmationRaster(back, packet, view) {
-    if(!displayedEndRaster||back?.compact!=='confirmation'||packet?.sceneEpoch!==displayedEndRaster.epoch)return true;
+  function hasModalRaster(back, packet, view) {
+    if(!displayedEndRaster||packet?.sceneEpoch!==displayedEndRaster.epoch)return true;
+    const next=back?.compact;
+    if(next!=='pause'&&next!=='confirmation')return true;
     const rows=endMenuRows(packet,view?.modal?.rect);
     if(!rows)return true;
+    const changed=i=>rows[i].some((value,j)=>value!==displayedEndRaster.rows[i][j]);
+    // Returning from End can reuse the same native dialog root before the
+    // locked primary receives the Pause pixels. Keep the coherent old screen.
+    if(next==='pause')return changed(2)&&changed(3);
     displayedEndRaster.waitUntil??=performance.now()+300;
-    return performance.now()>=displayedEndRaster.waitUntil||
-      rows.every((row,i)=>row.some((value,j)=>value!==displayedEndRaster.rows[i][j]));
+    return performance.now()>=displayedEndRaster.waitUntil||(changed(0)&&changed(1));
   }
   function render(captureNative=true) {
     if(!installed)return;
@@ -569,7 +577,7 @@
       }
       lastDialogToken=view?.modal?.identity;
       const back=modalBack?.(view?.modal);
-      if(coherentFrames&&!hasConfirmationRaster(back,lastScene.packet,view)){waitForNativeFrame();return;}
+      if(coherentFrames&&!hasModalRaster(back,lastScene.packet,view)){waitForNativeFrame();return;}
       const width=Math.max(1,Math.floor(container.clientWidth)),height=Math.max(1,Math.floor(container.clientHeight));
       const dpr=enhancedHud?Math.max(1,Math.min(3,global.devicePixelRatio||1)):1;
       if(cameraPilot)resizeFrozenWorld(width,height,dpr);

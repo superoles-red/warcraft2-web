@@ -309,10 +309,15 @@
       image.src = `./menu-art/${faction}-${size}-button.png`;
       return [faction+'-'+size,image];
     }))) : {};
-    const closedScenario = document.createElement('canvas');
-    closedScenario.width = ART.w;
-    closedScenario.height = ART.h;
-    let closedScenarioRoot = null;
+    const acceptArt = authored && new Image();
+    if (acceptArt) {
+      acceptArt.onload = repaint;
+      acceptArt.src = './menu-art/title-accept-button.png';
+    }
+    const closedDialog = document.createElement('canvas');
+    closedDialog.width = ART.w;
+    closedDialog.height = ART.h;
+    let closedDialogRoot = null;
     const navigation = global.WarcraftAssemblyMenuNavigation?.create({wine, renderer, frame, activate, repaint, initialPage});
 
     function dialogStillActive() {
@@ -356,13 +361,14 @@
       onUnavailable?.();
     }
 
-    function drawTallButton(image, source, target, current) {
+    function drawTallButton(image, source, target, current, accept = false) {
       const faction = nativeView(wine,0x4abb7c,1)?.getUint8(0) === 0 ? 'human' : 'orc';
       const paper = current.mode === 'briefing' || current.cinematic === 'credits';
       // Title dialogs are Orc-themed, while stats keep the match faction.
       const style = current.cinematic === 'stats' ? faction : 'orc';
-      const art = buttonArt[style+'-'+(source.w>106?'wide':'short')];
-      global.WarcraftAssemblyDialogLayout.paintTallButton(context,image,source,target,paper?null:art,undefined,paper);
+      const green = accept && acceptArt?.naturalWidth;
+      const art = green ? acceptArt : buttonArt[style+'-'+(source.w>106?'wide':'short')];
+      global.WarcraftAssemblyDialogLayout.paintTallButton(context,image,source,target,paper?null:art,undefined,paper,!green);
     }
 
     function drawScenarioFrame(image, frame) {
@@ -515,11 +521,12 @@
         return;
       }
       if (!authoredPaint) {
-        if (next.scenarioFrame && !next.scenarioPopup) {
-          const s = next.scenarioFrame.source;
-          closedScenario.getContext('2d').drawImage(image,s.x,s.y,s.w,s.h,s.x,s.y,s.w,s.h);
-          closedScenarioRoot = next.dialog.root;
-        } else if (!next.scenarioFrame) closedScenarioRoot = null;
+        const closedFrame = next.customFrame || next.scenarioFrame?.source;
+        if (closedFrame && !next.scenarioPopup && !next.regions[0]?.wideHeldInput) {
+          const {x,y,w,h} = closedFrame;
+          closedDialog.getContext('2d').drawImage(image,x,y,w,h,x,y,w,h);
+          closedDialogRoot = next.dialog.root;
+        } else if (!closedFrame) closedDialogRoot = null;
         if (current.mode === 'video') {
           context.fillStyle = '#000';
         } else {
@@ -547,7 +554,7 @@
             if (next.scenarioFrame) drawScenarioFrame(image,next.scenarioFrame);
             if (backdrop && next.artwork) drawTitle(context, image, next, backdrop, scratch);
             else for (const region of next.paintRegions || next.regions) {
-              const regionImage = region.previous ? (closedScenarioRoot === next.dialog.root ? closedScenario : null) : image;
+              const regionImage = region.previous ? (closedDialogRoot === next.dialog.root ? closedDialog : null) : image;
               if (!regionImage) continue;
               if (region.decoration === 'back') {
                 const {x, y, w, h} = region.target;
@@ -560,11 +567,13 @@
               } else if (region.decoration === 'scenario-scroll') {
                 drawScenarioScrollbar(next.scrollbar);
               } else if (region.decoration === 'tall-button') {
-                drawTallButton(regionImage,region.source,region.target,current);
+                drawTallButton(regionImage,region.source,region.target,current,region.accept);
               } else if (region.decoration === 'sound-control') {
                 global.WarcraftAssemblyDialogLayout.paintSoundControl(context,regionImage,region);
               } else if (region.decoration === 'dropdown') {
                 global.WarcraftAssemblyDialogLayout.paintDropdown(context,regionImage,region.source,region.target,buttonArt['orc-wide']);
+              } else if (region.decoration === 'custom-popup') {
+                global.WarcraftAssemblyDialogLayout.paintCustomPopup(context,regionImage,region,buttonArt['orc-wide']);
               } else if (region.decoration === 'control-ink') {
                 global.WarcraftAssemblyDialogLayout.paintControlInk(context,regionImage,region.source,region.target);
               } else if (region.texture && dialogTexture?.naturalWidth) {
