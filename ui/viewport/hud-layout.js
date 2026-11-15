@@ -179,11 +179,8 @@
     const size = Math.min(panelWidth, gridTop - top - gap);
     const info = createInfoRegion(layer, {left, top, scale:size / INFO_SIZE,
       right:left + size, bottom:top + size});
-    const miniSize = info
-      ? Math.min(size, Math.max(44, info.target.top + info.target.height - info.contentTop))
-      : size * MINIMAP.width / INFO_SIZE;
-    const miniTop = Math.min(info?.contentTop ?? top, top + size - miniSize);
-    const minimap = createMinimapRegion({left:right - miniSize, top:miniTop, size:miniSize});
+    const miniSize = size * MINIMAP.width / INFO_SIZE;
+    const minimap = createMinimapRegion({left:right - miniSize, top, size:miniSize});
     return {info, minimap, commandScale, gridTop};
   }
   /** V14: exactly one header row. Caller supplies native alpha bounds through
@@ -228,12 +225,13 @@
       reservedNativeWidths:parts.map(p=>p.reserved)};
   }
   function alignMinimapToHeader(fields, options, header, minimap) {
-    const {left=0,top=0,gap=6,menuScale=1.8}=options;
+    const {left=0,top=0,gap=6,menuScale=1.8,reserveWidth=42}=options;
     const edge=minimap.target.left-Math.max(4,gap);
+    const width=edge-left,minMenuScale=Math.min(1.5,menuScale);
+    // Keep this decision independent of changing resource counters. Each
+    // native resource field can use up to its full 73-pixel capture.
+    if(width<MENU_BUTTON.width*minMenuScale+gap*4+4*Math.max(73,reserveWidth))return {header,minimap};
     if(header.regions.some(({target})=>target.left+target.width>edge)){
-      // Reserve the minimap column only when every native counter still fits legibly.
-      const width=edge-left, minMenuScale=Math.min(1.5,menuScale);
-      if(width<=MENU_BUTTON.width*minMenuScale+gap*4)return {header,minimap};
       const fit=createCompactHeaderLayout(fields,{...options,width,minMenuScale});
       if(fit.resourceScale<1)return {header,minimap};
       header=fit;

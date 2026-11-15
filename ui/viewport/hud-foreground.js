@@ -95,12 +95,45 @@
     }
     return fields;
   }
+  function canvasFor(width,height){
+    if(global.OffscreenCanvas)return new global.OffscreenCanvas(width,height);
+    const canvas=global.document.createElement('canvas');canvas.width=width;canvas.height=height;return canvas;
+  }
+  function createMinimapPainter({left,top,width,height},factory=canvasFor){
+    let frame,context,image,words,lastPacket;
+    const rgba=new Uint8Array(1024),colors=new Uint32Array(rgba.buffer);
+    return {paint(packet,blackIndex=239){
+      if(packet===lastPacket)return frame;
+      if(!frame){
+        frame=factory(width,height);context=frame.getContext('2d');
+        image=context.createImageData(width,height);words=new Uint32Array(image.data.buffer);
+      }
+      const {palette,indices,screen}=packet;
+      for(let p=0;p<1024;p+=4){
+        rgba[p]=palette[p];rgba[p+1]=palette[p+1];rgba[p+2]=palette[p+2];
+        rgba[p+3]=p===blackIndex*4&&!(rgba[p]|rgba[p+1]|rgba[p+2])?150:255;
+      }
+      for(let y=0,i=0;y<height;y++){
+        const from=(top+y)*screen.width+left;
+        for(let x=0;x<width;x++)words[i++]=colors[indices[from+x]];
+      }
+      context.putImageData(image,0,0);lastPacket=packet;return frame;
+    }};
+  }
+  function hasProgressFill(layer){
+    // Native 445690 paints the green progress fill across the original
+    // 12,153..163,166 strip. Its caption is painted on top in other indices.
+    const {width,height}=layer.source,fill=0x95;
+    if(width!==176||height!==176)return false;
+    for(let y=153;y<167;y++){
+      const at=y*width+12;
+      if(!layer.alpha[at]||layer.indices[at]!==fill)return false;
+    }
+    return true;
+  }
   function createLayerSetPainter(factory){
     const entries=new Map();
-    factory=factory||((width,height)=>{
-      if(global.OffscreenCanvas)return new global.OffscreenCanvas(width,height);
-      const canvas=global.document.createElement('canvas');canvas.width=width;canvas.height=height;return canvas;
-    });
+    factory=factory||canvasFor;
     return {capture(packet){
       if(packet?.format!=='WHF3'||!packet.usable)throw new TypeError('Complete WHF3 foreground required');
       const result={};
@@ -115,6 +148,12 @@
           for(let i=0;i<width*height;i++)if(layer.alpha[i]){
             const color=layer.indices[i]*4,p=i*4;
             out[p]=packet.palette[color];out[p+1]=packet.palette[color+1];out[p+2]=packet.palette[color+2];out[p+3]=255;
+          }
+          if(layer.id===100&&packet.infoLayoutMode===1&&hasProgressFill(layer)){
+            for(let y=153;y<167;y++)for(let x=12;x<164;x++){
+              const at=y*width+x;
+              if(layer.alpha[at]&&layer.indices[at]===0x95)out[at*4+3]=165;
+            }
           }
           item.context.putImageData(image,0,0);item.revision=packet.revision;
         }
@@ -147,6 +186,6 @@
       return {frame,revision,fields:packet.fields};
     }};
   }
-  const api={parse,createLayerPainter,createLayerSetPainter,contentRect,statusFields,byteLength:SIZE};
+  const api={parse,createLayerPainter,createLayerSetPainter,createMinimapPainter,contentRect,statusFields,byteLength:SIZE};
   if(typeof module==='object'&&module.exports)module.exports=api;else global.WarcraftHudForeground=api;
 })(typeof window!=='undefined'?window:globalThis);

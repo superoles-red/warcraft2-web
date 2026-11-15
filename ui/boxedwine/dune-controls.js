@@ -8,6 +8,7 @@
   const SELECTION_WAIT_MS = 100;
   const DOUBLE_TAP_RADIUS = 24; // CSS pixels.
   const BOX_TAP_RADIUS = 84;
+  const TOUCH_UNIT_MARGIN = 7; // CSS pixels outside the original hit box.
   const TILE = 32;     // Original Warcraft camera tile, in native pixels.
   const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 
@@ -304,7 +305,7 @@
       if (!inWorld(p) || !sameGeometry(p.geometry,tap.point.geometry) || !sameCanvas(p.canvasRect,tap.point.canvasRect)) return;
       if (tap.retainSelection) api.rememberTouchSelection();
       press(0,p); release(0,p);
-      api.clearSelectionIfEmpty?.();
+      api.clearSelectionIfEmpty?.(Math.min(12,Math.ceil(TOUCH_UNIT_MARGIN*p.panScaleX)));
       tap.committed = true;
     }
     function deferTouchTap(p, timeStamp) {

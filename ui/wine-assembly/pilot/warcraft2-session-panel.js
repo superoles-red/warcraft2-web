@@ -57,39 +57,9 @@
     return glyph;
   }
 
-  function scrollingContent({nativeScroll = false} = {}) {
+  function scrollingContent() {
     const content = document.createElement('div');
     content.className = 'warcraft-session-content';
-    if (nativeScroll) return content;
-    let touch = null, dragged = false;
-    content.addEventListener('pointerdown', event => {
-      if (event.pointerType !== 'touch' || !event.isPrimary) return;
-      dragged = false;
-      if (content.scrollHeight > content.clientHeight) {
-        touch = {id:event.pointerId,y:event.clientY,top:content.scrollTop};
-      }
-    });
-    content.addEventListener('pointermove', event => {
-      if (event.pointerId !== touch?.id) return;
-      const delta = event.clientY-touch.y;
-      if (!dragged && Math.abs(delta)<6) return;
-      if (!dragged) content.setPointerCapture(event.pointerId);
-      dragged = true;
-      content.scrollTop = touch.top-delta;
-    });
-    for (const type of ['pointerup','pointercancel','lostpointercapture']) {
-      content.addEventListener(type, event => {
-        if (type==='lostpointercapture' && event.target!==content) return;
-        if (event.pointerId === touch?.id) touch = null;
-      });
-    }
-    content.addEventListener('click', event => {
-      if (dragged && event.detail) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
-      dragged = false;
-    }, true);
     return content;
   }
 
@@ -245,7 +215,7 @@
       heading.append(title, filters);
 
       clearScrollIndicators();
-      const content = scrollingContent({nativeScroll:true});
+      const content = scrollingContent();
       const list = scrollRegion(content);
       const details = document.createElement('div');
       details.className = 'warcraft-scenario-details';

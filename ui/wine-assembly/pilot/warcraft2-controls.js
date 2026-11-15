@@ -66,17 +66,18 @@
       return true;
     }
 
-    function command(scan) {
+    function command(scan, radius) {
       const current = target();
       if (!current || !Number.isInteger(scan) || scan < 62 || scan > 71) return false;
       const hwnd = current.window.hwnd >>> 0;
       if (!hwnd) return false;
+      const near = scan === 62 && Number.isInteger(radius) && radius >= 1 && radius <= 12;
       // Use the same FIFO as the preceding native button release. A separate
       // PostMessage could overtake it, and queued keyboard modifiers can be
       // consumed by the guest message pump before DispatchMessage.
       renderer.inputQueue.push({
         type: 'message', hwnd, processId: wine.processId,
-        msg: UI_COMMAND_MESSAGE, wParam: 0x74 + scan - 62, lParam: UI_COMMAND_SIGNATURE,
+        msg: UI_COMMAND_MESSAGE, wParam: near ? 0x100 + radius : 0x74 + scan - 62, lParam: UI_COMMAND_SIGNATURE,
       });
       renderer._wakeMessageWait(true);
       return true;

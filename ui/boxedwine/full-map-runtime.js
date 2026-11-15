@@ -2,7 +2,8 @@
 (function (global) {
   'use strict';
   let installed=false,routerInstalled=false,chart=null,visible=false,lastNative=null;
-  let output,source,display,input,frame,container,copier,context,foregroundPainter,buildConfirm;
+  let output,source,display,input,frame,container,copier,context,foregroundPainter,minimapPainter,buildConfirm;
+  let minimapBlack;
   let placement;
   let hudInsets=Object.freeze({left:4,right:4,bottom:4});
   const confirmSize=Object.freeze({width:116,height:48});
@@ -148,7 +149,8 @@
     const headerOptions={width:hudWidth,left,top:2,menuScale:cameraPilot&&!compact?1.9:1.8,
       resourceScale:cameraPilot?1.65:1.5,gap:compact?3:6,reserveWidth:cameraPilot?46:42};
     let header=global.WarcraftHudLayout.createCompactHeaderLayout(fields,headerOptions);
-    const sideTop=header.height+8;
+    const sideTop=8+(cameraPilot?Math.max(
+      global.WarcraftHudLayout.nativeMenuButton.height*headerOptions.menuScale,16*headerOptions.resourceScale):header.height);
     const info=foreground.layers.find(layer=>layer.id===100);
     const board=cameraPilot&&global.WarcraftHudLayout.createAdaptiveBoardLayout(
       state.selectionCount>0?info:null,{left,right:rightEdge,top:sideTop,bottom:lowerEdge,scale,portrait:height>width});
@@ -173,7 +175,8 @@
       return {...region,layer:'native-hud-'+id,visualSource:{left:region.source.left-native.source.left,
         top:region.source.top-native.source.top,width:region.source.width,height:region.source.height}};
     });
-    result.push(minimap);
+    result.push(minimapPainter?{...minimap,layer:'native-minimap',
+      visualSource:{left:0,top:0,width:minimap.source.width,height:minimap.source.height}}:minimap);
     if(board?.info){
       const box=board.info.source,hitRects=infoButtons?.(info)??[];
       result.push({...board.info,hitRects:hitRects.filter(hit=>
@@ -465,6 +468,11 @@
     context.save();context.setTransform(1,0,0,1,0,0);context.fillStyle='#000';
     context.fillRect(0,0,output.width,output.height);context.restore();
   }
+  function captureHudLayers(foreground,packet) {
+    const layers=foregroundPainter.capture(foreground);
+    if(minimapPainter)layers['native-minimap']=minimapPainter.paint(packet,minimapBlack?.());
+    return layers;
+  }
   function bootstrapModalBackground(scene) {
     const packet=global.WarcraftUiBridge?.bootstrapBackground?.();
     const {g,state,ui,foreground,view}=scene;
@@ -480,7 +488,8 @@
     const paletteKey=[container.clientWidth,container.clientHeight,global.devicePixelRatio,...Object.values(hudInsets),
       ...live.palette].join(',');
     if(bootstrapInUse&&bootstrapPaletteKey===paletteKey&&modalPresenter.hasBackground)return true;
-    const pixels=bootstrapPainter.paint({...packet,palette:live.palette,paletteRevision:paletteKey});if(!pixels)return false;
+    const displayPacket={...packet,palette:live.palette,paletteRevision:paletteKey};
+    const pixels=bootstrapPainter.paint(displayPacket);if(!pixels)return false;
     // A bootstrap is the dialog's background, not a completed presentation.
     const canvas=onPresented?(bootstrapCanvas??=document.createElement('canvas')):output;
     if(canvas===output)setVisible(true);
@@ -492,7 +501,7 @@
     const cleanChart=global.WarcraftPresentation.createChart({source:packet.screen,world,width,height,
       map:{fit:'contain'},regions:hud.regions});
     const ctx=canvas===output?context:canvas.getContext('2d');
-    cleanChart.render(ctx,pixels,{layers:foregroundPainter.capture(foreground),
+    cleanChart.render(ctx,pixels,{layers:captureHudLayers(foreground,displayPacket),
       afterMap:cameraPilot?(ctx,map)=>drawWorldOutline(ctx,map,world,cleanG):undefined});
     if(cameraPilot)drawMinimapOutline(ctx,cleanChart,world,cleanG,dpr);
     modalPresenter.captureBackground(canvas,{inGame:true,dialogOpen:false});
@@ -527,7 +536,7 @@
     // The same render also paints a live modal. Keep its raster separate from
     // the frozen world source that the browser is copying into the backdrop.
     const pixels=partialFrame?visibleFramePainter.paint(packet,layout):bootstrapPainter.paint(packet);
-    layout.render(ctx,pixels,{layers:foregroundPainter.capture(foreground),
+    layout.render(ctx,pixels,{layers:captureHudLayers(foreground,packet),
       afterMap:(ctx,map)=>drawWorldOutline(ctx,map,crop,g)});
     paintUnavailableCommands(ctx,layout,missingResources);
     drawMinimapOutline(ctx,layout,crop,g,dpr);
@@ -724,7 +733,7 @@
       telemetry.mode='world';
       if(reuseComposition)performanceStats.reusedWorldCompositions++;
       else{
-        const layers=balancedHud?foregroundPainter.capture(foreground):
+        const layers=balancedHud?captureHudLayers(foreground,lastScene.packet):
           hud?{'native-hud-foreground':foregroundPainter.capture(foreground).frame}:{};
         if(output.width!==pixelWidth)output.width=pixelWidth;
         if(output.height!==pixelHeight)output.height=pixelHeight;
@@ -964,7 +973,7 @@
     if(routerInstalled)return;routerInstalled=true;
     const stop=event=>{event.preventDefault();event.stopImmediatePropagation();};
     const inScope=event=>event.target===input;
-    let portraitMouse=null;
+    let portraitMouse=null,lastPortraitTap=null;
     const isPortraitMouse=event=>portraitMouse&&event.button===0&&inScope(event)&&telemetry.mode==='world'&&
       Math.hypot(event.clientX-portraitMouse.x,event.clientY-portraitMouse.y)<=8;
     if(infoFocus&&cameraPilot){
@@ -972,10 +981,12 @@
       listen('pointerdown',event=>{
         if(event.button!==0||event.isPrimary===false)return;
         portraitMouse=null;
+        const previous=lastPortraitTap;
+        lastPortraitTap=null;
         if(!inScope(event)||portraitPress)return;
         const focus=portraitAt(event);
         if(!focus||focus.native)return;
-        portraitPress={id:event.pointerId,x:event.clientX,y:event.clientY,focus};
+        portraitPress={id:event.pointerId,x:event.clientX,y:event.clientY,focus,previous};
         // A legacy mouse event after pointerup still belongs to this portrait.
         // Forwarding it would stop the host jump and run the original recenter too.
         portraitMouse=portraitPress;
@@ -997,6 +1008,21 @@
           Math.hypot(event.clientX-press.x,event.clientY-press.y)>8)return;
         const target=portraitAt(event);
         if(target?.unit!==press.focus.unit||target.token!==press.focus.token||target.epoch!==press.focus.epoch)return;
+        if(event.pointerType==='touch'&&target.group){
+          const previous=press.previous,elapsed=event.timeStamp-previous?.time;
+          if(target.unit===previous?.unit&&target.token===previous?.token&&target.epoch===previous?.epoch&&
+              chart?.width===previous.width&&chart?.height===previous.height&&elapsed>=0&&elapsed<=300) {
+            // The native portrait callback selects just this unit, with
+            // the original selection response and command synchronization.
+            const bridge=global.WarcraftUiBridge;
+            moveNative({x:target.nativeX,y:target.nativeY});
+            bridge.nativeButton(1,0,lastNative.x,lastNative.y);
+            bridge.nativeButton(0,0,lastNative.x,lastNative.y);
+            return;
+          }
+          lastPortraitTap={unit:target.unit,token:target.token,epoch:target.epoch,time:event.timeStamp,
+            width:chart?.width,height:chart?.height};
+        }
         if(camera.centerOn(target.x,target.y,{useEdgeRoom:true}))scheduleAnimation(true);
       },capture);
     }
@@ -1187,6 +1213,10 @@
     }
     if(cleanHud)foregroundPainter=balancedHud?global.WarcraftHudForeground.createLayerSetPainter():
       global.WarcraftHudForeground.createLayerPainter();
+    if(cameraPilot){
+      minimapBlack=host?.minimapBlack;
+      minimapPainter=global.WarcraftHudForeground.createMinimapPainter(global.WarcraftHudLayout.nativeMinimap);
+    }
     const onFrame=()=>{if(coherentFrames)scheduleAnimation(true);else render();};
     if(host)host.subscribeFrame(onFrame);
     else {
@@ -1230,6 +1260,7 @@
     output=context=copier=buildConfirm=commandHighlight=null;
     lastScene=lastNative=lastRenderedGeometry=lastDialogToken=selectedCommand=lastMapEpoch=displayedEndRaster=objectivesWaitUntil=null;
     camera=modalPresenter=cursorPresenter=foregroundPainter=bootstrapPainter=nativeFramePainter=visibleFramePainter=bootstrapCanvas=null;
+    minimapPainter=minimapBlack=null;
     onPresented=onUnavailable=acceptsInput=modalBack=modalSlider=modalTexture=infoButtons=infoFocus=objectivesBodyEnd=null;
     bootstrapInUse=false;
     bootstrapPaletteKey=modalBackgroundInsets=null;

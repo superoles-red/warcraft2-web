@@ -87,7 +87,8 @@
             } catch (error) { fail('ack-failed', error); break; }
             waiting = {baseline, started, epoch: ++epoch, accepted:action.accepted};
             try {
-              if (send({type:action.request}) === false) {
+              const request = typeof action.request === 'string' ? {type:action.request} : action.request;
+              if (send(request) === false) {
                 waiting = null;
                 continue;
               }

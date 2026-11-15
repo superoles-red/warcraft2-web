@@ -80,12 +80,12 @@
   function key(scan, down) {
     Module._boxedwineEmscriptenKey(scan, 0x40000000 | scan, down ? 1 : 0);
   }
-  function command(name) {
+  function command(name, radius) {
     if (!snapshot().ready || (!transport && !Module._boxedwineEmscriptenKey)) return false;
     const scan = scans[name];
     if (!scan) return false;
     if(transport){
-      if(!transport.command(scan))return false;
+      if(!transport.command(scan,radius))return false;
       telemetry.commands++;
       return true;
     }
@@ -176,7 +176,7 @@
       if(mouseButton(down?1:0,button,actualPoint.x,actualPoint.y)===false)return false;
       if(down)actualHeld.add(button);else actualHeld.delete(button);
     } else if(action.type==='clearEmpty') {
-      return command('clearEmpty');
+      return command('clearEmpty',action.radius);
     } else if(action.type==='restoreTouch') {
       return command('restoreTouch');
     } else if(action.type==='command')command(action.args[0]);
@@ -195,7 +195,8 @@
       schedule:(fn,ms)=>global.setTimeout(fn,ms),clearSchedule:id=>global.clearTimeout(id),now:()=>Date.now(),
       onError:error=>{if(telemetry.errors.length<8)telemetry.errors.push(String(error));releaseActualButtons();}}):null;
   function directDispatch(action) {
-    if(action.type==='emptyBarrier')return fence.barrier();
+    if(action.type==='emptyBarrier')return fence.barrier(action.radius ?
+      {type:'clearEmpty',radius:action.radius} : undefined);
     if(action.type==='touchOrder')return fence.barrier('restoreTouch',action);
     return fence?fence.dispatch(action):sendAction(action);
   }
@@ -255,7 +256,8 @@
     }:{}),
     clearSelection:() => dispatch({type:'command',args:['clear']}),
     ...(modernInput ?
-      {clearSelectionIfEmpty:() => enhancedInput?dispatch({type:'emptyBarrier'}):fence.barrier()} : {}),
+      {clearSelectionIfEmpty:radius => enhancedInput?dispatch({type:'emptyBarrier',
+        radius:coherentFrames&&transport?.touchSelection===true ? radius : 0}):fence.barrier()} : {}),
     panTiles(dx,dy,origin) {
       const action={type:'pan',args:[dx,dy],origin};
       if(!coherentFrames)return dispatch(action);

@@ -176,7 +176,8 @@
     if (tx < 0 || tx >= g.mapWidth || ty < 0 || ty >= g.mapHeight) return null;
     const size = view(0x4cee6c + type * 4, 4);
     const center = (tile, span) => (tile + (span && span % 2 === 0 ? 0 : .5)) * 32;
-    return {unit:active, x:center(tx, size?.getUint16(0, true)), y:center(ty, size?.getUint16(2, true))};
+    return {unit:active, x:center(tx, size?.getUint16(0, true)), y:center(ty, size?.getUint16(2, true)),
+      group:count>1, nativeX:portrait.left+portrait.width/2, nativeY:portrait.top+portrait.height/2};
   }
 
   function objectivesBodyEnd(wine, modal, frame) {
@@ -407,6 +408,8 @@
       unavailableCommands: commands => unavailableCommands(wine, commands),
       placementUnaffordable: () => placementUnaffordable(wine),
       activeConstruction: view => activeConstruction(wine, view),
+      // BNE minimap terrain painter 42DBAC reads the current black pen for shroud.
+      minimapBlack: () => guestReader(wine)(0x4d6582,1)?.getUint8(0),
       modalSlider: (layer, x, y) => window.WarcraftAssemblyMenuPolicy?.sliderAt(wine, layer, x, y),
       modalTexture() {
         if (!textures || !window.WarcraftUiBridge.state().inGame) return null;

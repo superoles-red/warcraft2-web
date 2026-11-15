@@ -387,7 +387,8 @@
 .warcraft-session-content {
   overflow-y: auto;
   overscroll-behavior: contain;
-  touch-action: none;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
   display: grid;
   align-content: start;
   gap: 6px;
@@ -530,17 +531,27 @@
 .warcraft-scenario-filter-options > .warcraft-scroll-body { touch-action: pan-y; }
 .warcraft-scenario-filter-options.has-scrollbar > .warcraft-scroll-body { padding-inline-end: 9px; }
 .warcraft-scenario-filter-options .warcraft-session-choice { height: clamp(44px, var(--warcraft-menu-row-height), 56px); }
-.scenario-picker .warcraft-session-content {
-  touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
-}
 .warcraft-scenario-row .warcraft-session-choice { width: 100%; }
+.warcraft-scenario-row:has(> button[aria-expanded="true"]) { position: relative; }
+.warcraft-scenario-row:has(> button[aria-expanded="true"])::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2px solid #f1d79e;
+  pointer-events: none;
+}
+.warcraft-scenario-row:has(> button[aria-expanded="true"]:focus-visible)::after { border-color: #f4d343; }
+.warcraft-scenario-row > button[aria-expanded="true"] {
+  /* Crop the two bottom rim pixels of the original 28-pixel button art. */
+  background-position: top;
+  background-size: 100% 107.7%;
+  outline: none;
+}
 .warcraft-scenario-card {
   display: flex;
   align-items: center;
   gap: clamp(8px, 3vw, 16px);
   padding: 8px 12px;
-  box-shadow: inset 0 -1px #9f753b, inset 1px 0 #9f753b, inset -1px 0 #9f753b;
   background: linear-gradient(#100900a6, #100900a6), url("./menu-art/orc-texture.png") center / cover;
   pointer-events: none;
 }
@@ -556,7 +567,7 @@
 .warcraft-scenario-card-copy { min-width: 0; }
 .warcraft-scenario-card-copy p + p { margin-top: 4px; }
 .warcraft-scenario-card-copy img { margin-left: 0; }
-.scenario-picker .warcraft-session-choice[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #e4c43e; }
+.warcraft-scenario-filter .warcraft-session-choice[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #e4c43e; }
 .scenario-picker .warcraft-session-choice img { max-height: 100%; object-fit: contain; }
 .warcraft-scenario-details { grid-row: 3; }
 .warcraft-scenario-details p + p { margin-top: 3px; }
