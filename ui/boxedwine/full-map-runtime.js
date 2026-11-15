@@ -3,6 +3,7 @@
   'use strict';
   let installed=false,routerInstalled=false,chart=null,visible=false,lastNative=null;
   let output,source,display,input,frame,container,copier,context,foregroundPainter,buildConfirm;
+  let placement;
   let hudInsets=Object.freeze({left:4,right:4,bottom:4});
   const confirmSize=Object.freeze({width:116,height:48});
   let keepNativeUntilReady=false;
@@ -39,6 +40,7 @@
   function setVisible(value) {
     if(!value){
       closePurchase();
+      hideBuildControls();
       onUnavailable?.();
       cleanWorldReady=false;
       lastWorldPaint=frozenWorld=null;
@@ -52,10 +54,36 @@
     if(display===source)source.style.opacity=value?'0':'';
     chart=null;telemetry.mode=value?'world':'native';
   }
+  function hideBuildControls() {
+    if(buildConfirm)buildConfirm.hidden=true;
+    if(placement)placement.layer.hidden=true;
+  }
+  function placementSize(width,height) {
+    if(!placement)return confirmSize;
+    const {left,right}=hudInsets;
+    const contentWidth=width-(left>4?left:0)-(right>4?right:0);
+    const menuHeight=global.WarcraftAssemblyDialogLayout.menuButtonHeight(contentWidth,height);
+    return {width:Math.min(menuHeight*1.65,(width-left-right)*.43),height:menuHeight};
+  }
   function updateBuildConfirm(state, mode) {
     if(!buildConfirm)return;
     const target=global.WarcraftDuneControls?.buildingTarget;
     buildConfirm.hidden=mode!=='world'||!state.buildingPending||state.inputAllowed===false;
+    if(placement){
+      placement.layer.hidden=buildConfirm.hidden;
+      if(!buildConfirm.hidden&&chart){
+        const size=placementSize(chart.width,chart.height);
+        const faction=modalFaction()||'orc';
+        if(placement.width!==size.width||placement.height!==size.height){
+          placement.layer.style.setProperty('--placement-width',size.width+'px');
+          placement.layer.style.setProperty('--placement-height',size.height+'px');
+          placement.width=size.width;placement.height=size.height;
+        }
+        if(placement.layer.dataset.faction!==faction)placement.layer.dataset.faction=faction;
+        placement.cancel.hidden=!lastScene.ui?.children?.some(child=>child.isCancel&&child.commandPresent&&child.nativeVisible);
+      }
+    }
+
     const native=target&&global.WarcraftFullMap.globalToWorld(target.x,target.y);
     const bounds=lastRenderedGeometry?.world;
     buildConfirm.disabled=buildConfirm.hidden||!target||target.submitted||!native||!bounds||
@@ -123,9 +151,12 @@
       state.selectionCount>0?info:null,{left,right:rightEdge,top:sideTop,bottom:lowerEdge,scale,portrait:height>width});
     const commandScale=board?board.commandScale:scale;
     const gridTop=board?board.gridTop:lowerEdge-140*commandScale;
-    const commands=global.WarcraftHudLayout.createV14CommandRegions(packet,
+    const nativeCommands=global.WarcraftHudLayout.createV14CommandRegions(packet,
       {left,top:gridTop,scale:commandScale,separateCancel:true,cancelRight:rightEdge,cancelBottom:lowerEdge});
-    if(!commands)return null;
+    if(!nativeCommands)return null;
+    const placing=placement&&state.buildingPending&&state.inputAllowed!==false;
+    const commands=placing?nativeCommands.filter(region=>!region.isCancel):nativeCommands;
+
     const result=header.regions.map(region=>{
       if(region.id==='menu')return region;
       const id=Number(region.id.split('-')[1]),native=foreground.layers.find(f=>f.id===id);
@@ -148,10 +179,11 @@
     const status=foreground.layers.find(layer=>layer.id===101);
     const statusFields=global.WarcraftHudForeground.statusFields(status,{hideHotkeys:touchOnly});
     if(cameraPilot){
-      const cancel={left:rightEdge-54*commandScale,top:lowerEdge-46*commandScale,
-        width:54*commandScale,height:46*commandScale};
+      const size=state.buildingPending?placementSize(width,height):confirmSize;
+      const cancelSize=placing?size:{width:54*commandScale,height:46*commandScale};
+      const cancel={left:rightEdge-cancelSize.width,top:lowerEdge-cancelSize.height,...cancelSize};
       const statusCommands=state.buildingPending?[...commands,
-        {target:{left,top:lowerEdge-confirmSize.height,...confirmSize}}]:commands;
+        {target:{left,top:lowerEdge-size.height,...size}}]:commands;
       const statusLayout=global.WarcraftHudLayout.createGapStatusLayout(statusFields,
         {width,height,commands:statusCommands,cancel,bottomMargin:bottom,leftMargin:left,rightMargin:right,maxScale:1.58,preferAbove:true,
           obstacles:result.map(region=>region.target)});
@@ -354,7 +386,7 @@
   }
   function waitForNativeFrame() {
     onUnavailable?.();
-    if(buildConfirm)buildConfirm.hidden=true;
+    hideBuildControls();
     if(keepNativeUntilReady&&!visible){telemetry.mode='waiting-native-frame';return;}
     if(hostPresentation&&visible){chart=null;telemetry.mode='waiting-native-frame';return;}
     setVisible(true);sizeOutput();chart=null;telemetry.mode='waiting-native-frame';
@@ -551,7 +583,7 @@
       foreground.screen.width===g?.width&&foreground.screen.height===g?.height);
     const ready=g?.active&&expanded&&state?.ready&&state.inGame&&!state.dialogOpen&&
       lastScene.frame&&source.width===g.width&&source.height===g.height&&input.width===g.width&&input.height===g.height&&g.width>=640&&g.height>=480&&commands&&hudReady;
-    if(!ready){if(buildConfirm)buildConfirm.hidden=true;if(coherentFrames&&state?.inGame)waitForNativeFrame();else setVisible(false);return;}
+    if(!ready){hideBuildControls();if(coherentFrames&&state?.inGame)waitForNativeFrame();else setVisible(false);return;}
     try {
       bootstrapInUse=false;bootstrapPaletteKey=null;
       lastDialogToken=objectivesWaitUntil=null;
@@ -585,7 +617,7 @@
         provenance:{source:g.source,revision:g.revision,nativeWorld:g.world}});
       const layers=balancedHud?foregroundPainter.capture(foreground):
         hud?{'native-hud-foreground':foregroundPainter.capture(foreground).frame}:{};
-      const framePixels=lastScene.partialFrame?visibleFramePainter.paint(lastScene.packet,nextChart):
+      const framePixels=lastScene.partialFrame?visibleFramePainter.paint(lastScene.packet,nextChart,!camera.active):
         coherentFrames?nativeFramePainter.paint(lastScene.frame):lastScene.frame;
       setVisible(true);
       chart=nextChart;
@@ -597,11 +629,11 @@
       if(cameraPilot)drawMinimapOutline(context,chart,world,g,dpr);
       else if(camera?.independent)drawMinimapView(world,g,dpr);
       lastRenderedGeometry=g;
+      updateBuildConfirm(state,'world');
       if(cameraPilot){
-        const hasCancel=hud.regions.some(region=>region.isCancel);
+        const hasCancel=hud.regions.some(region=>region.isCancel)||!!(placement&&!placement.layer.hidden&&!placement.cancel.hidden);
         if(hasCancel!==('warcraftCancelVisible' in frame.dataset))frame.toggleAttribute('data-warcraft-cancel-visible',hasCancel);
       }
-      updateBuildConfirm(state,'world');
       if(enhancedHud){
         if(cameraPilot){
           cleanWorldReady=true;
@@ -962,16 +994,50 @@
     if(cameraPilot?.explicitBuilding){
       buildConfirm=document.createElement('button');
       buildConfirm.type='button';buildConfirm.id='warcraft-build-confirm';
-      buildConfirm.style.width=confirmSize.width+'px';
-      buildConfirm.style.minHeight=confirmSize.height+'px';
-      buildConfirm.setAttribute('aria-label','Подтвердить строительство');
       buildConfirm.hidden=buildConfirm.disabled=true;
-      const art=document.createElement('img');
-      art.src=document.documentElement.classList.contains('warcraft-page')?'./build-confirm.png':'/build-confirm.png';
-      art.alt='OK';art.draggable=false;
-      buildConfirm.append(art);frame.append(buildConfirm);
+      if(modalFaction&&global.WarcraftSessionText&&global.WarcraftAssemblyDialogLayout){
+        const layer=document.createElement('div');
+        layer.className='warcraft-placement-controls';layer.hidden=true;
+        const cancel=document.createElement('button');
+        cancel.id='warcraft-build-cancel';cancel.type='button';cancel.hidden=true;
+        const locale=global.WarcraftLanguage?.current()==='ru'?'ru':'en';
+        const labels=locale==='ru'?['Поставить','Отмена']:['Place','Cancel'];
+        const font=global.WarcraftSessionText;
+        for(const [button,label] of [[buildConfirm,labels[0]],[cancel,labels[1]]]){
+          button.textContent=label;
+          button.setAttribute('aria-label',label);
+          font.load(locale).then(atlas=>{
+            const ink=new Image();ink.src=font.ink(label,atlas).toDataURL();ink.alt='';ink.draggable=false;
+            button.replaceChildren(ink);
+          }).catch(console.error);
+        }
+        cancel.addEventListener('click',()=>{
+          const bridge=global.WarcraftUiBridge,state=bridge.state();
+          if(telemetry.mode!=='world'||!state.buildingPending||!state.inputAllowed||acceptsInput?.()===false)return;
+          const packet=bridge.uiRects();
+          const child=packet?.children?.find(item=>item.isCancel&&item.commandPresent&&item.nativeVisible);
+          const command=child&&readHudCommand('command-'+child.id,bridge.viewState(),packet);
+          if(!command?.isCancel)return;
+          global.WarcraftDuneControls?.cancel?.();
+          moveNative({x:command.nativeX,y:command.nativeY});
+          bridge.nativeButton(1,0,lastNative.x,lastNative.y);
+          bridge.nativeButton(0,0,lastNative.x,lastNative.y);
+          input.focus({preventScroll:true});
+        });
+        layer.append(buildConfirm,cancel);frame.append(layer);
+        placement={layer,cancel};
+      }else{
+        buildConfirm.style.width=confirmSize.width+'px';
+        buildConfirm.style.minHeight=confirmSize.height+'px';
+        buildConfirm.setAttribute('aria-label','Подтвердить строительство');
+        const art=document.createElement('img');
+        art.src=document.documentElement.classList.contains('warcraft-page')?'./build-confirm.png':'/build-confirm.png';
+        art.alt='OK';art.draggable=false;
+        buildConfirm.append(art);frame.append(buildConfirm);
+      }
       buildConfirm.addEventListener('click',()=>{
-        if(telemetry.mode==='world'&&global.WarcraftDuneControls?.confirmBuilding())buildConfirm.disabled=true;
+        if(telemetry.mode==='world'&&acceptsInput?.()!==false&&
+            global.WarcraftDuneControls?.confirmBuilding())buildConfirm.disabled=true;
       });
     }
     context=output.getContext('2d');copier=global.WarcraftPresentation.createFrameCopier();
@@ -1027,6 +1093,8 @@
     output.remove();
     commandHighlight?.remove();
     buildConfirm?.remove();
+    placement?.layer.remove();
+    placement=null;
     purchaseDialog?.layer.remove();
     purchaseDialog=modalFaction=purchaseTooltipMatches=null;
     output=context=copier=buildConfirm=commandHighlight=null;

@@ -44,12 +44,33 @@
   const freezeRect=r=>Object.freeze({...r,right:r.left+r.width,bottom:r.top+r.height});
   function inside(r,x,y){return x>=r.left&&y>=r.top&&x<r.right&&y<r.bottom;}
   const paintRect=r=>({x:r.left,y:r.top,w:r.width,h:r.height});
-  function paintAction(context,frame,{source:s,target:t,blank,button,label}) {
+  function paintButtonTexture(context,image,target){
+    const {naturalWidth:width,naturalHeight:height}=image;
+    const rim=4,scale=Math.min(target.width/width,target.height/height);
+    const edge=rim*scale,textureHeight=height-rim*2,step=textureHeight*scale;
+    const {left,top,right,bottom}=target;
+    context.drawImage(image,0,0,width,rim,left,top,target.width,edge);
+    context.drawImage(image,0,height-rim,width,rim,left,bottom-edge,target.width,edge);
+    context.save();
+    try{
+      context.beginPath();context.rect(left,top+edge,right-left,target.height-edge*2);context.clip();
+      // Reflect the original full-width interior to fill extra rows at the same pixel scale.
+      for(let y=top+edge,reverse=false;y<bottom-edge;y+=step,reverse=!reverse){
+        context.save();
+        context.translate(0,reverse?y+step:y);
+        if(reverse)context.scale(1,-1);
+        context.drawImage(image,0,rim,width,textureHeight,left,0,target.width,step);
+        context.restore();
+      }
+    }finally{context.restore();}
+  }
+  function paintAction(context,frame,{source:s,target:t,blank,button,label,confirmation}) {
     const painter=global.WarcraftAssemblyDialogLayout?.paintTallButton;
     if(!painter){context.drawImage(frame,s.left,s.top,s.width,s.height,t.left,t.top,t.width,t.height);return;}
     const artwork=button?.naturalWidth?button:frame;
     const patch=artwork===frame?paintRect(s):{x:0,y:0,w:button.naturalWidth,h:button.naturalHeight};
-    painter(context,artwork,patch,paintRect(t),blank);
+    if(confirmation&&artwork===button)paintButtonTexture(context,button,t);
+    else painter(context,artwork,patch,paintRect(t),blank);
     if(label){
       const w=(label.naturalWidth||label.width)*t.scale,h=(label.naturalHeight||label.height)*t.scale;
       context.drawImage(label,t.left+(t.width-w)/2,t.top+(t.height-h)/2,w,h);
@@ -378,7 +399,7 @@
           for(const action of p.actions)paintAction(context,frame,action);
           if(p.confirmation){
             const {button,label}=options.back.confirmation;
-            paintAction(context,frame,{...p.confirmation.ok,button,label});
+            paintAction(context,frame,{...p.confirmation.ok,button,label,confirmation:true});
           }
           if(p.objectivesStone){
             const {source:s,target:t}=p.objectivesStone;

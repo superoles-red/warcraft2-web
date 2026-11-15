@@ -504,7 +504,7 @@
       context.imageSmoothingEnabled = false;
       const foreground = (sourceImage, region) => drawForeground(context, sourceImage, region, backdrop, scratch);
       const authoredPaint = navigation?.paint(context, image, backdrop, current,
-        rect.width, rect.height, foreground, left, right);
+        rect.width, rect.height, foreground, left, right, insets?.bottom);
       if (authoredPaint === null) {
         last = image;
         chart = null;

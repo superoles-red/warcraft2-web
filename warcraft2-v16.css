@@ -128,6 +128,52 @@
 #warcraft-build-confirm img { display: block; width: 100%; image-rendering: pixelated; }
 #warcraft-build-confirm:disabled { opacity: .5; cursor: default; }
 #warcraft-build-confirm[hidden] { display: none !important; }
+.warcraft-placement-controls {
+  --placement-accept: url("./menu-art/orc-accept-button.png");
+  --placement-cancel: url("./menu-art/orc-cancel-button.png");
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+.warcraft-placement-controls[data-faction="human"] {
+  --placement-accept: url("./menu-art/human-accept-button.png");
+  --placement-cancel: url("./menu-art/human-cancel-button.png");
+}
+.warcraft-placement-controls button {
+  position: absolute;
+  bottom: var(--warcraft-hud-bottom, 4px);
+  width: var(--placement-width);
+  height: var(--placement-height);
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  color: #f2cf41;
+  cursor: pointer;
+  touch-action: manipulation;
+  pointer-events: auto;
+  image-rendering: pixelated;
+}
+.warcraft-placement-controls #warcraft-build-confirm {
+  background: var(--placement-accept) center / 100% 100%;
+}
+.warcraft-placement-controls #warcraft-build-cancel {
+  right: var(--warcraft-hud-right, 4px);
+  background: var(--placement-cancel) center / 100% 100%;
+}
+.warcraft-placement-controls button img, .warcraft-placement-controls #warcraft-build-confirm img {
+  display: block;
+  width: auto;
+  max-width: calc(100% - 8px);
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.warcraft-placement-controls button:active:not(:disabled) { filter: brightness(.85); }
+.warcraft-placement-controls button:focus-visible { outline: 2px solid #f2cf41; outline-offset: 1px; }
+.warcraft-placement-controls[hidden], .warcraft-placement-controls button[hidden] { display: none; }
+
 /* Leave the game's bottom-right Cancel reachable beside the shell keyboard. */
 #screen-wrap:has(#warcraft-build-confirm:not([hidden]), #warcraft-menu-navigation:not([hidden]) button[aria-label="Back"]) #touch-controls .tc-utility-row {
   bottom: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
@@ -226,7 +272,8 @@
 }
 .warcraft-purchase-panel {
   --purchase-texture: url("./menu-art/orc-texture.png");
-  --purchase-button: url("./menu-art/orc-short-button.png");
+  --purchase-accept: url("./menu-art/orc-accept-button.png");
+  --purchase-cancel: url("./menu-art/orc-cancel-button.png");
   box-sizing: border-box;
   width: min(100%, 328px);
   padding: clamp(10px, 2.8vmin, 16px);
@@ -238,7 +285,8 @@
 }
 [data-faction="human"] > .warcraft-purchase-panel {
   --purchase-texture: url("./menu-art/human-texture.png");
-  --purchase-button: url("./menu-art/human-short-button.png");
+  --purchase-accept: url("./menu-art/human-accept-button.png");
+  --purchase-cancel: url("./menu-art/human-cancel-button.png");
 }
 .warcraft-purchase-panel h2 {
   margin: 0;
@@ -267,12 +315,14 @@
   min-height: var(--warcraft-menu-row-height, 48px);
   display: grid;
   place-items: center;
-  background: var(--purchase-button) center / 100% 100%;
+  background: var(--purchase-accept) center / 100% 100%;
   color: #f2cf41;
   cursor: pointer;
 }
+.warcraft-purchase-controls button + button { background-image: var(--purchase-cancel); }
+.warcraft-purchase-controls button:active:not(:disabled) { filter: brightness(.85); }
 .warcraft-purchase-controls button:disabled { opacity: .62; }
-.warcraft-purchase-controls button:focus-visible { outline: 1px solid #f2cf41; }
+.warcraft-purchase-controls button:focus-visible { outline: 2px solid #f2cf41; outline-offset: 1px; }
 .warcraft-session-panel {
   box-sizing: border-box;
   width: min(100%, 380px);
@@ -359,3 +409,11 @@
   cursor: pointer;
 }
 .warcraft-session-back:active { background-image: url("./menu-art/menu-back-orc-pressed.png"); }
+.session-confirmation .warcraft-session-footer .warcraft-session-choice {
+  background-image: url("./menu-art/title-accept-button.png");
+}
+.session-confirmation .warcraft-session-footer .warcraft-session-choice:active {
+  background-image: url("./menu-art/title-accept-button-pressed.png");
+}
+.session-confirmation .warcraft-session-back { background-image: url("./menu-art/orc-cancel-back.png"); }
+.session-confirmation .warcraft-session-back:active { background-image: url("./menu-art/orc-cancel-back-pressed.png"); }

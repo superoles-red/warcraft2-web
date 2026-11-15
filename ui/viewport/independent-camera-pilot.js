@@ -135,31 +135,97 @@
     const context = canvas.getContext('2d');
     const paletteBytes = new Uint8Array(1024);
     const palette = new Uint32Array(paletteBytes.buffer);
-    let image, pixels, painted, tilesPerRow, previous = null, expanded = 0, uploads = 0;
+    let image, pixels, painted, priorPainted, tilesPerRow, previous = null, comparison = null;
+    let expanded = 0, reused = 0, uploads = 0, uploadedPixels = 0;
+    const words = indices => new Uint32Array(indices.buffer, indices.byteOffset, indices.byteLength / 4);
 
-    function begin(packet) {
+    function begin(packet,reuse) {
       if (previous === packet) return;
       const {width, height} = packet.screen;
-      if (canvas.width !== width || canvas.height !== height) {
+      comparison = null;
+      if (!image || canvas.width !== width || canvas.height !== height) {
         canvas.width = width;
         canvas.height = height;
         image = context.createImageData(width, height);
         pixels = new Uint32Array(image.data.buffer);
         tilesPerRow = width / tile;
         painted = new Uint8Array(tilesPerRow * (height / tile));
-      } else painted.fill(0);
+        priorPainted = new Uint8Array(painted.length);
+      } else {
+        const next = priorPainted;
+        priorPainted = painted;
+        painted = next;
+        painted.fill(0);
+        if (reuse && !packet.dialogRoot && !previous.dialogRoot && packet.sceneEpoch === previous.sceneEpoch &&
+            packet.cameraX === previous.cameraX && packet.cameraY === previous.cameraY &&
+            packet.indices.byteOffset % 4 === 0 && previous.indices.byteOffset % 4 === 0 &&
+            packet.palette.every((byte,index) => byte === previous.palette[index])) {
+          comparison = {before: words(previous.indices), after: words(packet.indices)};
+        }
+      }
       paletteBytes.set(packet.palette);
       for (let i = 3; i < paletteBytes.length; i += 4) paletteBytes[i] = 255;
       previous = packet;
-      expanded = uploads = 0;
+      expanded = reused = uploads = uploadedPixels = 0;
     }
 
-    function paintRect(rect) {
+    function expand(x,y,width,height,stride) {
+      for (let py=y; py<y+height; py++) {
+        const start = py*stride+x, end = start+width;
+        for (let i=start; i<end; i++) pixels[i] = palette[previous.indices[i]];
+      }
+      expanded += width*height;
+    }
+
+    function upload(x,y,width,height) {
+      context.putImageData(image,0,0,x,y,width,height);
+      uploads++;
+      uploadedPixels += width*height;
+    }
+
+    function unchanged(x,y,wordStride) {
+      const {before,after} = comparison;
+      const start = y*wordStride+x/4;
+      for (let iy=0; iy<tile; iy++) {
+        const row = start+iy*wordStride, end = row+tile/4;
+        for (let i=row; i<end; i++) if (before[i] !== after[i]) return false;
+      }
+      return true;
+    }
+
+    function paintReusingTiles(left,top,right,bottom,stride) {
+      let dirtyLeft=right,dirtyTop=bottom,dirtyRight=left,dirtyBottom=top;
+      for (let row=top; row<bottom; row++) for (let col=left; col<right; col++) {
+        const index = row*tilesPerRow+col;
+        if (painted[index]) continue;
+        painted[index] = 1;
+        const x = col*tile, y = row*tile;
+        if (priorPainted[index] && unchanged(x,y,stride/4)) {
+          reused += tile*tile;
+        } else {
+          expand(x,y,tile,tile,stride);
+          dirtyLeft = Math.min(dirtyLeft,col);
+          dirtyTop = Math.min(dirtyTop,row);
+          dirtyRight = Math.max(dirtyRight,col+1);
+          dirtyBottom = Math.max(dirtyBottom,row+1);
+        }
+      }
+      // A single upload also covers unchanged pixels within the bounding
+      // rectangle. Scattered animated sprites cannot create one upload each.
+      if (dirtyLeft < dirtyRight && dirtyTop < dirtyBottom)
+        upload(dirtyLeft*tile,dirtyTop*tile,(dirtyRight-dirtyLeft)*tile,(dirtyBottom-dirtyTop)*tile);
+    }
+
+    function paintRect(rect,reuse) {
       const left = Math.floor(rect.left / tile);
       const top = Math.floor(rect.top / tile);
       const right = Math.min(tilesPerRow, Math.ceil(rect.right / tile));
       const bottom = Math.min(canvas.height / tile, Math.ceil(rect.bottom / tile));
       const stride = canvas.width;
+      if (reuse && comparison) {
+        paintReusingTiles(left,top,right,bottom,stride);
+        return;
+      }
       for (let row = top; row < bottom; row++) {
         const first = row * tilesPerRow;
         let col = left;
@@ -179,26 +245,21 @@
             last++;
           }
           const x=from*tile,y=row*tile,width=(col-from)*tile,height=(last-row)*tile;
-          for (let py=y; py<y+height; py++) {
-            const start = py*stride+x, end = start+width;
-            for (let i=start; i<end; i++) pixels[i] = palette[previous.indices[i]];
-          }
-          context.putImageData(image,0,0,x,y,width,height);
-          expanded += width*height;
-          uploads++;
+          expand(x,y,width,height,stride);
+          upload(x,y,width,height);
         }
       }
     }
 
     return {
-      paint(packet, chart) {
-        begin(packet);
+      paint(packet, chart, reuse=true) {
+        begin(packet,reuse);
         for (const region of chart.regions) {
-          if (region.visible && !region.layer) paintRect(region.visualSource);
+          if (region.visible && !region.layer) paintRect(region.visualSource,reuse);
         }
         return canvas;
       },
-      debug() { return {expanded, uploads, full: canvas.width * canvas.height}; },
+      debug() { return {expanded, reused, uploads, uploadedPixels, full: canvas.width * canvas.height}; },
     };
   }
 

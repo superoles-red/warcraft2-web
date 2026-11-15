@@ -108,6 +108,9 @@
 
   function createModalBack(wine) {
     const arrows = {human:load('menu-back-human'), orc:load('menu-back-orc')};
+    const confirmationArt = Object.fromEntries(['human','orc'].map(faction => [faction, {
+      accept:load(faction + '-accept-button'), cancel:load(faction + '-cancel-back'),
+    }]));
     const russian = language()?.current?.() === 'ru';
     let confirmationLabels;
     const font = window.WarcraftSessionText;
@@ -211,10 +214,10 @@
       if (!pause && !previous) return required;
       if (confirmation) {
         const accept = buttons.get(-2);
-        const {shortButton:button} = restartArt[faction];
-        if (!confirmationLabels || !button.naturalWidth || !arrow.naturalWidth || buttons.size !== 2 ||
+        const {accept:button, cancel} = confirmationArt[faction];
+        if (!confirmationLabels || !button.naturalWidth || !cancel.naturalWidth || buttons.size !== 2 ||
             accept?.left !== 16 || accept.top !== 108 || accept.width !== 224) return waiting;
-        return {...previous, compact:'confirmation', controls:[], confirmation:{ok:sourceOf(accept),
+        return {...previous, image:cancel, compact:'confirmation', controls:[], confirmation:{ok:sourceOf(accept),
           label:confirmationLabels[faction], button}};
       }
       const expected = pause ? PAUSE_BUTTONS : options ? OPTION_BUTTONS : END_BUTTONS;
@@ -508,7 +511,7 @@
       });
     }
 
-    function place(width, height, count, campaign, home) {
+    function place(width, height, count, campaign, home, safeBottom) {
       const portrait = width < height;
       const h = window.WarcraftAssemblyDialogLayout.menuButtonHeight(width,height);
       const gap = Math.min(8,h*.16);
@@ -527,11 +530,13 @@
       const picture = {x: (pictureSpace-art.w*pictureScale)/2, y: portrait ? artTop : (height-art.h*pictureScale)/2,
         w: art.w * pictureScale, h: art.h * pictureScale};
       const panelTop = portrait ? picture.y+picture.h+gap : gap;
-      const panelBottom = portrait && !home ? back.y-gap : height-gap;
+      const panelBottom = (portrait ? home ? height-safeBottom : back.y : height)-gap;
       const scale = Math.max(.1, Math.min(1.6,
         (controlSpace-(portrait ? 28 : 18))/224,portrait ? Infinity : height*.49/172));
       const w = 224*scale;
-      const centered = portrait ? height/2 : (panelTop+panelBottom)/2;
+      const centered = portrait
+        ? (home ? (picture.y+picture.h+height)/2 : height/2)
+        : (panelTop+panelBottom)/2;
       const top = headingRoom+Math.max(panelTop,Math.min(panelBottom-span,centered-span/2));
       const boxes = Array.from({length:count},(_,i)=>({x:controlCenter-w/2,
         y:top+i*(h+gap)+(i>=2 ? headingRoom : 0),w,h}));
@@ -601,7 +606,7 @@
     }
 
     let presented = null;
-    function paint(context, image, backdrop, scene, width, height, foreground, leftInset=0, rightInset=0) {
+    function paint(context, image, backdrop, scene, width, height, foreground, leftInset=0, rightInset=0, bottomInset=8) {
       if (scene.scenes.some(s => s.handler === 0x441940)) {
         if (soundOptions) soundOptions.opened = true;
         hide();
@@ -657,7 +662,8 @@
         return null;
       }
       const contentWidth = width - leftInset - rightInset;
-      const {picture, boxes, back, scale, rail} = place(contentWidth,height,items.length,campaign,home);
+      const {picture, boxes, back, scale, rail} = place(contentWidth,height,items.length,campaign,home,
+        Math.max(8,bottomInset));
       let feedbackBox;
       if (feedback) {
         const first = boxes[0];
