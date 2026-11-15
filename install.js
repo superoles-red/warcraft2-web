@@ -27,13 +27,20 @@ async function prepare() {
   if (new URLSearchParams(location.search).has('wc2-runtime-error')) {
     throw new Error('Браузер не подготовил среду игры.');
   }
+  if (workers.controller && !updateRequested) {
+    // The installed worker already serves the verified launcher and game.
+    // Start it before any worker status query or update job.
+    status.textContent = 'Запускаю Warcraft II…';
+    launch();
+    return;
+  }
   const current = await updates.status();
   if (current) {
-    status.textContent = updateRequested ? 'Применяю обновление…' : 'Запускаю Warcraft II…';
+    status.textContent = 'Применяю обновление…';
     version.textContent = 'Версия ' + current.version;
     version.hidden = false;
     if (navigator.onLine !== false) {
-      const registration = await workers.getRegistration('./').catch(() => null);
+      const registration = await updates.bounded(workers.getRegistration('./'), 3000);
       if (registration?.waiting) await updates.apply(registration, current);
     }
     launch();

@@ -38,6 +38,20 @@
     };
   }
 
+  function purchaseTooltipMatches(wine, command) {
+    const read = guestReader(wine);
+    // BNE's command hover callback reads the descriptor's STR TBL index, then
+    // uses the exact TBL address +2 as the original status description.
+    if (read(0x4bdcdc,4)?.getUint32(0,true) !== command.object) return false;
+    const descriptor = read(command.descriptor,20);
+    if (!descriptor || descriptor.getUint32(8,true) !== command.action) return false;
+    const id = descriptor.getUint16(14,true);
+    const table = read(0x4bdd24,4)?.getUint32(0,true);
+    if (!table || !id || id > (read(table,2)?.getUint16(0,true) || 0)) return false;
+    const offset = read(table+id*2,2)?.getUint16(0,true);
+    return !!offset && read(0x4be1b4,4)?.getUint32(0,true) === table+offset+2;
+  }
+
   function infoButtons(view, layer) {
     if (!layer?.root) return [];
     if (view(0x4bdcd0, 4)?.getUint32(0, true) !== layer.root) return [];
@@ -174,6 +188,7 @@
     const surface = document.getElementById('screen');
     const display = document.getElementById('screen-present');
     const frame = document.getElementById('screen-canvas-stack');
+    const detachForegroundAudio = onTitlePrepared && window.WarcraftAudioLifecycle?.attach(wine);
     const menuButtonSize = window.WarcraftAssemblyDialogLayout?.menuButtonHeight;
     const menuResize = onTitlePrepared && menuButtonSize && new ResizeObserver(([entry]) => {
       const {width,height} = entry.contentRect;
@@ -227,7 +242,8 @@
       for (const name of ['handleKeyDown', 'handleKeyPress']) {
         if (typeof renderer[name] !== 'function') continue;
         wrap(renderer, name, handle => function(...args) {
-          if (!demoPlaying() && !('warcraftTransition' in frame.dataset)) return handle.apply(this, args);
+          if (!demoPlaying() && !('warcraftTransition' in frame.dataset) &&
+              !('warcraftPurchase' in frame.dataset)) return handle.apply(this, args);
         });
       }
       for (const name of ['handleMouseDown', 'handleMouseMove', 'handleMouseUp', 'handleKeyUp']) {
@@ -291,6 +307,8 @@
       infoFocus: (...args) => infoFocus(wine, ...args),
       objectivesBodyEnd: (...args) => objectivesBodyEnd(wine, ...args),
       modalBack: window.WarcraftAssemblyMenuNavigation?.createModalBack?.(wine),
+      modalFaction: () => modalFaction(wine),
+      purchaseTooltipMatches: command => purchaseTooltipMatches(wine, command),
       modalSlider: (layer, x, y) => window.WarcraftAssemblyMenuPolicy?.sliderAt(wine, layer, x, y),
       modalTexture() {
         if (!textures || !window.WarcraftUiBridge.state().inGame) return null;
@@ -383,6 +401,7 @@
     window.installWarcraftDuneControls();
     window.WarcraftFullMap.installInputRouter();
     return () => {
+      detachForegroundAudio?.();
       if (menuResize) {
         menuResize.disconnect();
         frame.style.removeProperty('--warcraft-menu-row-height');

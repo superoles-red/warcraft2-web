@@ -1,7 +1,7 @@
 /* Opt-in native V16 bootstrap for the pinned local Wine-Assembly pilot. */
 (() => {
   'use strict';
-  const artifactHash = '6b64a5b3612c5eefc77be67d39c86462356b131b67c09f16dcfc68a27cf6d7f5';
+  const artifactHash = '45f01e8d10e8cbdf1042a547b0519308e1e434ff39c4a87044ea6e39672049f2';
   const gameDll = 'c:\\warcraft2\\wc2ui.dll';
   const stockDll = 'c:\\windows\\system\\ddraw.dll';
   const forwardDll = 'c:\\windows\\system32\\ddraw.dll';

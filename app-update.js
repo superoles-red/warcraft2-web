@@ -5,6 +5,34 @@ window.WarcraftAppUpdate = (() => {
   const validVersion = value => typeof value === 'string' && /^[a-f0-9]{24}$/.test(value);
   const retryKey = 'wc2-update-retry';
 
+  async function bounded(operation, milliseconds) {
+    let timeout;
+    try {
+      return await Promise.race([operation, new Promise(resolve => { timeout = setTimeout(resolve, milliseconds); })]);
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async function publishedVersion() {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch(new URL('release.json', location.href), {
+        cache: 'no-store', credentials: 'same-origin', redirect: 'error', signal: controller.signal,
+      });
+      if (!response.ok) return null;
+      const {version} = await response.json();
+      return validVersion(version) ? version : null;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   function retryDelay(version) {
     try {
       const record = JSON.parse(sessionStorage.getItem(retryKey));
@@ -72,5 +100,5 @@ window.WarcraftAppUpdate = (() => {
     }
   }
 
-  return {status, waitForControl, apply, retryDelay};
+  return {status, waitForControl, apply, retryDelay, publishedVersion, bounded};
 })();

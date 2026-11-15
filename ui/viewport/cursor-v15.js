@@ -19,7 +19,7 @@
       if(!element)return false;
       if(!packet?.usable){setCursor(element,null);revision=null;style=null;return false;}
       const key=[packet.revision,packet.visible].join(':');
-      if(key===revision){setCursor(element,style);return true;}
+      if(key===revision)return true;
       if(!packet.visible){style='none';setCursor(element,style);revision=key;return true;}
       const padX=Math.max(0,-packet.hotX),padY=Math.max(0,-packet.hotY);
       const width=Math.max(packet.width+padX,packet.hotX+padX+1),height=Math.max(packet.height+padY,packet.hotY+padY+1);

@@ -138,8 +138,14 @@
 
     function playMovie(request) {
       if (active !== request || request.terminal) return;
+      if (document.hidden || navigator.audioSession?.state === 'interrupted') {
+        request.resumeWhenVisible = true;
+        return;
+      }
+      request.resumeWhenVisible = false;
       request.video.play().catch(error => {
         if (active !== request || request.terminal) return;
+        if (request.resumeWhenVisible) return;
         if (error?.name === 'NotAllowedError' && media.compact) {
           layer.hidden = play.hidden = false;
           resize();
@@ -149,6 +155,14 @@
           acknowledge(request, UNAVAILABLE);
         }
       });
+    }
+
+    function syncPlayback() {
+      if (!active?.source || active.terminal) return;
+      if (document.hidden || navigator.audioSession?.state === 'interrupted') {
+        if (play.hidden) active.resumeWhenVisible = true;
+        active.video.pause();
+      } else if (active.resumeWhenVisible || (active.wasPlaying && play.hidden && active.video.paused)) playMovie(active);
     }
 
     async function openMovie(id, token) {
@@ -173,6 +187,7 @@
       });
       video.addEventListener('playing', () => {
         if (active !== request || request.terminal) { video.pause(); return; }
+        request.wasPlaying = true;
         play.hidden = true;
         layer.hidden = false;
         resize();
@@ -250,6 +265,10 @@
     window.addEventListener('pagehide', event => {
       if (!event.persisted) destroy();
     }, {signal: listener.signal});
+    document.addEventListener('visibilitychange', syncPlayback, {signal: listener.signal});
+    window.addEventListener('pageshow', syncPlayback, {signal: listener.signal});
+    window.addEventListener('focus', syncPlayback, {signal: listener.signal});
+    navigator.audioSession?.addEventListener('statechange', syncPlayback, {signal: listener.signal});
     window.addEventListener('resize', resize, {signal: listener.signal});
     function arm(value) {
       if (destroyed || !value.movies.size) return;

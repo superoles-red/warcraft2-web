@@ -10,12 +10,6 @@
   const SLIDER_DIALOGS=new Set([0x441940,0x442050]); // Sound, Speeds
   const OBJECTIVES_ROW=35;
   const BUTTON_HEIGHT=56, BUTTON_GAP=6, PANEL_INSET=16;
-  // Both original sliders include their MIN/MAX labels through row 115.
-  // The next visible native control is Unit Speech at rows 144–165.
-  const MATCH_SETTINGS_BANDS=[[0,120],[140,166]];
-  const MATCH_SETTINGS_BODY_TOP=146, MATCH_SETTINGS_BODY_HEIGHT=120;
-  const MATCH_SETTINGS_NATIVE_BODY_TOP=166;
-  const MATCH_SETTINGS_FOOTER_PADDING=24;
   function classicDialogScale(width,height,pixelRatio=1){
     const margin=8*pixelRatio;
     // Reserve enough room for the shared 256px panel and its objectives checkbox.
@@ -179,8 +173,11 @@
         ? MENU_HEADINGS[back.compact] : 0;
       const objectives=native?.layers.length===1&&native.layers[0].handlerAddress===0x4353a0&&
         native.source.width===256&&native.source.height===288;
+      const soundLayout=global.WarcraftAssemblyDialogLayout;
       const preferences=native?.layers.length===1&&native.layers[0].handlerAddress===0x441940&&
-        native.source.width===256&&native.source.height===288&&!!back?.ok;
+        native.source.width===256&&native.source.height===288&&!!back?.ok&&!!soundLayout?.soundRows;
+      const widePreferences=preferences&&width>=height;
+      const sourceWidth=widePreferences?512:native?.union.width;
       const objectiveControl=objectives&&back?.controls?.find(({id,source})=>
         id===-3&&source.left===native.source.left+16&&source.top===native.source.top+248&&source.width===224);
       const objectiveControls=objectiveControl?[objectiveControl]:[];
@@ -191,9 +188,10 @@
       const objectiveFooter=245;
       const objectiveBody=Number.isInteger(objectivesBodyEnd)&&objectivesBodyEnd>=94&&
         objectivesBodyEnd<=objectiveFooter?objectivesBodyEnd:objectiveFooter;
-      const rows=objectives?objectiveControls.length:preferences?1:compact?nativeControls.length+1:genericBands.length+Number(genericBack);
-      const bodyHeight=objectives?objectiveBody+288-objectiveFooter+OBJECTIVES_ROW-28*rows:
-        preferences?MATCH_SETTINGS_BODY_TOP+MATCH_SETTINGS_BODY_HEIGHT+MATCH_SETTINGS_FOOTER_PADDING:
+      const rows=objectives?objectiveControls.length+1:preferences?(widePreferences?4:6):
+        compact?nativeControls.length+1:genericBands.length+Number(genericBack);
+      const bodyHeight=objectives?objectiveBody+288-objectiveFooter-28*objectiveControls.length:
+        preferences?(widePreferences?134:176):
         compact?compact+16+rows*BUTTON_GAP:
         native?.union.height-genericBands.reduce((total,band)=>total+band.end-band.start,0)+(genericBack?PANEL_INSET:0);
       const scaleMargin=8*dialogPixelRatio;
@@ -207,10 +205,10 @@
       const fixedHeight=(rows||back?.source)&&dialogPixelRatio&&menuButtonHeight
         ? Math.min(menuButtonHeight(width/dialogPixelRatio,height/dialogPixelRatio)*dialogPixelRatio,
           availableHeight*.74/Math.max(1,rows)) : 0;
-      const fitScale=native?Math.min(maxScale,classicMax,(width-left-right)/native.union.width,
+      const fitScale=native?Math.min(maxScale,classicMax,(width-left-right)/sourceWidth,
         (availableHeight-rows*fixedHeight)/(bodyHeight+(fixedHeight?0:rows*BUTTON_HEIGHT))):0;
       const buttonHeight=fixedHeight&&positive(fitScale)?fixedHeight/fitScale:BUTTON_HEIGHT;
-      const bounds=native?{width:native.union.width,height:bodyHeight+rows*buttonHeight}:null;
+      const bounds=native?{width:sourceWidth,height:bodyHeight+rows*buttonHeight}:null;
       const unionTarget=native?contain(bounds,width,height,fitScale,margin,left,right):null;
       const mapRect=source=>freezeRect({left:unionTarget.left+(source.left-native.union.left)*unionTarget.scale,
         top:unionTarget.top+(source.top-native.union.top)*unionTarget.scale,
@@ -229,23 +227,23 @@
           width:width*scale,height:buttonHeight*scale,scale:width*scale/control.source.width})};
       }
       if(ready&&preferences){
-        const {source}=native,{scale}=unionTarget;
-        let top=unionTarget.top;
-        strips=MATCH_SETTINGS_BANDS.map(([start,end])=>{
-          const cut=freezeRect({...source,top:source.top+start,height:end-start});
-          const target=freezeRect({left:unionTarget.left,top,width:unionTarget.width,height:cut.height*scale,scale});
-          top=target.bottom;
-          return Object.freeze({source:cut,target});
-        });
-        preferencesBody=freezeRect({left:unionTarget.left+12*scale,top,
-          width:232*scale,height:MATCH_SETTINGS_BODY_HEIGHT*scale});
+        const {source}=native,t=unionTarget,{scale}=t;
+        const height=buttonHeight*scale;
+        const sound=soundLayout.soundRows({left:t.left,top:t.top+28*scale,width:t.width,
+          scale,height,landscape:widePreferences,match:true});
+        const nativeRect=([x,y,w,h])=>freezeRect({left:source.left+x,top:source.top+y,width:w,height:h});
+        const visualRect=({x,y,w,h})=>freezeRect({left:x,top:y,width:w,height:h});
+        strips=sound.controls.map(row=>Object.freeze({...row,source:nativeRect(row.source),target:visualRect(row.target)}));
+        const fog=visualRect(sound.fog);
+        preferencesBody=Object.freeze({fog,speed:freezeRect({left:t.left+12*scale,
+          top:fog.bottom+8*scale,width:t.width-24*scale,height:height+22*scale})});
       }
       if(ready&&objectives){
         // Preserve all original body pixels and native footer click geometry.
         // The inserted checkbox row belongs to the web overlay.
         const {source}=native,{scale}=unionTarget;
         const body=freezeRect({...source,height:objectiveBody});
-        const footerTop=objectiveBody+OBJECTIVES_ROW;
+        const footerTop=objectiveBody+buttonHeight;
         const bodyTarget=mapRect(body);
         strips=[
           Object.freeze({source:body,target:bodyTarget}),
@@ -257,9 +255,9 @@
           strips.push(sourceSlice(276,288,unionTarget.bottom-12*scale));
         }
         objectivesStone={source:freezeRect({...source,top:source.top+objectiveBody-5,height:5}),
-          target:freezeRect({left:unionTarget.left,top:bodyTarget.bottom,width:unionTarget.width,height:OBJECTIVES_ROW*scale})};
+          target:freezeRect({left:unionTarget.left,top:bodyTarget.bottom,width:unionTarget.width,height:buttonHeight*scale})};
         objectivesCheckbox=freezeRect({left:unionTarget.left+16*scale,top:objectivesStone.target.top,
-          width:224*scale,height:OBJECTIVES_ROW*scale,scale});
+          width:224*scale,height:buttonHeight*scale,scale});
       }else if(ready&&compact){
         const t=unionTarget, scale=t.scale;
         strips=[sourceSlice(0,compact,t.top),sourceSlice(284,288,t.bottom-4*scale)];
@@ -354,6 +352,17 @@
           }
           for(const layer of p.strips||p.layers){
             const s=layer.source,t=layer.target;
+            if(p.preferencesBody){
+              const rows=global.WarcraftAssemblyDialogLayout;
+              if(layer.label){
+                const [x,y,w,h]=layer.label,l=layer.labelBox;
+                rows.paintControlInk(context,frame,{x:p.source.left+x,y:p.source.top+y,w,h},l);
+                const [a,b,c,d]=layer.help,help=layer.helpBox;
+                rows.paintControlInk(context,frame,{x:p.source.left+a,y:p.source.top+b,w:c,h:d},help);
+              }
+              rows.paintSoundControl(context,frame,{...layer,source:paintRect(s),target:paintRect(t)});
+              continue;
+            }
             context.save();
             try{context.beginPath();context.rect(t.left,t.top,t.width,t.height);context.clip();
               context.drawImage(frame,s.left,s.top,s.width,s.height,t.left,t.top,t.width,t.height);
@@ -361,14 +370,9 @@
             }finally{context.restore();}
           }
           if(p.preferencesBody){
-            const t=p.unionTarget,s=p.source,scale=t.scale;
-            context.drawImage(frame,s.left,s.top+MATCH_SETTINGS_NATIVE_BODY_TOP,256,90,
-              t.left,p.preferencesBody.top,t.width,90*scale);
-            context.drawImage(frame,s.left+4,s.top+235,248,18,t.left+4*scale,t.top+4*scale,248*scale,18*scale);
-            // Fill the footer from verified empty stone directly above it.
-            const footerHeight=MATCH_SETTINGS_FOOTER_PADDING*scale+p.ok.target.height;
-            context.drawImage(frame,s.left,s.top+200,256,56,
-              t.left,t.bottom-footerHeight,t.width,footerHeight);
+            const t=p.unionTarget,s=p.source;
+            context.drawImage(frame,s.left,s.top,s.width,3,t.left,t.top,t.width,3*t.scale);
+            context.drawImage(frame,s.left,s.top,3,s.height,t.left,t.top,3*t.scale,t.height);
             paintSettingsFrame(context,frame,0x441940,s,t);
           }
           for(const action of p.actions)paintAction(context,frame,action);
@@ -385,7 +389,7 @@
               try{
                 // Match the body and footer near each seam using their
                 // verified blank strips and keep full stone detail centrally.
-                const seam=5*t.height/35;
+                const seam=Math.min(t.height*.2,p.unionTarget.scale*5);
                 context.drawImage(texture,0,(texture.naturalHeight-stoneHeight)/2,texture.naturalWidth,stoneHeight,
                   t.left,t.top,t.width,t.height);
                 context.globalAlpha=.8;
@@ -446,7 +450,8 @@
       const strip=layout.strips?.find(region=>inside(region.target,x,y));
       if(layout.strips&&!strip)return {regionId:'modal-blocker',kind:'blocked'};
       const s=strip?.source||layout.source,t=strip?.target||layout.target;
-      return {regionId:'native-modal',kind:'native-ui',x:s.left+(x-t.left)/t.scale,y:s.top+(y-t.top)/t.scale,token:layout.token};
+      return {regionId:'native-modal',kind:'native-ui',x:s.left+(x-t.left)*s.width/t.width,
+        y:s.top+(y-t.top)*s.height/t.height,token:layout.token};
     }
     function clientToSource(x,y,rect){
       const t=clientTransform(rect);if(!t||!finite(x)||!finite(y))return null;
@@ -472,8 +477,8 @@
       const strip=layout.strips?.find(region=>inside(region.source,x,y));
       if(layout.strips&&!strip)return null;
       const s=strip?.source||layout.source,t=strip?.target||layout.target;
-      return {x:(t.left+(x-s.left)*t.scale)*c.scale+c.left,
-        y:(t.top+(y-s.top)*t.scale)*c.scale+c.top,visible:inside(s,x,y),token:layout.token};
+      return {x:(t.left+(x-s.left)*t.width/s.width)*c.scale+c.left,
+        y:(t.top+(y-s.top)*t.height/s.height)*c.scale+c.top,visible:inside(s,x,y),token:layout.token};
     }
     return Object.freeze({captureBackground,plan,present,clientToSource,presentationToSource,sourceToClient,reset,
       get layout(){return layout;},get hasBackground(){return !!base;},

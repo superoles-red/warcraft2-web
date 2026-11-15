@@ -409,6 +409,7 @@
       getHudCommand:(...args)=>global.WarcraftFullMap?.getHudCommand?.(...args),
       getHudContextToken:()=>global.WarcraftFullMap?.getHudContextToken?.(),
       onHudCommandSelection:command=>global.WarcraftFullMap?.selectHudCommand?.(command),
+      requestHudPurchase:(...args)=>global.WarcraftFullMap?.requestHudPurchase?.(...args),
       allowNativeTouch:()=>transport?.allowNativeTouch?.()===true,
       ...(['v15','v16'].includes(new URLSearchParams(location.search).get('bridge'))?{
         resumeAudio:()=>global.BoxedwineAudio?.resume?.(),

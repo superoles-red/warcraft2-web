@@ -9,6 +9,7 @@
   const foregroundVersion=new URLSearchParams(location.search).get('bridge');
   const enhancedHud=['v15','v16'].includes(foregroundVersion);
   const coherentFrames=foregroundVersion==='v16';
+  const mobilePointer=global.matchMedia?.('(any-pointer: fine)');
   const cleanHud=['v13','v14','v15','v16'].includes(foregroundVersion),balancedHud=['v14','v15','v16'].includes(foregroundVersion);
   let camera,modalPresenter,cursorPresenter,lastScene=null,selectedCommand=null,animation=null,lastDialogToken=null;
   let displayedEndRaster=null;
@@ -23,6 +24,12 @@
   let sliderDrag=null;
   let portraitPress=null,objectivesWaitUntil=null;
   let listeners,insetObserver,insetProbes;
+  let purchaseDialog, pendingPurchase=null, modalFaction, purchaseTooltipMatches;
+  // These exact BNE command wrappers share the original paid-production path.
+  // Spell research, unit research and building upgrades validate their own costs.
+  const paidActions=new Map([
+    [0x40e6d0,'train'],[0x40e650,'research'],[0x40e690,'research'],[0x40e710,'upgrade'],
+  ]);
   const held=new Set();
   let infoPress=false;
   const telemetry={frames:0,mode:'native',errors:[],geometry:null};
@@ -31,6 +38,7 @@
   const nativeGeometry=()=>global.WarcraftUiBridge?.viewportSnapshot?.()||null;
   function setVisible(value) {
     if(!value){
+      closePurchase();
       onUnavailable?.();
       cleanWorldReady=false;
       lastWorldPaint=frozenWorld=null;
@@ -177,20 +185,156 @@
     return view?.usable?view.selectionToken:null;
   }
   function getHudCommand(event,rect) {
-    if(!enhancedHud||!visible||telemetry.mode==='dialog')return null;
+    if(!enhancedHud||!visible||telemetry.mode==='dialog'||pendingPurchase)return null;
     const point=pick(event,rect);
     if(!point||!/^command-\d+$/.test(point.regionId))return null;
-    const blocked={blocked:true},id=Number(point.regionId.slice(8));
-    const packet=global.WarcraftUiBridge?.uiRects?.(),view=global.WarcraftUiBridge?.viewState?.();
+    return readHudCommand(point.regionId)||{blocked:true};
+  }
+  function readHudCommand(regionId, view=global.WarcraftUiBridge?.viewState?.(), packet=global.WarcraftUiBridge?.uiRects?.()) {
+    const id=Number(regionId.slice(8));
     const child=packet?.usable&&packet.children.find(item=>item.id===id&&item.type===2);
     const meta=view?.commands?.find(item=>item.objectAddress===child?.objectAddress&&
       item.descriptorAddress===child?.descriptorAddress);
-    if(!child?.commandPresent||!child.nativeVisible||!view?.usable||!view.selectionToken||!meta)return blocked;
+    if(!child?.commandPresent||!child.nativeVisible||!view?.usable||!view.selectionToken||!meta)return null;
+    const confirmPurchase=purchaseDialog&&!child.isCancel&&!meta.isBuildingPlacement&&paidActions.get(meta.actionAddress);
     return {key:[child.object,child.descriptor].join(':'),object:child.objectAddress,descriptor:child.descriptorAddress,
-      contextToken:view.selectionToken,nativeX:(child.native.left+child.native.right)/2,
+      contextToken:view.selectionToken,epoch:view.mapEpoch,nativeX:(child.native.left+child.native.right)/2,
       nativeY:(child.native.top+child.native.bottom)/2,visible:true,present:true,
       isCancel:child.isCancel===true,isBuildingPlacement:meta.isBuildingPlacement===true,
-      regionId:point.regionId};
+      action:meta.actionAddress,param:meta.param,regionId,confirmPurchase};
+  }
+  function matchingPurchase(original,view,ui) {
+    const live=readHudCommand(original.regionId,view,ui);
+    return live?.confirmPurchase&&
+      ['epoch','contextToken','object','descriptor','action','param'].every(key=>live[key]===original[key])?live:null;
+  }
+  function closePurchase(refocus=false) {
+    if(!pendingPurchase)return;
+    pendingPurchase=null;
+    purchaseDialog.layer.hidden=true;
+    delete frame.dataset.warcraftPurchase;
+    if(refocus&&visible&&telemetry.mode==='world')input.focus({preventScroll:true});
+  }
+  function updatePurchase({state,view,ui,foreground}) {
+    if(!pendingPurchase)return;
+    const {command}=pendingPurchase;
+    if(!state?.inGame||state.dialogOpen||state.targetPending||state.buildingPending||view?.mapEpoch!==command.epoch||
+      (view?.usable&&ui?.usable&&!matchingPurchase(command,view,ui))){
+      closePurchase();
+      return;
+    }
+    if(!pendingPurchase.statusReady&&foreground?.usable&&purchaseTooltipMatches(command))
+      pendingPurchase.statusReady=paintPurchaseStatus(foreground);
+    purchaseDialog.ok.disabled=!state.inputAllowed||acceptsInput?.()===false||
+      !view?.usable||!ui?.usable||!pendingPurchase.statusReady;
+  }
+  function paintPurchaseStatus(foreground) {
+    const status=foreground.layers.find(layer=>layer.id===101);
+    const fields=global.WarcraftHudForeground.statusFields(status,{hideHotkeys:true});
+    if(!fields.some(f=>f.role==='description'))return false;
+    const art=foregroundPainter.capture(foreground)['native-hud-101'];
+    if(!art)return false;
+    const text=fields.filter(f=>f.role==='description'),costs=fields.filter(f=>f.role==='cost');
+    for(const [line,image] of [[text,purchaseDialog.description],[costs,purchaseDialog.costs]]){
+      if(!line.length)continue;
+      const canvas=document.createElement('canvas');
+      canvas.width=line.reduce((n,f)=>n+f.visualSource.width,0)+Math.max(0,line.length-1)*8;
+      canvas.height=status.source.height;
+      let x=0;
+      const context=canvas.getContext('2d');
+      for(const {visualSource:s} of line){
+        context.drawImage(art,s.left,s.top,s.width,s.height,x,0,s.width,s.height);x+=s.width+8;
+      }
+      image.src=canvas.toDataURL();image.hidden=false;
+    }
+    return true;
+  }
+  function requestHudPurchase(command,submit) {
+    const bridge=global.WarcraftUiBridge,state=bridge.state();
+    if(!purchaseDialog||pendingPurchase||!visible||telemetry.mode!=='world'||acceptsInput?.()===false||
+      !state.inputAllowed||state.dialogOpen||state.targetPending||state.buildingPending||!matchingPurchase(command))return;
+    const faction=modalFaction?.();
+    if(!faction)return;
+    pendingPurchase={command,submit,statusReady:false};
+    purchaseDialog.show(command.confirmPurchase,faction);
+    const region=chart.regions.find(item=>item.id===command.regionId)?.transform.painted;
+    if(region){
+      const {icon}=purchaseDialog, sx=output.width/chart.width, sy=output.height/chart.height;
+      const canvas=document.createElement('canvas');
+      canvas.width=Math.max(1,Math.round(region.width*sx));canvas.height=Math.max(1,Math.round(region.height*sy));
+      canvas.getContext('2d').drawImage(output,region.left*sx,region.top*sy,region.width*sx,region.height*sy,
+        0,0,canvas.width,canvas.height);
+      icon.src=canvas.toDataURL();icon.hidden=false;
+    }
+    frame.dataset.warcraftPurchase='';
+    purchaseDialog.layer.hidden=false;
+    purchaseDialog.cancel.focus({preventScroll:true});
+    scheduleAnimation(true);
+  }
+  function createPurchaseDialog() {
+    const text={
+      en:{train:'Train this unit?',research:'Research this upgrade?',upgrade:'Upgrade this building?',ok:'OK',cancel:'Cancel'},
+      ru:{train:'Обучить этого бойца?',research:'Изучить улучшение?',upgrade:'Улучшить здание?',ok:'ОК',cancel:'Отмена'},
+    };
+    const current=global.WarcraftLanguage?.current()==='ru'?'ru':'en';
+    const labels=text[current],font=global.WarcraftSessionText;
+    const art=font?.load(current);
+    art?.catch(console.error);
+    const layer=document.createElement('div'),panel=document.createElement('div'),title=document.createElement('h2');
+    layer.className='warcraft-session-overlay warcraft-purchase-overlay';
+    layer.dataset.winePageDialog='';
+    layer.hidden=true;
+    layer.setAttribute('role','dialog');
+    layer.setAttribute('aria-modal','true');
+    panel.className='warcraft-purchase-panel';
+    const picture=()=>{const image=new Image();image.alt='';image.draggable=false;return image;};
+    const caption=(label,atlas)=>{const image=picture();image.src=font.ink(label,atlas).toDataURL();return image;};
+    const icon=picture(),description=picture(),costs=picture();
+    icon.className='warcraft-purchase-icon';
+    description.className='warcraft-purchase-ink';
+    costs.className='warcraft-purchase-ink';
+    const controls=document.createElement('div');
+    controls.className='warcraft-purchase-controls';
+    const makeButton=key=>{
+      const button=document.createElement('button');
+      button.type='button';button.textContent=labels[key];button.setAttribute('aria-label',labels[key]);
+      art?.then(atlas=>button.replaceChildren(caption(key==='ok'?'OK':labels[key],atlas))).catch(()=>{});
+      return button;
+    };
+    const cancel=makeButton('cancel'),ok=makeButton('ok');
+    cancel.addEventListener('click',()=>closePurchase(true));
+    ok.addEventListener('click',()=>{
+      const pending=pendingPurchase, state=global.WarcraftUiBridge.state();
+      const valid=pending?.statusReady&&visible&&telemetry.mode==='world'&&acceptsInput?.()!==false&&state.inputAllowed&&
+        !state.dialogOpen&&!state.targetPending&&!state.buildingPending&&matchingPurchase(pending.command);
+      closePurchase(true);
+      if(valid){global.WarcraftDuneControls?.cancel?.();pending.submit(valid);}
+    });
+    layer.addEventListener('contextmenu',event=>event.preventDefault());
+    listen('keydown',event=>{
+      if(!pendingPurchase)return;
+      if(event.key==='Escape'){
+        event.preventDefault();event.stopImmediatePropagation();closePurchase(true);
+      }else if(event.key==='Tab'){
+        event.preventDefault();(document.activeElement===cancel&&!ok.disabled?ok:cancel).focus({preventScroll:true});
+      }else if(!controls.contains(event.target)){
+        event.preventDefault();event.stopImmediatePropagation();
+      }
+    },{capture:true});
+    controls.append(cancel,ok);
+    panel.append(title,description,icon,costs,controls);
+    layer.append(panel);
+    frame.append(layer);
+    return {layer,icon,description,costs,ok,cancel,show(kind,faction){
+      layer.dataset.faction=faction;
+      layer.setAttribute('aria-label',labels[kind]);
+      title.textContent=labels[kind];
+      art?.then(atlas=>{
+        if(layer.getAttribute('aria-label')===labels[kind])title.replaceChildren(caption(labels[kind],atlas));
+      }).catch(()=>{});
+      icon.hidden=description.hidden=costs.hidden=true;
+      ok.disabled=true;
+    }};
   }
   function selectHudCommand(command) { selectedCommand=command; if(installed)scheduleAnimation(true); }
   function validSelectedCommand() {
@@ -307,7 +451,7 @@
   function render(captureNative=true) {
     if(!installed)return;
     if(captureNative||!lastScene){
-      if(enhancedHud)cursorPresenter?.update(global.WarcraftUiBridge?.cursorPlane?.(),input);
+      if(enhancedHud&&(!touchOnly||mobilePointer?.matches))cursorPresenter?.update(global.WarcraftUiBridge?.cursorPlane?.(),input);
       let g=nativeGeometry();
       const state=global.WarcraftUiBridge?.state?.(),view=enhancedHud?global.WarcraftUiBridge?.viewState?.():null;
       const completed=coherentFrames?global.WarcraftUiBridge?.completedFrame?.():null;
@@ -322,11 +466,13 @@
       lastScene={g,state,view,ui:cleanHud?global.WarcraftUiBridge?.uiRects?.():null,
         foreground:cleanHud?global.WarcraftUiBridge?.hudForeground?.():null,
         packet:completed,
-        partialFrame:matchesGeometry&&visibleFramePainter&&cameraPilot.coversWorld(g)&&!state?.dialogOpen,
+        partialFrame:matchesGeometry&&visibleFramePainter&&state?.inGame&&!state.dialogOpen&&!completed.dialogRoot&&
+          (touchOnly||cameraPilot.coversWorld(g)),
         frame:coherentFrames?(matchesGeometry?completed:null):
           source.width&&source.height?copier.capture(source).frame:null};
     }
     const {g,state,view,ui,foreground}=lastScene;
+    updatePurchase(lastScene);
     if(coherentFrames){
       if(lastMapEpoch!==null&&!state?.ready){waitForNativeFrame();return;}
       if(!state?.inGame){lastMapEpoch=null;modalPresenter.reset();camera.reset();lastRenderedGeometry=null;bootstrapInUse=false;bootstrapPaletteKey=null;cleanWorldReady=false;lastWorldPaint=frozenWorld=displayedEndRaster=null;}
@@ -474,7 +620,7 @@
       }
       telemetry.frames++;telemetry.geometry={native:g,latestNative:g,frameSequence:lastScene.packet?.sequence,
         shownWorld:world,commands,width,height,
-        ...(lastScene.partialFrame?{cameraMode:'independent',visiblePaint:visibleFramePainter.debug()}:{}),
+        ...(lastScene.partialFrame?{cameraMode:camera.independent?'independent':'native-crop',visiblePaint:visibleFramePainter.debug()}:{}),
         hud:hud?{header: hud.header,commandCount:hud.commandCount,foregroundRevision:foreground.revision,
           infoLayoutMode:foreground.infoLayoutMode}:null};
       onPresented?.('world',chart);
@@ -485,6 +631,7 @@
     }
   }
   function pick(event,rect,{captured=false}={}) {
+    if(pendingPurchase)return {kind:'blocked'};
     if(!visible||acceptsInput?.()===false)return null;
     if(enhancedHud&&telemetry.mode==='dialog') {
       if(acceptsInput) {
@@ -623,7 +770,11 @@
       if(telemetry.mode!=='dialog'||drag.token!==lastDialogToken)return;
       const rect=input.getBoundingClientRect(),layout=modalPresenter.layout,t=layout.target,s=layout.source;
       if(!t||!s||!rect.width)return;
-      const x=s.left+((event.clientX-rect.left)*layout.width/rect.width-t.left)/t.scale;
+      const px=(event.clientX-rect.left)*layout.width/rect.width;
+      const row=layout.strips?.find(({kind,source})=>kind==='slider'&&
+        drag.slider.y>=source.top&&drag.slider.y<source.bottom);
+      const x=row ? row.source.left+(px-row.target.left)*row.source.width/row.target.width :
+        s.left+(px-t.left)/t.scale;
       moveNative({x:clamp(x,drag.slider.left,drag.slider.right),y:drag.slider.y});
     }
     const capture={capture:true,passive:false};
@@ -767,6 +918,9 @@
     frame=host?.frame || input.parentElement;
     hostPresentation=frame.classList.contains('warcraft-owns-presentation');
     modalTexture=host?.modalTexture;
+    modalFaction=host?.modalFaction;
+    purchaseTooltipMatches=host?.purchaseTooltipMatches;
+    if(hostPresentation&&coherentFrames&&modalFaction&&purchaseTooltipMatches)purchaseDialog=createPurchaseDialog();
     onPresented=host?.onPresented;
     onUnavailable=host?.onUnavailable;
     acceptsInput=host?.acceptsInput;
@@ -873,6 +1027,8 @@
     output.remove();
     commandHighlight?.remove();
     buildConfirm?.remove();
+    purchaseDialog?.layer.remove();
+    purchaseDialog=modalFaction=purchaseTooltipMatches=null;
     output=context=copier=buildConfirm=commandHighlight=null;
     lastScene=lastNative=lastRenderedGeometry=lastDialogToken=selectedCommand=lastMapEpoch=displayedEndRaster=objectivesWaitUntil=null;
     camera=modalPresenter=cursorPresenter=foregroundPainter=bootstrapPainter=nativeFramePainter=visibleFramePainter=bootstrapCanvas=null;
@@ -892,7 +1048,7 @@
     return {dx,dy};
   }
   global.WarcraftFullMap={install,installInputRouter,pointForGesture,consumePan,render,
-    getHudCommand,getHudContextToken,selectHudCommand,
+    getHudCommand,getHudContextToken,selectHudCommand,requestHudPurchase,
     beginPan(time,scale){if(coherentFrames&&global.WarcraftSmoothCamera.ahead)camera?.begin(time,scale);else camera?.begin();},
     panPixels(dx,dy,time){camera?.move(dx,dy,time);if(!coherentFrames)render(false);scheduleAnimation();},
     endPan(time){camera?.end(time);scheduleAnimation();},

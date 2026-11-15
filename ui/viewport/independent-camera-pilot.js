@@ -135,7 +135,7 @@
     const context = canvas.getContext('2d');
     const paletteBytes = new Uint8Array(1024);
     const palette = new Uint32Array(paletteBytes.buffer);
-    let strip, pixels, painted, tilesPerRow, previous = null, expanded = 0;
+    let image, pixels, painted, tilesPerRow, previous = null, expanded = 0, uploads = 0;
 
     function begin(packet) {
       if (previous === packet) return;
@@ -143,15 +143,15 @@
       if (canvas.width !== width || canvas.height !== height) {
         canvas.width = width;
         canvas.height = height;
-        strip = context.createImageData(width, tile);
-        pixels = new Uint32Array(strip.data.buffer);
+        image = context.createImageData(width, height);
+        pixels = new Uint32Array(image.data.buffer);
         tilesPerRow = width / tile;
         painted = new Uint8Array(tilesPerRow * (height / tile));
       } else painted.fill(0);
       paletteBytes.set(packet.palette);
       for (let i = 3; i < paletteBytes.length; i += 4) paletteBytes[i] = 255;
       previous = packet;
-      expanded = 0;
+      expanded = uploads = 0;
     }
 
     function paintRect(rect) {
@@ -159,6 +159,7 @@
       const top = Math.floor(rect.top / tile);
       const right = Math.min(tilesPerRow, Math.ceil(rect.right / tile));
       const bottom = Math.min(canvas.height / tile, Math.ceil(rect.bottom / tile));
+      const stride = canvas.width;
       for (let row = top; row < bottom; row++) {
         const first = row * tilesPerRow;
         let col = left;
@@ -166,14 +167,25 @@
           if (painted[first + col]) { col++; continue; }
           const from = col;
           while (col < right && !painted[first + col]) painted[first + col++] = 1;
-          const x = from * tile, y = row * tile, width = (col - from) * tile;
-          for (let py = 0; py < tile; py++) {
-            const target = py * canvas.width + x;
-            const source = target + y * canvas.width;
-            for (let dx = 0; dx < width; dx++) pixels[target + dx] = palette[previous.indices[source + dx]];
+          // Upload an entire unpainted rectangle at once. One upload per
+          // tile row left Android spending time on canvas transfers.
+          let last = row+1;
+          while (last < bottom) {
+            const line = last*tilesPerRow;
+            let clean = true;
+            for (let tx=from; tx<col; tx++) if (painted[line+tx]) { clean=false; break; }
+            if (!clean) break;
+            painted.fill(1,line+from,line+col);
+            last++;
           }
-          context.putImageData(strip, 0, y, x, 0, width, tile);
-          expanded += width * tile;
+          const x=from*tile,y=row*tile,width=(col-from)*tile,height=(last-row)*tile;
+          for (let py=y; py<y+height; py++) {
+            const start = py*stride+x, end = start+width;
+            for (let i=start; i<end; i++) pixels[i] = palette[previous.indices[i]];
+          }
+          context.putImageData(image,0,0,x,y,width,height);
+          expanded += width*height;
+          uploads++;
         }
       }
     }
@@ -186,7 +198,7 @@
         }
         return canvas;
       },
-      debug() { return {expanded, full: canvas.width * canvas.height}; },
+      debug() { return {expanded, uploads, full: canvas.width * canvas.height}; },
     };
   }
 

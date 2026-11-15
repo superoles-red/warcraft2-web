@@ -235,6 +235,7 @@
     function writeRequest() {
       const data = view(wine, request, 2);
       data?.setUint8(0, active.speedRequest);
+      // BNE stores the inverse: 0 keeps fog on, 1 reveals the whole map.
       data?.setUint8(1, toggle.checked ? 1 : 2);
     }
     toggle.addEventListener('change', () => { if (active) writeRequest(); });
@@ -265,13 +266,15 @@
       const sx = frame.clientWidth / layout.width;
       const sy = frame.clientHeight / layout.height;
       const scale = layout.target.scale * sy;
-      const box = [panel.left * sx, panel.top * sy, panel.width * sx, panel.height * sy,
-        (layout.target.top + 3 * layout.target.scale) * sy, layout.back.target.height * sy];
+      const box = [panel.fog.left*sx,panel.fog.top*sy,panel.fog.width*sx,panel.fog.height*sy,
+        panel.speed.left*sx,panel.speed.top*sy,panel.speed.width*sx,panel.speed.height*sy,
+        (layout.target.top+3*layout.target.scale)*sy,layout.back.target.height*sy,frame.clientWidth];
       const css = box.join(':');
       if (extent !== css) {
-        const [left, top, width, height, headingTop, buttonHeight] = box;
-        Object.assign(prefs.style,{left:left+'px',top:top+'px',width:width+'px',height:height+'px'});
-        Object.assign(heading.style,{left:left+width/2+'px',top:headingTop+'px',
+        const [fogLeft,fogTop,fogWidth,fogHeight,left,top,width,height,headingTop,buttonHeight,frameWidth] = box;
+        Object.assign(fog.style,{left:fogLeft+'px',top:fogTop+'px',width:fogWidth+'px',height:fogHeight+'px'});
+        Object.assign(speed.style,{left:left+'px',top:top+'px',width:width+'px',height:height+'px'});
+        Object.assign(heading.style,{left:frameWidth/2+'px',top:headingTop+'px',
           height:19*scale+'px'});
         prefs.style.setProperty('--settings-glyph', 19 * scale + 'px');
         prefs.style.setProperty('--settings-body-glyph', 16 * scale + 'px');
@@ -279,7 +282,7 @@
           ((width - 2 * 4) / buttons.length - 6) / widestCaption));
         prefs.style.setProperty('--settings-choice-glyph', 19 * captionScale + 'px');
         prefs.style.setProperty('--settings-control', buttonHeight + 'px');
-        prefs.style.setProperty('--settings-check-height', 24 * scale + 'px');
+        prefs.style.setProperty('--settings-checkmark', Math.min(fogHeight,44*scale) + 'px');
         extent = css;
       }
       heading.hidden = false;

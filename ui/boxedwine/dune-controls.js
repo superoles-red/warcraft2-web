@@ -212,6 +212,7 @@
       const g=geometry(),command=trustedCommand(raw,g);let rect;
       try{rect=getCanvasRect();}catch(_){rect=null;}
       gesture={id:idOf(event),button:0,mode:command && rect?'hud-pending':'hud-blocked',command,
+        pointerType:event.pointerType || 'mouse',
         geometry:g,canvasRect:rect?{left:rect.left,top:rect.top,width:rect.width,height:rect.height}:{},
         origin:{clientX:event.clientX,clientY:event.clientY},lastEvent:event,
         placementLastValid:null,activated:false,released:false};
@@ -262,7 +263,10 @@
       try{
         const command=trustedCommand(rawCommand(event),g.geometry);
         if(g.mode!=='hud-pending' || !sameCommand(command,g.command)){selectCommand(null);return true;}
-        if(command.isCancel || sameCommand(selectedCommand,command)) {
+        if(command.confirmPurchase&&(g.pointerType==='mouse'||sameCommand(selectedCommand,command))){
+          selectCommand(command);
+          api.requestHudPurchase?.(command, clickCommand);
+        }else if(command.isCancel || sameCommand(selectedCommand,command)) {
           if(command.isCancel || command.isBuildingPlacement)buildingTarget=null;
           selectCommand(null);clickCommand(command);
         }else{selectCommand(command);hoverCommand(command);}

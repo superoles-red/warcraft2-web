@@ -1810,7 +1810,9 @@ class WineAssembly {
   // on open and on every buffer submit — so the first effect of an app that
   // has been quiet is not swallowed, it just costs a resume.
   wakeAudio() {
+    if (this.foregroundAudioBlocked?.()) return;
     this._audioIdleSince = 0;
+    if (this.recoverForegroundAudio?.()) return;
     const ac = this._audioCtx;
     if (ac && ac.state === 'suspended') {
       // Same stale-backlog problem the gesture unlock has: whatever was
@@ -1862,7 +1864,7 @@ class WineAssembly {
     // that has asked for sound. Once one has, the next gesture primes it —
     // which is the pattern iOS actually needs, since the app's own first
     // waveOut is rarely inside a gesture.
-    if (!this._audioCtx && !this._audioRequested) return null;
+    if (this.foregroundAudioBlocked?.() || (!this._audioCtx && !this._audioRequested)) return null;
     const AC = (typeof AudioContext !== 'undefined') ? AudioContext :
                (typeof webkitAudioContext !== 'undefined') ? webkitAudioContext : null;
     if (!AC) return null;
@@ -1873,6 +1875,7 @@ class WineAssembly {
       catch (_) {
         try { this._audioCtx = new AC(); } catch (_) { this._audioCtx = null; }
       }
+      this.bindForegroundAudio?.(this._audioCtx);
     }
     if (this._audioCtx && this._audioCtx.state === 'suspended') {
       try { this._audioCtx.resume(); } catch (_) {}
@@ -2013,7 +2016,8 @@ class WineAssembly {
         }
       },
       get _audioCtx() { return self._audioCtx; },
-      set _audioCtx(v) { self._audioCtx = v; },
+      set _audioCtx(v) { self._audioCtx = v; self.bindForegroundAudio?.(v); },
+      isForegroundAudioBlocked: () => self.foregroundAudioBlocked?.() === true,
       // The two seams that make the AudioContext lazy. host-audio owns the
       // context; the host owns the policy about when one should exist.
       markAudioRequested: () => self.markAudioRequested(),
@@ -7075,7 +7079,7 @@ class WineAssembly {
     if (this._frozen) return false;
     if (this._hiddenPaused || !this.running) return false;
     if (typeof document === 'undefined' || !document.hidden) return false;
-    if (this._isAudioHot()) return false;
+    if (!this.pauseAudibleWhenHidden && this._isAudioHot()) return false;
     // A networked guest has a peer whose clock never stopped. Pausing it
     // freezes the match on BOTH screens -- the peer is waiting on records
     // this side is no longer producing -- and a game is lockstep enough that

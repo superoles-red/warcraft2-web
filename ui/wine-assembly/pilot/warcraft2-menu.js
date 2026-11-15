@@ -559,6 +559,12 @@
                 drawScenarioScrollbar(next.scrollbar);
               } else if (region.decoration === 'tall-button') {
                 drawTallButton(regionImage,region.source,region.target,current);
+              } else if (region.decoration === 'sound-control') {
+                global.WarcraftAssemblyDialogLayout.paintSoundControl(context,regionImage,region);
+              } else if (region.decoration === 'dropdown') {
+                global.WarcraftAssemblyDialogLayout.paintDropdown(context,regionImage,region.source,region.target,buttonArt['orc-wide']);
+              } else if (region.decoration === 'control-ink') {
+                global.WarcraftAssemblyDialogLayout.paintControlInk(context,regionImage,region.source,region.target);
               } else if (region.texture && dialogTexture?.naturalWidth) {
                 const {x,y,w,h} = region.target;
                 context.save();
@@ -576,6 +582,11 @@
             }
             if (current.sound && next.frame) {
               const {source, target} = next.frame;
+              if(next.paintRegions.some(r=>r.decoration==='sound-control')) {
+                const rim=3*target.w/source.w;
+                draw(context,image,area(source.x,source.y,source.w,3),area(target.x,target.y,target.w,rim));
+                draw(context,image,area(source.x,source.y,3,source.h),area(target.x,target.y,rim,target.h));
+              }
               global.WarcraftModalPresentationV15?.paintSettingsFrame(context, image, next.dialog?.handler,
                 {left:source.x,top:source.y,width:source.w,height:source.h},
                 {left:target.x,top:target.y,width:target.w,height:target.h});

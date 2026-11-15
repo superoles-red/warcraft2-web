@@ -15,27 +15,46 @@ if (!workers?.controller) {
   launcherURL.searchParams.set('wc2-runtime-error', '');
   location.replace(launcherURL);
 } else {
-  watchForGameUpdate();
+  const observe = () => {
+    const frame = document.getElementById('screen-canvas-stack');
+    if (!frame) return;
+    const checkTitle = () => {
+      if (!mainMenuReady()) return;
+      titleObserver.disconnect();
+      void watchForGameUpdate();
+    };
+    const titleObserver = new MutationObserver(checkTitle);
+    titleObserver.observe(frame, {attributes: true, childList: true, subtree: true,
+      attributeFilter: ['data-warcraft-presentation', 'data-warcraft-mode', 'data-warcraft-transition',
+        'data-warcraft-menu-action', 'hidden', 'disabled']});
+    // The launch cover is removed outside the canvas stack.
+    titleObserver.observe(document.body, {childList: true});
+    checkTitle();
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', observe, {once:true});
+  else observe();
+}
+
+function mainMenuReady() {
+  const title = document.querySelector('#screen-canvas-stack[data-warcraft-presentation="menu"]' +
+    '[data-warcraft-mode="title"]:not([data-warcraft-transition])');
+  return title?.querySelector('#warcraft-menu-navigation:not([hidden]) ' +
+    'button[data-warcraft-menu-action="single"]:not([disabled])') &&
+    !document.getElementById('war2-launch-cover') && !document.querySelector('#wc2-movie-pilot:not([hidden])');
 }
 
 async function watchForGameUpdate() {
   const registration = await workers.getRegistration('./').catch(() => null);
   if (!registration) return;
-  const initial = await window.WarcraftAppUpdate.status();
+  const updates = window.WarcraftAppUpdate;
+  const initial = await updates.status();
   const launchedVersion = initial?.clientVersion || initial?.version;
-  let pending = null, check = null, restarting = false, lastCheck = -Infinity, retryTimer;
-
-  function onMainMenu() {
-    const title = document.querySelector('#screen-canvas-stack[data-warcraft-presentation="menu"]' +
-      '[data-warcraft-mode="title"]:not([data-warcraft-transition])');
-    return !document.hidden && title?.querySelector('#warcraft-menu-navigation:not([hidden]) ' +
-      'button[data-warcraft-menu-action="single"]:not([disabled])') &&
-      !document.getElementById('war2-launch-cover') && !document.querySelector('#wc2-movie-pilot:not([hidden])');
-  }
+  let activeVersion = initial?.version, pending = null, check = null, restarting = false, lastCheck = -Infinity;
+  let retryTimer, refreshTimer;
 
   function restartAtMenu() {
-    if (restarting || !pending || navigator.onLine === false || !onMainMenu()) return;
-    const delay = window.WarcraftAppUpdate.retryDelay(pending);
+    if (restarting || !pending || document.hidden || navigator.onLine === false || !mainMenuReady()) return;
+    const delay = updates.retryDelay(pending);
     if (delay > 0) {
       if (retryTimer === undefined) retryTimer = setTimeout(() => {
         retryTimer = undefined;
@@ -50,10 +69,12 @@ async function watchForGameUpdate() {
 
   async function inspect() {
     const [active, waiting] = await Promise.all([
-      window.WarcraftAppUpdate.status(),
-      window.WarcraftAppUpdate.status(registration.waiting || null),
+      updates.status(),
+      updates.status(registration.waiting || null),
     ]);
-    pending = waiting?.version || (launchedVersion && active && active.version !== launchedVersion ? active.version : null);
+    if (active) activeVersion = active.version;
+    pending = waiting && waiting.version !== activeVersion ? waiting.version :
+      (launchedVersion && active && active.version !== launchedVersion ? active.version : null);
     restartAtMenu();
   }
 
@@ -61,7 +82,20 @@ async function watchForGameUpdate() {
     restartAtMenu();
     if (document.hidden || navigator.onLine === false || check || performance.now() - lastCheck < 5000) return;
     lastCheck = performance.now();
-    check = registration.update().catch(() => {}).then(inspect).finally(() => { check = null; });
+    check = updates.publishedVersion().then(remote => {
+      if (!remote || remote === activeVersion || registration.installing || registration.waiting && pending === remote) return;
+      // Fetch this release's worker even if the browser defers a soft update.
+      return updates.bounded(workers.register('./service-worker.js?v=' + remote,
+        {scope:'./', updateViaCache:'none'}), 8000);
+    }).catch(() => {}).then(inspect).finally(() => { check = null; });
+  }
+
+  function refreshWhileVisible() {
+    clearInterval(refreshTimer);
+    if (document.hidden) return;
+    checkOnline();
+    // A VPN route can recover without an online, focus or visibility event.
+    refreshTimer = setInterval(checkOnline, 60_000);
   }
 
   function observeInstall() {
@@ -93,10 +127,16 @@ async function watchForGameUpdate() {
   registration.addEventListener('updatefound', observeInstall);
   observeInstall();
   workers.addEventListener('controllerchange', inspect);
-  for (const event of ['online', 'focus', 'pageshow']) window.addEventListener(event, checkOnline);
-  document.addEventListener('visibilitychange', checkOnline);
+  for (const event of ['online', 'focus']) window.addEventListener(event, checkOnline);
+  window.addEventListener('pageshow', refreshWhileVisible);
+  window.addEventListener('pagehide', () => {
+    clearInterval(refreshTimer);
+    clearTimeout(retryTimer);
+    retryTimer = undefined;
+  });
+  document.addEventListener('visibilitychange', refreshWhileVisible);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', observeMenu, {once: true});
   else observeMenu();
   inspect();
-  checkOnline();
+  refreshWhileVisible();
 }

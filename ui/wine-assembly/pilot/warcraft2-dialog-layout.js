@@ -172,6 +172,106 @@
     context.drawImage(inkCanvas,0,0,sw,sh,x+(w-captionWidth)/2,y+(h-captionHeight)/2,captionWidth,captionHeight);
   }
 
+  function controlPixels(image,{x,y,w,h}) {
+    if(!inkCanvas)inkCanvas=global.document.createElement('canvas');
+    if(inkCanvas.width<w)inkCanvas.width=w;
+    if(inkCanvas.height<h)inkCanvas.height=h;
+    const scratch=inkCanvas.getContext('2d',{willReadFrequently:true});
+    scratch.clearRect(0,0,w,h);
+    scratch.drawImage(image,x,y,w,h,0,0,w,h);
+    return {scratch,pixels:scratch.getImageData(0,0,w,h)};
+  }
+
+  function paintControlInk(context,image,source,target) {
+    const {scratch,pixels}=controlPixels(image,source),{data,width:w,height:h}=pixels;
+    const ink=new Uint8Array(w*h);
+    for(let i=0;i<ink.length;i++){
+      const p=i*4,r=data[p],g=data[p+1],b=data[p+2];
+      if((r>=168&&g>=136&&b<=41)||(r>=215&&g>=215&&b>=215))ink[i]=1;
+    }
+    for(let i=0;i<ink.length;i++)if(!ink[i]&&!(i>=w+1&&i%w&&ink[i-w-1]&&data[i*4]<40))data[i*4+3]=0;
+    scratch.putImageData(pixels,0,0);
+    context.drawImage(inkCanvas,0,0,w,h,target.x,target.y,target.w,target.h);
+  }
+
+  function paintDropdown(context,image,source,target,background) {
+    const {x:sx,y:sy,w:sw,h:sh}=source,{x,y,w,h}=target;
+    const scale=w/sw;
+    const lineH=Math.min(h,sh*scale), middle=y+(h-lineH)/2;
+    if(!background?.naturalWidth){context.drawImage(image,sx,sy,sw,sh,x,middle,w,lineH);return;}
+    context.drawImage(background,x,y,w,h);
+    const arrowWidth=20, pad=5;
+    paintControlInk(context,image,{x:sx+pad,y:sy+2,w:sw-arrowWidth-pad,h:sh-4},
+      {x:x+pad*scale,y:middle+2*scale,w:(sw-arrowWidth-pad)*scale,h:lineH-4*scale});
+    context.drawImage(image,sx+sw-arrowWidth-2,sy+2,arrowWidth,sh-4,
+      x+w-(arrowWidth+4)*scale,middle+2*scale,arrowWidth*scale,lineH-4*scale);
+  }
+
+  // The controls are the original sound-dialog children. Their displayed
+  // body slots can be wider on a short screen so labels stay at native scale.
+  const SOUND_ROWS = [
+    {kind:'slider',source:[32,40,212,20],label:[12,24,232,14],help:[32,60,214,8]},
+    {kind:'slider',source:[32,88,212,20],label:[12,72,232,14],help:[32,108,214,8]},
+    {kind:'speech',source:[12,144,240,22]},
+  ];
+
+  function soundRows({left,top,width,scale,height,landscape,match=false}) {
+    const inset=12*scale,gap=8*scale;
+    const two=landscape;
+    const colWidth=two?(width-inset*2-gap)/2:width-inset*2;
+    const slot=height+32*scale;
+    const controls=SOUND_ROWS.map((row,i)=>{
+      const column=two&&i<2?i:0;
+      const x=left+inset+column*(colWidth+gap);
+      const y=top+(two?Math.min(1,Math.floor(i/2))*slot:i*slot);
+      const trackY=row.kind==='slider'?y+16*scale:y;
+      const labelBox={x,y,w:Math.min(colWidth,232*scale),h:14*scale};
+      return {...row,target:{x,y:trackY,w:colWidth,h:height},labelBox,
+        helpBox:{x,y:trackY+height,w:Math.min(colWidth,214*scale),h:8*scale},scale};
+    });
+    const speech=controls.at(-1).target;
+    const bottom=speech.y+height;
+    return {controls,bottom, fog:match?{x:two?speech.x+colWidth+gap:speech.x,y:two?speech.y:bottom+gap,w:colWidth,h:height}:null};
+  }
+
+  let soundArt;
+  function soundArtwork() {
+    if(!soundArt)soundArt=[['volume-track','volume-thumb'],['volume-track-human','volume-thumb-human']].map(names=>names.map(name=>{
+      const image=new global.Image();
+      image.src=`./menu-art/${name}.png`;
+      return image;
+    }));
+    return soundArt;
+  }
+
+  function paintSoundControl(context,image,{kind,source:s,target:t,scale}) {
+    if(kind==='speech') {
+      const size=Math.min(t.h,44*scale);
+      context.drawImage(image,s.x,s.y+1,17,20,t.x,t.y+(t.h-size)/2,size*17/20,size);
+      const width=Math.max(1,Math.min(160,Math.floor((t.w-size)/scale)));
+      paintControlInk(context,image,{x:s.x+24,y:s.y,w:width,h:s.h},{x:t.x+size*17/20+7*scale,
+        y:t.y+(t.h-s.h*scale)/2,w:width*scale,h:s.h*scale});
+      return;
+    }
+    const {pixels:{data,width:w,height:h}}=controlPixels(image,s);
+    let first=w,last=-1,red=0,blue=0;
+    for(let y=2;y<h-2;y++)for(let x=14;x<w-14;x++){
+      const p=(y*w+x)*4,r=data[p],g=data[p+1],b=data[p+2];
+      if(r>165&&g>130&&b<45){first=Math.min(first,x);last=Math.max(last,x);}
+      if(g<35&&r>=47&&b<12)red++;
+      if(r<30&&g<62&&b>=54)blue++;
+    }
+    const [track,thumb]=soundArtwork()[Number(blue>red)];
+    if(!track.naturalWidth||!thumb.naturalWidth||last-first>22||last<first){
+      const trackH=Math.min(t.h,19*scale);
+      context.drawImage(image,s.x,s.y,s.w,s.h,t.x,t.y+(t.h-trackH)/2,t.w,trackH);
+      return;
+    }
+    const size=Math.min(27*scale,t.h), position=Math.max(0,Math.min(1,((first+last)/2-26)/156));
+    context.drawImage(track,t.x,t.y,t.w,t.h);
+    context.drawImage(thumb,t.x+(t.w-size)*position,t.y+(t.h-size)/2,size,size);
+  }
+
   function reflowCustom(chart, controls, inset, backTarget) {
     if (controls.size !== CUSTOM_FIELDS.length + CUSTOM_BUTTONS.length) return null;
     const {width, height} = chart;
@@ -214,19 +314,21 @@
     const fields = landscape ? [CUSTOM_FIELDS[0], CUSTOM_FIELDS[2], CUSTOM_FIELDS[4],
       CUSTOM_FIELDS[1], CUSTOM_FIELDS[3]] : CUSTOM_FIELDS;
     const rows = Math.ceil(fields.length / columns);
-    const rowHeight = 40 * formScale;
-    const lastRowHeight = inlineDetail ? Math.max(rowHeight, detailHeight) : rowHeight;
-    const desiredButtonH=menuButtonHeight(width,height);
-    const bodyHeight = 20 * titleScale + (rows - 1) * rowHeight + lastRowHeight +
+    const desiredHeight=menuButtonHeight(width,height);
+    const formHeight = !landscape && backTarget ? backTarget.y+backTarget.h-desiredHeight-gap : height;
+    const bodyHeight = 20*titleScale + rows*18*formScale +
       (inlineDetail ? 0 : detailHeight + gap) +
       (rows + buttonRows + 1) * gap;
-    const formHeight = !landscape && backTarget ? backTarget.y+backTarget.h-desiredButtonH-gap : height;
-    const fit = Math.min(1,(formHeight-2*inset-buttonRows*desiredButtonH)/bodyHeight);
+    const controlRows=rows+buttonRows;
+    const desiredButtonH=Math.min(desiredHeight,Math.max(28*formScale,(formHeight-2*inset-bodyHeight)/controlRows));
+    const extraDetail=inlineDetail?Math.max(0,detailHeight-18*formScale-desiredButtonH):0;
+    const fit = Math.min(1,(formHeight-2*inset-controlRows*desiredButtonH)/(bodyHeight+extraDetail));
     if (fit <= 0) return null;
-    let top = (formHeight-bodyHeight*fit-buttonRows*desiredButtonH)/2;
+    let top = (formHeight-(bodyHeight+extraDetail)*fit-controlRows*desiredButtonH)/2;
     const paintRegions = [], regions = [];
     function crop(source, x, y, scale, interactive, decoration) {
-      const target = {x, y, w: source.w * scale, h: decoration==='tall-button'?desiredButtonH:source.h*scale};
+      const target = {x, y, w: source.w * scale,
+        h: decoration==='tall-button'||decoration==='dropdown'?desiredButtonH:source.h*scale};
       const region = {source, target, interactive, foreground: !interactive, decoration};
       if (interactive) regions.push(region);
       paintRegions.push(region);
@@ -244,11 +346,12 @@
       const col = index % columns;
       const left = inset + col * (columnW + gap) + (columnW - 184 * scale) / 2;
       crop(field.label, left, top, scale, false);
-      const control = crop(field.control, left + 4 * scale, top + 18 * scale, scale, true);
+      const control = crop(field.control,left+4*scale,top+18*scale,scale,true,'dropdown');
       if (expanded?.id === field.id) {
         const {source} = expanded;
         const popupScale = Math.min(scale, (height - 2 * inset) / source.h);
-        const y = control.target.y + (source.y - field.control.y) * popupScale;
+        const y = control.target.y+(control.target.h-field.control.h*popupScale)/2+
+          (source.y-field.control.y)*popupScale;
         popup = {source, interactive: true, foreground: false, target: {
           x: control.target.x, y: Math.max(inset, Math.min(y, height - inset - source.h * popupScale)),
           w: source.w * popupScale, h: source.h * popupScale,
@@ -259,8 +362,8 @@
           const x = inset + (col + 1) * (columnW + gap);
           crop(CUSTOM_SCENARIO_TEXT, x, top, detailScale * fit, false);
         }
-        top += (lastRowHeight + gap) * fit;
-      } else if (col === columns - 1) top += (rowHeight + gap) * fit;
+        top += (18*formScale+extraDetail+gap)*fit+desiredButtonH;
+      } else if (col === columns-1) top += (18*formScale+gap)*fit+desiredButtonH;
     }
     if (!inlineDetail) center(CUSTOM_SCENARIO_TEXT, detailScale * fit, false);
     const actionScale = buttonScale * fit;
@@ -342,6 +445,30 @@
     const speech = spec.checkbox && controls.get(4);
     const compact = speech?.type === 4 && same(speech.source, area(...spec.checkbox)) &&
       [...controls.values()].filter(item => item.type === 4).length === 1;
+    if(compact){
+      const {width,height}=chart;
+      const landscape=width>=height&&width>=520;
+      const buttonSize=menuButtonHeight(width,height);
+      const panelUnits=landscape?512:256;
+      const rowCount=landscape?3:4;
+      const scale=Math.min(chart.regions[0].target.w/256,(width-2*inset)/panelUnits,
+        (height-2*inset-rowCount*buttonSize)/(landscape?98:130));
+      if(scale<=0)return null;
+      const panelW=panelUnits*scale,totalH=rowCount*buttonSize+(landscape?98:130)*scale;
+      const left=(width-panelW)/2,top=(height-totalH)/2;
+      const body=soundRows({left,top:top+30*scale,width:panelW,scale,height:buttonSize,landscape});
+      const heading={source:area(4,5,248,17),target:{x:(width-248*scale)/2,y:top+6*scale,w:248*scale,h:17*scale},
+        decoration:'control-ink'};
+      const fields=body.controls.map(({source,...row})=>({...row,source:area(...source),decoration:'sound-control'}));
+      const labels=body.controls.flatMap(row=>row.label?[{source:area(...row.label),target:row.labelBox,decoration:'control-ink'},
+        {source:area(...row.help),target:row.helpBox,decoration:'control-ink'}]:[]);
+      const footerY=top+totalH-buttonSize-10*scale;
+      const button={source:accept,target:{x:left+16*scale,y:footerY,w:106*scale,h:buttonSize},decoration:'tall-button'};
+      const back={source:cancel,target:{x:left+panelW-buttonSize-16*scale,y:footerY,w:buttonSize,h:buttonSize},decoration:'back'};
+      const stone={source:area(0,174,256,48),target:{x:left,y:top,w:panelW,h:totalH},texture:true};
+      return {...chart,reflow:true,regions:[...fields,button,back],paintRegions:[stone,heading,...labels,...fields,button,back],
+        frame:{source:area(0,0,w,h),target:stone.target}};
+    }
     const bands = compact ? spec.compactBody : [[0,spec.body]];
     const bodyHeight = bands.reduce((height,[start,end]) => height + end - start, 0);
     const buttonSize=menuButtonHeight(chart.width,chart.height);
@@ -400,9 +527,10 @@
     const title = area(6,8,340,16);
     const buttonSize = menuButtonHeight(width,height);
     const footerY = height-inset-buttonSize;
-    const filterTop = inset + (landscape?35:Math.min(70,(height-320*scale)*.22));
+    const filterTop = inset+(landscape?35:30*scale);
+    const filterGap=6*scale;
     const listX = landscape ? inset+labelWidth+gap : inset;
-    const listTop = landscape ? filterTop : filterTop+110*scale;
+    const listTop = landscape?filterTop:filterTop+3*(buttonSize+filterGap);
     const footerGap = (footerY-listTop)-64*scale;
     const listHeight = Math.max(112*scale,footerGap);
     const barWidth = Math.min(listWidth*.18,Math.max(23,Math.min(44,28*scale)));
@@ -417,19 +545,19 @@
     for (const [index,field] of SCENARIO_FILTERS.entries()) {
       const source = area(...field.control);
       const item = controls.get(field.id);
-      const drawY = filterTop+index*34*scale;
+      const drawY = filterTop+index*(buttonSize+filterGap);
       const drawX = inset+(field.label?128*scale:0);
       if (item?.type !== 13) return null;
       if ((item.flags & 0x2000) !== 0) {
         if (popup || !contains(item.source,source) || item.source.x !== source.x || item.source.w !== source.w) return null;
         popup = {...item, target:fitted(item.source,drawX,Math.max(inset,Math.min(height-inset-item.source.h*scale,
-          drawY+(item.source.y-source.y)*scale)))};
+          drawY+(buttonSize-source.h*scale)/2+(item.source.y-source.y)*scale)))};
       } else if (!same(item.source, source)) return null;
       if (field.label) {
         const label = area(...field.label);
-        add(label,fitted(label,inset,drawY+2*scale),'scenario-caption');
+        add(label,fitted(label,inset,drawY+(buttonSize-label.h*scale)/2),'scenario-caption');
       }
-      add(source,fitted(source,drawX,drawY),undefined,true);
+      add(source,{...fitted(source,drawX,drawY),h:buttonSize},'dropdown',true);
     }
     add(list,listBox,'scenario-list',true);
     add(result,{...fitted(result,landscape?listX:inset,resultY),w:Math.min(listWidth,result.w*scale)},'scenario-caption');
@@ -518,7 +646,8 @@
   }
 
   const isAdaptedHandler = handler => HELD_CONTROLS.has(handler);
-  const api = Object.freeze({layout, wantsImmediatePress, isAdaptedHandler, paintTallButton, menuButtonHeight});
+  const api = Object.freeze({layout, wantsImmediatePress, isAdaptedHandler, paintTallButton, menuButtonHeight,
+    paintDropdown,soundRows,paintSoundControl,paintControlInk});
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WarcraftAssemblyDialogLayout = api;
 })(globalThis);

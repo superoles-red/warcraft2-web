@@ -531,7 +531,7 @@
       const scale = Math.max(.1, Math.min(1.6,
         (controlSpace-(portrait ? 28 : 18))/224,portrait ? Infinity : height*.49/172));
       const w = 224*scale;
-      const centered = portrait && home ? (picture.y+picture.h+height)/2 : (panelTop+panelBottom)/2;
+      const centered = portrait ? height/2 : (panelTop+panelBottom)/2;
       const top = headingRoom+Math.max(panelTop,Math.min(panelBottom-span,centered-span/2));
       const boxes = Array.from({length:count},(_,i)=>({x:controlCenter-w/2,
         y:top+i*(h+gap)+(i>=2 ? headingRoom : 0),w,h}));
@@ -661,10 +661,8 @@
       let feedbackBox;
       if (feedback) {
         const first = boxes[0];
-        const w = Math.min(124, rail ? rail-14 : first.w*.28);
-        feedbackBox = rail ? {x:contentWidth-w-12,y:12,w,h:first.h} :
-          {x:first.x+first.w-w,y:first.y,w,h:first.h};
-        if (!rail) first.w -= w+8;
+        const w = Math.min(124,rail?rail-14:first.w*.38);
+        feedbackBox = {x:contentWidth-w-12,y:12,w,h:first.h};
         feedbackBox.x += leftInset;
       }
       picture.x += leftInset;
