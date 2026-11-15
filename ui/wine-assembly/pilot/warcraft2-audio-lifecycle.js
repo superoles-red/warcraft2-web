@@ -18,18 +18,17 @@
     page.claimAudioSession?.();
     const listeners = new AbortController();
     const options = {signal:listeners.signal};
-    let context = null, pending = null, resumeTimeout = 0, check = 0;
-    let needsSync = false, synced = false, nudged = false, leftPage = false;
+    const appleMobile = page.navigator && isAppleMobile(page.navigator);
+    let context = null, pending = null, suspension = null, resumeTimeout = 0, check = 0;
+    let needsSync = false, synced = false, nudged = false, leftPage = false, blurred = false;
     const hidden = () => doc.hidden || leftPage;
     const blocked = () => hidden() || session?.state === 'interrupted';
     wine.pauseAudibleWhenHidden = true;
     wine.foregroundAudioBlocked = blocked;
 
     function visibleAgain() {
-      if (!blocked()) {
-        nudged = false;
-        recover();
-      }
+      blurred = false;
+      if (!blocked()) recover();
     }
 
     function clearCheck() {
@@ -43,13 +42,41 @@
       pending = null;
     }
 
-    function interrupt() {
+    function markInterruption() {
       needsSync = true;
       synced = false;
+      nudged = false;
       clearResume();
       clearCheck();
+    }
+
+    function clearSuspension() {
+      if (suspension) page.clearTimeout(suspension.timer);
+      suspension = null;
+    }
+
+    function suspendOutput(ac) {
+      if (!ac || suspension || ac.state !== 'running') return;
+      const attempt = {};
+      suspension = attempt;
+      const finish = () => {
+        if (suspension === attempt) clearSuspension();
+        else if (ac.state !== 'suspended') return;
+        if (context === ac && !blocked()) {
+          // A delayed Safari suspend can finish after the page became visible.
+          if (!needsSync) markInterruption();
+          recover();
+        }
+      };
+      attempt.timer = page.setTimeout(finish, 1000);
+      try { Promise.resolve(ac.suspend()).then(finish, finish); }
+      catch (_) { finish(); }
+    }
+
+    function interrupt() {
+      if (!needsSync || synced) markInterruption();
       if (hidden()) wine._maybePauseForHidden();
-      if (context?.state === 'running') context.suspend().catch(() => {});
+      suspendOutput(context);
     }
 
     function observe() {
@@ -58,7 +85,7 @@
       } else if (context?.state === 'interrupted') {
         needsSync = true;
         synced = false;
-      } else if (needsSync && context?.state === 'running') {
+      } else if (needsSync) {
         recover();
       }
     }
@@ -69,6 +96,7 @@
       context = next;
       synced = false;
       clearResume();
+      clearSuspension();
       clearCheck();
       next?.addEventListener('statechange', observe, options);
       observe();
@@ -76,35 +104,35 @@
 
     function checkClock(ac) {
       if (check || !needsSync || blocked() || ac.state !== 'running') return;
+      const voices = wine.hostCtx?._voices;
       if (!synced) {
         // Flush the old queued PCM immediately, before ordinary guest writes.
-        wine.hostCtx?._voices?._resyncAfterResume();
+        voices?._resyncAfterResume({resetRings: true});
         synced = true;
       }
       const startedAt = ac.currentTime;
-      const voices = wine.hostCtx?._voices;
       const before = voices?._outputProgress?.();
       check = page.setTimeout(() => {
         check = 0;
         if (blocked() || context !== ac) return;
-        const current = voices?._outputProgress?.();
-        const workletStalled = before && current && before.id === current.id &&
-          before.epoch === current.epoch && before.bytes === current.bytes;
+        const current = before && voices?._outputProgress?.(before.id);
+        const workletStalled = current && before.node === current.node &&
+          before.epoch === current.epoch && (current.bytes === null || before.bytes === current.bytes);
         if (ac.state === 'running' && ac.currentTime > startedAt+.01 && !workletStalled) {
           needsSync = false;
           return;
         }
         if (nudged || ac.state === 'closed') return;
         nudged = true;
-        ac.suspend().then(() => {
-          if (context === ac && !blocked()) recover();
-        }, () => {});
+        synced = false;
+        suspendOutput(ac);
       }, CHECK_MS);
     }
 
     function recover(trusted = false) {
       const ac = context;
-      if (!ac || blocked() || ac.state === 'closed') return;
+      if (!ac || blocked() || blurred || ac.state === 'closed' ||
+          (suspension && ac.state === 'running' && !trusted)) return;
       if (ac.state === 'running') {
         checkClock(ac);
         return;
@@ -126,7 +154,7 @@
 
     function gesture(event) {
       if (!event.isTrusted || blocked() || !needsSync) return;
-      nudged = false;
+      blurred = false;
       recover(true);
     }
 
@@ -136,6 +164,13 @@
     page.addEventListener('focus', visibleAgain, options);
     page.addEventListener('pointerup', gesture, {...options,capture:true});
     page.addEventListener('keydown', gesture, {...options,capture:true});
+    if (appleMobile) {
+      page.addEventListener('blur', () => {
+        blurred = true;
+        markInterruption();
+      }, options);
+      page.addEventListener('touchend', gesture, {...options,capture:true,passive:true});
+    }
     session?.addEventListener('statechange', () => {
       if (blocked()) interrupt();
       else visibleAgain();

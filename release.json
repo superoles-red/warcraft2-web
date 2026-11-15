@@ -1,5 +1,5 @@
 {
-  "version": "fb6324e1d53d1a7e197362a3",
+  "version": "bab134f46d0f0c4816dcbe38",
   "files": [
     {
       "path": "LICENSE.wine-assembly",
@@ -268,8 +268,8 @@
     },
     {
       "path": "lib/audio-worklet-host.js",
-      "bytes": 14592,
-      "sha256": "710fe1ede2bfcebbf0378109a755705f68a5792881669937e08430ec3d49cd14"
+      "bytes": 14691,
+      "sha256": "464a1d5ae968e7a72e8aa2e51533a0502c1c252131ae021aa2d1d11b0794e87a"
     },
     {
       "path": "lib/browser-input.js",
@@ -458,8 +458,8 @@
     },
     {
       "path": "lib/host-audio.js",
-      "bytes": 210221,
-      "sha256": "7ab293f81abcfc2d1fda854c3439e56700622c9c8adab077984941345d73c4b7"
+      "bytes": 211374,
+      "sha256": "7cfe1bc9aa105f3368644bf17bfd9daed3b027fc5a330565a051202dd0852178"
     },
     {
       "path": "lib/host-import-sigs.generated.json",
@@ -1328,8 +1328,8 @@
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-audio-lifecycle.js",
-      "bytes": 5453,
-      "sha256": "885855bc73f5748afcb7d8d1abc0cc32d6438b452e1abf648414ec4906e50a5f"
+      "bytes": 6675,
+      "sha256": "811d14b2324ce4b7f543a005c97fe99b83c100958c571cd593b8ea23c617c69b"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-briefing-layout.js",
@@ -1432,5 +1432,5 @@
       "sha256": "28ebe22c808997fa58cf2ffa28179fe6c9d48d3919736e823086940ebcbfdbd3"
     }
   ],
-  "workerSha256": "395dbcdcd2654f6dcb6262b2669a8bf4024b232b2b46f2c4728da64d548fe6b8"
+  "workerSha256": "8181369e796c5e619bb46fc13c959f05e0805a50c66c7c22e3cfa419788b491f"
 }
