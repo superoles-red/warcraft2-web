@@ -20,6 +20,8 @@
   const validFile = file => file && /^[a-f0-9]{64}$/.test(file.sha256) &&
     Number.isSafeInteger(file.bytes) && file.bytes > 0 && file.bytes < 16 * 1024 * 1024;
   const asset = file => new URL('compact-data/' + file.sha256 + '.bin', root);
+  const filesFor = audio => [...new Map([text, ...(audio?.chunks || [])]
+    .map(file => [file.sha256, file])).values()];
   try {
     if (available('ru') && localStorage.getItem(preference) === 'ru') selected = 'ru';
   } catch (_) {}
@@ -116,14 +118,13 @@
       if (download) throw error;
       audio = null;
     }
-    const files = audio ? [text, ...audio.chunks] : [text];
-    const unique = [...new Map(files.map(file => [file.sha256, file])).values()];
-    const total = unique.reduce((bytes, file) => bytes + file.bytes, 0);
+    const files = filesFor(audio);
+    const total = files.reduce((bytes, file) => bytes + file.bytes, 0);
     let loaded = 0, index = 0, error, textPatch;
     progress({loaded, total});
     async function worker() {
-      while (!error && index < unique.length) {
-        const file = unique[index++];
+      while (!error && index < files.length) {
+        const file = files[index++];
         try {
           const bytes = await ensureFile(cache, file, download);
           if (file === text) textPatch = bytes;
@@ -133,7 +134,7 @@
         progress({loaded, total});
       }
     }
-    await Promise.all(Array.from({length: Math.min(unique.length, 4)}, worker));
+    await Promise.all(Array.from({length: Math.min(files.length, 4)}, worker));
     if (error) {
       if (download) throw error;
       // The previous release can have a verified text pack without the new
@@ -188,16 +189,16 @@
   }
 
   async function status(language) {
-    if (language === 'en') return {installed: true, stored: true};
+    if (language === 'en') return {installed: true, stored: true, bytes: 0};
     if (!available(language)) throw new Error('Этот язык пока недоступен.');
-    const audio = await readManifest();
-    const files = audio ? [text, ...audio.chunks] : [text];
-    if (!await caches.has(cacheName)) return {installed: false, stored: false};
+    const files = filesFor(await readManifest());
+    const bytes = files.reduce((total, file) => total + file.bytes, 0);
+    if (!await caches.has(cacheName)) return {installed: false, stored: false, bytes};
     const cache = await caches.open(cacheName);
     const stored = (await cache.keys()).length > 0;
     const installed = await Promise.all(files.map(file =>
       ensureFile(cache, file, false).then(() => true, () => false)));
-    return {installed: installed.every(Boolean) && !needsDownload(language), stored};
+    return {installed: installed.every(Boolean) && !needsDownload(language), stored, bytes};
   }
 
   async function remove(language) {

@@ -27,6 +27,7 @@
     const sources = new Set();
     const gestures = new WeakSet();
     let sample;
+    let silentUntil = 0;
     loadSample().then(data => sample = data);
 
     function stop() {
@@ -58,6 +59,25 @@
       source.start();
     }
     wine.playWarcraftMenuClick = play;
+    wine.silenceWarcraftMenuTransition = () => {
+      silentUntil = performance.now() + 500;
+      return () => { silentUntil = 0; };
+    };
+    wine.suppressOneShotAudio = (pcm, offset, length, voice) => {
+      if (!silentUntil || performance.now() > silentUntil || !sample ||
+          length !== sample.length * 2 || voice.rate !== 22050 || voice.channels !== 1 || voice.bits !== 16) return false;
+      const view = new DataView(pcm.buffer, pcm.byteOffset + offset, length);
+      for (let i = 0; i < sample.length; ++i) {
+        if (view.getInt16(i * 2, true) !== sample[i] * 32768) return false;
+      }
+      silentUntil = 0;
+      return true;
+    };
+    for (const type of ['pointerdown', 'keydown']) {
+      document.addEventListener(type, event => {
+        if (event.isTrusted) silentUntil = 0;
+      }, {...options, capture:true});
+    }
     document.addEventListener('click', event => {
       const button = event.target.closest?.(authored);
       if (button && !button.disabled && !button.hasAttribute('data-warcraft-native-click')) gestures.add(event);
@@ -70,6 +90,8 @@
       listener.abort();
       stop();
       if (wine.playWarcraftMenuClick === play) delete wine.playWarcraftMenuClick;
+      delete wine.silenceWarcraftMenuTransition;
+      delete wine.suppressOneShotAudio;
     };
   }
   window.WarcraftMenuClick = Object.freeze({attach});

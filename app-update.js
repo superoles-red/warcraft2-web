@@ -16,11 +16,13 @@ window.WarcraftAppUpdate = (() => {
     }
   }
 
-  async function publishedVersion() {
+  async function publishedVersion(refresh = false) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
     try {
-      const response = await fetch(new URL('release.json', location.href), {
+      const url = new URL('release.json', location.href);
+      if (refresh) url.searchParams.set('check', Date.now());
+      const response = await fetch(url, {
         cache: 'no-store', credentials: 'same-origin', redirect: 'error', signal: controller.signal,
       });
       if (!response.ok) return null;
@@ -44,6 +46,10 @@ window.WarcraftAppUpdate = (() => {
   function deferRetry(version) {
     try { sessionStorage.setItem(retryKey, JSON.stringify({version, after: Date.now() + 60000})); }
     catch {}
+  }
+
+  function clearRetry() {
+    try { sessionStorage.removeItem(retryKey); } catch {}
   }
 
   function request(worker, type, details = {}) {
@@ -100,5 +106,5 @@ window.WarcraftAppUpdate = (() => {
     }
   }
 
-  return {status, waitForControl, apply, retryDelay, publishedVersion, bounded};
+  return {status, waitForControl, apply, retryDelay, clearRetry, publishedVersion, bounded};
 })();

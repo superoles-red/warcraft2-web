@@ -2012,6 +2012,7 @@ class WineAssembly {
       set _audioCtx(v) { self._audioCtx = v; self.bindForegroundAudio?.(v); },
       isForegroundAudioBlocked: () => self.foregroundAudioBlocked?.() === true,
       holdsForegroundAudioCursor: () => self.holdsForegroundAudioCursor?.() === true,
+      suppressOneShotAudio: (...args) => self.suppressOneShotAudio?.(...args) === true,
       // The two seams that make the AudioContext lazy. host-audio owns the
       // context; the host owns the policy about when one should exist.
       markAudioRequested: () => self.markAudioRequested(),
@@ -5167,13 +5168,13 @@ class WineAssembly {
 
   _cleanupAudio() {
     if (this.hostCtx && typeof this.hostCtx.stopAudio === 'function') {
-      try { this.hostCtx.stopAudio(); } catch (_) {}
+      try { return this.hostCtx.stopAudio(); } catch (_) {}
     } else if (this._audioCtx) {
-      try {
-        if (this._audioCtx.close) this._audioCtx.close();
-        else if (this._audioCtx.suspend) this._audioCtx.suspend();
-      } catch (_) {}
+      const ac = this._audioCtx;
       this._audioCtx = null;
+      try {
+        return Promise.resolve(ac.close ? ac.close() : ac.suspend?.()).catch(() => {});
+      } catch (_) {}
     }
   }
 
@@ -5344,7 +5345,7 @@ class WineAssembly {
     this.hostCtx?.vfs?.closeAllDiskHandles?.();
     this._stopGuestRuntime();
     this._stopPerfCounterPoll();
-    this._cleanupAudio();
+    const audioReleased = this._cleanupAudio();
     // A deferred last-window teardown has nothing left to finish, and leaving
     // the deadline armed would run this a second time.
     this._lastWindowStopAt = 0;
@@ -5416,6 +5417,7 @@ class WineAssembly {
         if (this._stopped) this._releaseGuestMemory();
       }, 0);
     }
+    return audioReleased;
   }
 
   _stopGuestRuntime() {

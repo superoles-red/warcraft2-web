@@ -10,9 +10,6 @@
   const AUTHORED_OR_CINEMATIC = new Set([0x42adc0, 0x441cc0, 0x434a00, 0x429580, 0x42fef0]);
   // Original rez\snd_dlg.bin and rez\filefltr.bin. These are local,
   // inclusive native footer controls decoded to half-open source rectangles.
-  const NATIVE_FOOTERS = new Map([
-    [SOUND_OPTIONS, {w:256, h:288, cancel:[12,256], accept:[138,256]}],
-  ]);
   const SCENARIO_FILTERS = [
     {id:2, label:[8,38,120,20], control:[138,36,204,22]},
     {id:3, label:[8,86,120,20], control:[138,84,204,22]},
@@ -540,14 +537,13 @@
     return {...chart, reflow: true, regions, paintRegions: [title, ...regions]};
   }
 
-  function reflowNativeFooter(chart, front, controls, spec, inset) {
-    if (front.w !== spec.w || front.h !== spec.h) return null;
+  function reflowTitleSound(chart, front, controls, inset) {
+    if (front.w !== 256 || front.h !== 288) return null;
     const {x, y, w, h} = front;
     const area = (left, top, width, height) => ({x:x + left, y:y + top, w:width, h:height});
-    const cancel = area(...spec.cancel,106,28), accept = area(...spec.accept,106,28);
-    const liveCancel = controls.get(-3), liveAccept = [...controls.values()].find(item => same(item.source, accept));
-    if (liveCancel?.type !== 2 || !(liveCancel.flags & 8) || !same(liveCancel.source, cancel) ||
-        !liveAccept || ![1, 2].includes(liveAccept.type)) return null;
+    const accept = area(138,256,106,28);
+    const liveAccept = [...controls.values()].find(item => same(item.source, accept));
+    if (!(liveAccept?.flags & 8) || ![1, 2].includes(liveAccept.type)) return null;
 
     const {width,height}=chart;
     const landscape=width>=height&&width>=520;
@@ -566,10 +562,9 @@
     const labels=body.controls.flatMap(row=>[{source:area(...row.label),target:row.labelBox,decoration:'control-ink'},
       {source:area(...row.help),target:row.helpBox,decoration:'sound-ends'}]);
     const footerY=top+totalH-buttonSize-10*scale;
-    const button={source:accept,target:{x:left+16*scale,y:footerY,w:106*scale,h:buttonSize},decoration:'tall-button',accept:true};
-    const back={source:cancel,target:{x:left+panelW-buttonSize-16*scale,y:footerY,w:buttonSize,h:buttonSize},decoration:'back'};
+    const back={source:accept,target:{x:left+panelW-buttonSize-16*scale,y:footerY,w:buttonSize,h:buttonSize},decoration:'back'};
     const stone={source:area(0,174,256,48),target:{x:left,y:top,w:panelW,h:totalH},texture:true};
-    return {...chart,reflow:true,regions:[...fields,button,back],paintRegions:[stone,heading,...labels,...fields,button,back],
+    return {...chart,reflow:true,regions:[...fields,back],paintRegions:[stone,heading,...labels,...fields,back],
       frame:{source:area(0,0,w,h),target:stone.target,scale}};
   }
 
@@ -716,10 +711,10 @@
       const controls = readControls(wine,front,SCENARIO_TYPES);
       return controls && reflowScenario(chart,front,controls,inset,wine);
     }
-    const footer = NATIVE_FOOTERS.get(front.handler);
-    if (footer && backImage?.naturalWidth) {
+    if (front.handler === SOUND_OPTIONS) {
+      if (!backImage?.naturalWidth) return null;
       const buttons = readControls(wine, front, new Set([1,2]));
-      if (buttons) return reflowNativeFooter(chart, front, buttons, footer, inset) || chart;
+      return buttons && reflowTitleSound(chart, front, buttons, inset);
     }
     return chart;
   }

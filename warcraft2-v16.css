@@ -12,6 +12,18 @@
 #screen-canvas-stack.warcraft-owns-presentation :is(#screen-present, #screen) { opacity: 0 !important; }
 #warcraft-menu-navigation { position: absolute; inset: 0; z-index: 3; }
 #warcraft-menu-navigation[hidden] { display: none !important; }
+.warcraft-update-status {
+  position: absolute;
+  max-width: 180px;
+  margin: 0;
+  padding: 5px 8px;
+  border: 1px solid #a98046;
+  background: #21160ef2;
+  color: #f5de9f;
+  font: 13px/1.25 system-ui, sans-serif;
+  text-align: right;
+  pointer-events: none;
+}
 .warcraft-menu-section-heading {
   position: absolute;
   display: grid;

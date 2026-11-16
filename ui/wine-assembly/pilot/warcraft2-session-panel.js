@@ -2,14 +2,14 @@
 (() => {
   'use strict';
   const label = {
-    en: {about:'About', files:'Files', feedback:'Feedback', campaign:'Campaign', continue:'Continue', replayDemo:'Replay Demo', start:'Start', newGame:'Start a new game?',
+    en: {about:'About', files:'Files', feedback:'Feedback', update:'Update', campaign:'Campaign', continue:'Continue', replayDemo:'Replay Demo', start:'Start', newGame:'Start a new game?',
       resume:'Continue the last session?', replace:'Your current save will be overwritten.',
       selectScenario:'Select Scenario', mapSize:'Map size', anySize:'Any size', mapCategory:'Category',
       allCategories:'All categories', noScenarios:'No scenarios match these filters.',
       mapPreview:'Map preview', terrain:['Forest', 'Winter', 'Wasteland', 'Orc Swamps'],
       scenarioFailed:'Could not select this map.', ok:'OK', mission:'Mission', locked:'Locked', completed:'Completed', fast:'Fast Scenario', back:'Back',
       failed:'The game could not start. The previous session is still available.'},
-    ru: {about:'Об игре', files:'Файлы', feedback:'Отзыв', campaign:'Кампания', continue:'Продолжить', replayDemo:'Демо', start:'Начать', newGame:'Начать новую игру?',
+    ru: {about:'Об игре', files:'Файлы', feedback:'Отзыв', update:'Обновить', campaign:'Кампания', continue:'Продолжить', replayDemo:'Демо', start:'Начать', newGame:'Начать новую игру?',
       resume:'Продолжить игру?', replace:'Текущее сохранение будет перезаписано.',
       selectScenario:'Выбор сценария', mapSize:'Размер карты', anySize:'Любой размер', mapCategory:'Категория',
       allCategories:'Все категории', noScenarios:'Нет сценариев с такими фильтрами.',

@@ -98,9 +98,8 @@
     setCode(0x48f5b0, start);
     redirect(0x420b61, [0xe8,0x1a,0x66,0x01,0x00], 0x48f5b0);
 
-    // Commit only on original OK. The native Sound close still applies
-    // volumes and restores its snapshot on Cancel. Use native fog invalidation
-    // and visibility refresh as in original Preferences.
+    // Commit speed and fog only on original OK. The two volume settings
+    // are independent and committed as the sliders change.
     const close = machineCode(0x48f610);
     close.emit(0xff,0x74,0x24,0x04);
     close.branch(0xe8, 0x435300);
@@ -143,22 +142,38 @@
     setCode(0x48f680, filter);
     redirect(0x4417c0, [0x56,0x8b,0x74,0x24,0x08], 0x48f680, 0xe9);
 
-    // Both Sound dialogs read the two sliders through this handler. On
-    // native OK, write the same Storm registry values that BNE reads on boot.
-    // Cancel continues through the original snapshot restoration.
+    // Both Sound dialogs share these two native volume updates. Write the
+    // live values on the slider tick and again on close so the final change
+    // is captured even if it happened before the next tick.
     const saveVolumes = machineCode(0x48f740);
-    saveVolumes.emit(0x83,0x3d); saveVolumes.dword(0x4ab8d0); saveVolumes.emit(0xfe);
-    const cancelVolumes = saveVolumes.skipIf(0x75);
     for (const [name,volume] of [[0x4aa96c,0x4d6b48],[0x4aa970,0x4d6b44]]) {
       saveVolumes.emit(0xff,0x35); saveVolumes.dword(volume);
       saveVolumes.emit(0x6a,0x00,0x68); saveVolumes.dword(name);
       saveVolumes.emit(0x68); saveVolumes.dword(0x49dc0c);
       saveVolumes.branch(0xe8, 0x48cd1a); // Storm SRegSaveValue, stdcall.
     }
-    cancelVolumes();
     saveVolumes.emit(0xa1); saveVolumes.dword(0x4bdb94); saveVolumes.emit(0xc3);
     setCode(0x48f740, saveVolumes);
     redirect(0x441a2d, [0xa1,0x94,0xdb,0x4b,0x00], 0x48f740);
+    const applyVolumes = machineCode(0x48fa20);
+    applyVolumes.branch(0xe8, 0x48f740);
+    applyVolumes.branch(0xe9, 0x4409e0);
+    setCode(0x48fa20, applyVolumes);
+    redirect(0x441b2a, [0xe8,0xb1,0xee,0xff,0xff], 0x48fa20);
+
+    // The original Cancel copies seven settings back from its snapshot.
+    // Keep the live volume entries in that snapshot and restore the rest.
+    const retainVolumes = machineCode(0x48fa30);
+    retainVolumes.emit(0x50,0xa1); retainVolumes.dword(0x4d6b44);
+    retainVolumes.emit(0x89,0x46,0x0c,0xa1); retainVolumes.dword(0x4d6b48);
+    retainVolumes.emit(0x89,0x46,0x10,0x58,0xb9,7,0,0,0,0xc3);
+    setCode(0x48fa30, retainVolumes);
+    redirect(0x441a46, [0xb9,7,0,0,0], 0x48fa30);
+    const retainMatchVolumes = machineCode(0x48fa50);
+    retainMatchVolumes.emit(0x8b,0x40,0x26,0x8b,0xf0);
+    retainMatchVolumes.branch(0xe9, 0x48fa30);
+    setCode(0x48fa50, retainMatchVolumes);
+    redirect(0x436055, [0x8b,0x40,0x26,0x8b,0xf0], 0x48fa50);
 
     if (window.WarcraftLanguage?.current?.() !== 'ru') {
       // 404B50 has finished resolving the localized Sound controls. Change

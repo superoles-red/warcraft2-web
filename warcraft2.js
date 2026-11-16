@@ -164,9 +164,19 @@
         await previous.wine._flushVfsOverlay?.('language switch');
         app._sessionOverlayStore = previous.app._sessionOverlayStore;
         previous.dispose();
-        previous.wine.stop({repaint: false, releaseNow: true});
+        const audioReleased = previous.wine.stop({repaint: false, releaseNow: true});
         activeRun = null;
         if (previous.wine.memory) throw new Error('Старая сессия Warcraft II ещё завершается');
+        // Safari can leave the old device output active while close() settles.
+        // Let it go before the new language starts its own mixer.
+        if (audioReleased) {
+          let timeout;
+          try {
+            await Promise.race([audioReleased, new Promise(resolve => { timeout = setTimeout(resolve, 1500); })]);
+          } finally {
+            clearTimeout(timeout);
+          }
+        }
       }
 
       let releaseAudio, releaseV16, movie;

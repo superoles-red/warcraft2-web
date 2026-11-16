@@ -1177,6 +1177,7 @@
         layer.className='warcraft-placement-controls';layer.hidden=true;
         const cancel=document.createElement('button');
         cancel.id='warcraft-build-cancel';cancel.type='button';cancel.hidden=true;
+        cancel.setAttribute('data-warcraft-native-click','');
         const locale=global.WarcraftLanguage?.current()==='ru'?'ru':'en';
         const labels=locale==='ru'?['Поставить','Отмена']:['Place','Cancel'];
         const font=global.WarcraftSessionText;

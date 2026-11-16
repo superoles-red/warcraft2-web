@@ -13,6 +13,15 @@
   const campaignIds = ['orc-tod', 'human-tod', 'orc-btdp', 'human-btdp'];
   const continueItem = {label:'Continue', caption:'continue', resume:true};
   const feedbackItem = {label:'Feedback', caption:'feedback', disabled:true};
+  const updateItem = {label:'Update', caption:'update', checkUpdate:true};
+  const updateMessages = {
+    en: {checking:'Checking for updates…', current:'You have the latest version.', unreachable:'Could not reach the update server.',
+      failed:'Could not download the update. Try again.', downloading:'The update is still downloading.',
+      ready:'Update ready. Return to the main menu to apply it.', applying:'Applying update…'},
+    ru: {checking:'Проверяю обновления…', current:'У тебя последняя версия.', unreachable:'Сервер обновлений недоступен.',
+      failed:'Не удалось скачать обновление. Попробуй ещё раз.', downloading:'Обновление ещё скачивается.',
+      ready:'Обновление готово. Вернись в главное меню.', applying:'Применяю обновление…'},
+  };
   const filesItem = {label:'Files', caption:'files', files:true};
   const aboutItem = {label:'About', caption:'about', about:true};
   const about = {
@@ -363,6 +372,31 @@
     const sectionHeading = document.createElement('h2');
     sectionHeading.className = 'warcraft-menu-section-heading';
     sectionHeading.hidden = true;
+    const downloadSize = document.createElement('p');
+    downloadSize.className = 'warcraft-menu-section-heading';
+    downloadSize.hidden = true;
+    const updateNotice = document.createElement('p');
+    updateNotice.className = 'warcraft-update-status';
+    updateNotice.setAttribute('role', 'status');
+    updateNotice.hidden = true;
+    let updateBusy = false;
+
+    async function checkForUpdate() {
+      if (updateBusy) return;
+      updateBusy = true;
+      const messages = updateMessages[sessionArt.locale()];
+      updateNotice.textContent = messages.checking;
+      repaint();
+      try {
+        const result = await window.WarcraftGameUpdate.check();
+        updateNotice.textContent = messages[result] || messages.failed;
+      } catch {
+        updateNotice.textContent = messages.failed;
+      } finally {
+        updateBusy = false;
+        repaint();
+      }
+    }
 
     function clearPending() {
       pending = false;
@@ -398,7 +432,11 @@
       if (item.language) {
         if (!settings?.available(item.language)) return;
         languageTask(async () => {
-          languagePack = {id: item.language, ...await settings.status(item.language)};
+          const status = await settings.status(item.language);
+          const locale = sessionArt.locale();
+          const size = new Intl.NumberFormat(locale, {maximumFractionDigits: 1}).format(status.bytes / 1_000_000);
+          const sizeLabel = locale === 'ru' ? `Нужно ${size} МБ` : `${size} MB required`;
+          languagePack = {id: item.language, ...status, sizeLabel};
           go(languagePack.stored ? 'language-pack' : 'language-download');
         });
         return;
@@ -598,12 +636,18 @@
       route.sent = true;
       window.requestAnimationFrame(() => {
         if (titleRoute !== route) return;
-        if (!activate(320,route.destination)) route.sent = false;
+        const clearSilence = wine.silenceWarcraftMenuTransition?.();
+        if (!activate(320,route.destination)) {
+          clearSilence?.();
+          route.sent = false;
+        }
       });
     }
 
     function action(item) {
       if (!active || pending || titleRoute || resume || languageBusy || sessionPanel?.active) return;
+      if (!item.checkUpdate && !updateBusy) updateNotice.textContent = '';
+      if (item.checkUpdate) return checkForUpdate();
       if (item.resume) return startResume();
       if (item.destination) {
         if (!activate(320,254)) return;
@@ -640,8 +684,10 @@
     function makeButton(item) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.setAttribute('aria-label', item.caption === 'feedback' ? sessionArt.text('feedback') : item.label);
-      button.toggleAttribute('data-warcraft-native-click', !!item.source && !item.campaign);
+      const cornerLabel = item.checkUpdate || item === feedbackItem;
+      button.setAttribute('aria-label', cornerLabel ? sessionArt.text(item.caption) : item.label);
+      if (item.checkUpdate) button.dataset.warcraftCheckUpdate = '';
+      button.toggleAttribute('data-warcraft-native-click', !!item.destination || !!item.source && !item.campaign);
       button.addEventListener('pointerdown', () => { pressed = item.label; repaint(); });
       for (const event of ['pointerup', 'pointerleave', 'pointercancel']) {
         button.addEventListener(event, () => { pressed = null; repaint(); });
@@ -654,9 +700,9 @@
     function setButtons(items, boxes, home, preferredCampaign) {
       const labels = items.map(i => i.label).join('|');
       if (layer.dataset.buttons !== labels) {
-        layer.replaceChildren(sectionHeading);
+        layer.replaceChildren(sectionHeading, downloadSize);
         buttons = items.map(makeButton);
-        layer.append(message);
+        layer.append(message, updateNotice);
         layer.dataset.buttons = labels;
       }
       boxes.forEach((box, i) => {
@@ -664,6 +710,7 @@
         Object.assign(buttons[i].style, {left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px`});
         const item = items[i], control = buttons[i];
         control.disabled = pending || !!titleRoute || !!resume || languageBusy || !!item.disabled ||
+          !!(item.checkUpdate && updateBusy) ||
           !!(item.language === 'ru' && !language()?.available?.('ru'));
         control.toggleAttribute('data-warcraft-default', home && i === 0 ||
           !!preferredCampaign && item.campaign === preferredCampaign);
@@ -672,7 +719,7 @@
       });
     }
 
-    function place(width, height, count, {portrait, campaign, hasBack, hasHeading, hasMessage, safeBottom, showLogo}) {
+    function place(width, height, count, {portrait, campaign, hasBack, hasHeading, hasPackSize, hasMessage, safeBottom, showLogo}) {
       const standardHeight = window.WarcraftAssemblyDialogLayout.menuButtonHeight(width,height);
       const gap = Math.min(!portrait&&count>4?5:8,standardHeight*.16);
       const corner = backBox(width, height);
@@ -693,7 +740,8 @@
       const buttonBottom = (portrait && hasBack ? back.y : height-safeBottom)-gap;
       const messageRoom = hasMessage ? 28 : 0;
       const headingHeight = hasHeading ? Math.max(16,Math.min(27,19*scale)) : 0;
-      const sectionRoom = hasHeading ? headingHeight+gap : 0;
+      const sizeHeight = hasPackSize ? Math.max(12, headingHeight*.75) : 0;
+      const sectionRoom = headingHeight + (hasHeading ? gap : 0) + (hasPackSize ? sizeHeight + gap : 0);
       let logo = null;
       if (showLogo) {
         const image = images['title-logo'];
@@ -723,7 +771,8 @@
       const boxes = Array.from({length:count},(_,i)=>({x:(width-w)/2,
         y:top+i*(h+rowGap)+(i>=2?headingRoom:0),w,h}));
       const heading = hasHeading ? {x:(width-w)/2,y:top-headingRoom-sectionRoom,w,h:headingHeight} : null;
-      return {picture, boxes, back, scale, logo, heading};
+      const packInfo = heading && hasPackSize ? {x:heading.x, y:heading.y+headingHeight+gap, w, h:sizeHeight} : null;
+      return {picture, boxes, back, scale, logo, heading, packInfo};
     }
 
     function drawImage(context, image, box, source) {
@@ -753,16 +802,16 @@
       return sessionCaptions.get(id);
     }
 
-    function updateSectionHeading(label, box) {
-      sectionHeading.hidden = !box;
+    function updateSectionCaption(element, label, box) {
+      element.hidden = !box;
       if (!box) return;
       const glyph = captionInk(label);
-      if (sectionHeading.firstChild !== glyph) {
-        sectionHeading.setAttribute('aria-label', label);
-        sectionHeading.replaceChildren(glyph);
+      if (element.firstChild !== glyph) {
+        element.setAttribute('aria-label', label);
+        element.replaceChildren(glyph);
       }
       const {x,y,w,h} = box;
-      Object.assign(sectionHeading.style, {left:x+'px',top:y+'px',width:w+'px',height:h+'px'});
+      Object.assign(element.style, {left:x+'px',top:y+'px',width:w+'px',height:h+'px'});
     }
 
     function languagePage() {
@@ -792,7 +841,7 @@
       drawImage(context, base, box);
       if (item.caption) {
         const glyph = captionInk(sessionArt.text(item.caption));
-        const scale = Math.min(captionScale, box.w / (glyph.width + 40));
+        const scale = Math.min(captionScale, box.w / (glyph.width + (item.checkUpdate ? 12 : 40)));
         const w = glyph.width * scale, h = glyph.height * scale;
         drawImage(context, glyph, {x:box.x + (box.w-w)/2,y:box.y + (box.h-h)/2,w,h});
       } else {
@@ -851,16 +900,18 @@
         ? originals.slice(0, 4).map((source, i) => ({label: campaignLabels[i], source, campaign:campaignIds[i]}))
         : languageMenu ? languagePage() : options || titleItems;
       const home = !campaign && page === 'title';
-      const feedback = session && scene.mode === 'title' && page === 'options';
+      const cornerItem = scene.mode === 'title' && (
+        home && window.WarcraftGameUpdate ? updateItem : session && page === 'options' ? feedbackItem : null);
       advanceResume(scene.mode, originals);
       const sectionTitle = sectionTitles[sessionArt.locale()][scene.mode === 'title' ? page : scene.mode];
+      const packSize = page === 'language-download' ? languagePack?.sizeLabel : null;
       const hasBack = parentPage[page] || campaign;
       if (!images['orc-texture'].naturalWidth || !images['title-version-clean'].naturalWidth ||
           !images['title-button'].naturalWidth || !images['title-button-pressed'].naturalWidth ||
           (home && titleItems[0].resume &&
             (!images['title-accept-button'].naturalWidth || !images['title-accept-button-pressed'].naturalWidth)) ||
           items.some(item => item.glyph && !labelImage(item)?.naturalWidth) ||
-          ((sectionTitle || feedback || items.some(item => item.caption)) && !sessionAtlases.has(sessionArt.locale())) ||
+          ((sectionTitle || cornerItem || items.some(item => item.caption)) && !sessionAtlases.has(sessionArt.locale())) ||
           (hasBack && (!images['menu-back-orc'].naturalWidth || !images['menu-back-orc-pressed'].naturalWidth))) {
         layer.hidden = true;
         return null;
@@ -869,21 +920,23 @@
       const portrait = width < height;
       if (!images['title-landscape-art'].complete || !images['title-logo'].complete) return null;
       const useSeparatedArt = !!images['title-landscape-art'].naturalWidth && !!images['title-logo'].naturalWidth;
-      const {picture, boxes, back, scale, logo, heading} = place(contentWidth,height,items.length,
-        {portrait,campaign,hasBack,hasHeading:!!sectionTitle,hasMessage:languageMenu&&!message.hidden,
+      const {picture, boxes, back, scale, logo, heading, packInfo} = place(contentWidth,height,items.length,
+        {portrait,campaign,hasBack,hasHeading:!!sectionTitle,hasPackSize:!!packSize,hasMessage:languageMenu&&!message.hidden,
           safeBottom:Math.max(8,bottomInset),showLogo:useSeparatedArt});
-      let feedbackBox;
-      if (feedback) {
+      let cornerBox;
+      if (cornerItem) {
         const first = boxes[0];
         const room = logo ? contentWidth-logo.x-logo.w-22 : Infinity;
-        const w = Math.min(portrait?124:110,first.w*.38,Math.max(44,room));
-        const y = room < 44 ? logo.y+logo.h+6 : 12;
-        feedbackBox = {x:contentWidth-w-12,y,w,h:portrait?Math.min(first.h,w*.67):first.h};
-        feedbackBox.x += leftInset;
+        const w = cornerItem.checkUpdate ? Math.min(108, Math.max(80, first.w*.32)) :
+          Math.min(portrait?124:110,first.w*.38,Math.max(44,room));
+        const y = room < (cornerItem.checkUpdate ? w : 44) ? logo.y+logo.h+6 : 12;
+        const h = cornerItem.checkUpdate ? Math.min(44, first.h) : portrait?Math.min(first.h,w*.67):first.h;
+        cornerBox = {x:leftInset+contentWidth-w-12,y,w,h};
       }
       picture.x += leftInset;
       if (logo) logo.x += leftInset;
       if (heading) heading.x += leftInset;
+      if (packInfo) packInfo.x += leftInset;
       back.x += leftInset;
       for (const box of boxes) box.x += leftInset;
       active = true;
@@ -917,10 +970,15 @@
       }
       items.forEach((item, i) => drawButton(context, image, item, boxes[i], scale, home));
       const controls = [...items];
-      if (feedback) {
-        controls.push(feedbackItem);
-        boxes.push(feedbackBox);
-        drawButton(context,image,feedbackItem,feedbackBox,scale);
+      if (cornerItem) {
+        controls.push(cornerItem);
+        boxes.push(cornerBox);
+        drawButton(context,image,cornerItem,cornerBox,scale);
+      }
+      updateNotice.toggleAttribute('hidden', cornerItem !== updateItem || !updateNotice.textContent);
+      if (!updateNotice.hidden) {
+        updateNotice.style.top = cornerBox.y + cornerBox.h + 5 + 'px';
+        updateNotice.style.right = rightInset + 12 + 'px';
       }
       if (hasBack) {
         controls.push({label: 'Back', source: campaign ? originals[4] : null});
@@ -930,7 +988,9 @@
       }
       presented = {picture, logo, controls, boxes, page, heading: heading && {label:sectionTitle,box:heading}};
       setButtons(controls, boxes, home, campaign ? saved?.lastCampaign ?? campaignIds[0] : null);
-      updateSectionHeading(sectionTitle, heading);
+      layer.toggleAttribute('data-warcraft-menu-home', scene.mode === 'title' && home);
+      updateSectionCaption(sectionHeading, sectionTitle, heading);
+      updateSectionCaption(downloadSize, packSize, packInfo);
       return true;
     }
 

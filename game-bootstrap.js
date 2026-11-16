@@ -15,18 +15,26 @@ if (!workers?.controller) {
   launcherURL.searchParams.set('wc2-runtime-error', '');
   location.replace(launcherURL);
 } else {
+  let monitor;
+  const startMonitor = () => monitor ||= watchForGameUpdate();
+  window.WarcraftGameUpdate = Object.freeze({
+    async check() {
+      const checkOnline = await startMonitor();
+      return checkOnline ? checkOnline(true) : 'failed';
+    },
+  });
   const observe = () => {
     const frame = document.getElementById('screen-canvas-stack');
     if (!frame) return;
     const checkTitle = () => {
       if (!mainMenuReady()) return;
       titleObserver.disconnect();
-      void watchForGameUpdate();
+      void startMonitor();
     };
     const titleObserver = new MutationObserver(checkTitle);
     titleObserver.observe(frame, {attributes: true, childList: true, subtree: true,
       attributeFilter: ['data-warcraft-presentation', 'data-warcraft-mode', 'data-warcraft-transition',
-        'data-warcraft-menu-action', 'hidden', 'disabled']});
+        'data-warcraft-menu-home', 'hidden', 'disabled']});
     // The launch cover is removed outside the canvas stack.
     titleObserver.observe(document.body, {childList: true});
     checkTitle();
@@ -38,8 +46,8 @@ if (!workers?.controller) {
 function mainMenuReady() {
   const title = document.querySelector('#screen-canvas-stack[data-warcraft-presentation="menu"]' +
     '[data-warcraft-mode="title"]:not([data-warcraft-transition])');
-  return title?.querySelector('#warcraft-menu-navigation:not([hidden]) ' +
-    'button[data-warcraft-menu-action="single"]:not([disabled])') &&
+  return title?.querySelector('#warcraft-menu-navigation[data-warcraft-menu-home]:not([hidden]) ' +
+    'button:not([disabled])') && !title.querySelector('.warcraft-session-overlay:not([hidden])') &&
     !document.getElementById('war2-launch-cover') && !document.querySelector('#wc2-movie-pilot:not([hidden])');
 }
 
@@ -52,16 +60,17 @@ async function watchForGameUpdate() {
   let activeVersion = initial?.version, pending = null, check = null, restarting = false, lastCheck = -Infinity;
   let retryTimer, refreshTimer;
 
-  function restartAtMenu() {
+  function restartAtMenu(force = false) {
     if (restarting || !pending || document.hidden || navigator.onLine === false || !mainMenuReady()) return;
     const delay = updates.retryDelay(pending);
-    if (delay > 0) {
+    if (delay > 0 && !force) {
       if (retryTimer === undefined) retryTimer = setTimeout(() => {
         retryTimer = undefined;
         inspect();
       }, delay);
       return;
     }
+    if (force) updates.clearRetry();
     restarting = true;
     launcherURL.searchParams.set('wc2-update', '');
     location.replace(launcherURL);
@@ -78,16 +87,51 @@ async function watchForGameUpdate() {
     restartAtMenu();
   }
 
-  function checkOnline() {
-    restartAtMenu();
-    if (document.hidden || navigator.onLine === false || check || performance.now() - lastCheck < 5000) return;
-    lastCheck = performance.now();
-    check = updates.publishedVersion().then(remote => {
-      if (!remote || remote === activeVersion || registration.installing || registration.waiting && pending === remote) return;
+  function waitForInstall(worker) {
+    if (!worker) return Promise.resolve();
+    return new Promise(resolve => {
+      const finish = () => {
+        clearTimeout(timeout);
+        worker.removeEventListener('statechange', changed);
+        resolve();
+      };
+      const changed = () => {
+        if (worker.state !== 'installing' && worker.state !== 'parsed') finish();
+      };
+      const timeout = setTimeout(finish, 45000);
+      worker.addEventListener('statechange', changed);
+      changed();
+    });
+  }
+
+  async function checkRelease(manual) {
+    const remote = await updates.publishedVersion(manual);
+    if (!remote) return 'unreachable';
+    if (remote !== activeVersion && !registration.installing && !(registration.waiting && pending === remote)) {
       // Fetch this release's worker even if the browser defers a soft update.
-      return updates.bounded(workers.register('./service-worker.js?v=' + remote,
+      await updates.bounded(workers.register('./service-worker.js?v=' + remote,
         {scope:'./', updateViaCache:'none'}), 8000);
-    }).catch(() => {}).then(inspect).finally(() => { check = null; });
+    }
+    await waitForInstall(registration.installing);
+    await inspect();
+    if (pending) return 'ready';
+    if (activeVersion === remote) return 'current';
+    return registration.installing ? 'downloading' : 'failed';
+  }
+
+  async function checkOnline(manual = false) {
+    manual = manual === true;
+    if (manual && check) await check;
+    restartAtMenu(manual);
+    if (restarting) return 'applying';
+    if (document.hidden || navigator.onLine === false) return 'unreachable';
+    if (!check && (manual || performance.now() - lastCheck >= 5000)) {
+      lastCheck = performance.now();
+      check = checkRelease(manual).catch(() => 'failed').finally(() => { check = null; });
+    }
+    const result = await check;
+    restartAtMenu(manual);
+    return restarting ? 'applying' : result;
   }
 
   function refreshWhileVisible() {
@@ -119,7 +163,7 @@ async function watchForGameUpdate() {
     observer.observe(document.body, {childList: true});
     observer.observe(frame, {attributes: true, childList: true, subtree: true,
       attributeFilter: ['data-warcraft-presentation', 'data-warcraft-mode', 'data-warcraft-transition',
-        'data-warcraft-menu-action', 'hidden', 'disabled']});
+        'data-warcraft-menu-home', 'hidden', 'disabled']});
     observeMovie();
     restartAtMenu();
   }
@@ -139,4 +183,5 @@ async function watchForGameUpdate() {
   else observeMenu();
   inspect();
   refreshWhileVisible();
+  return checkOnline;
 }
