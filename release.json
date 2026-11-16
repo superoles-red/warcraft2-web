@@ -1,5 +1,5 @@
 {
-  "version": "7fdea63c30aba66ec892079a",
+  "version": "399d96f34f15f69925376893",
   "files": [
     {
       "path": "LICENSE.wine-assembly",
@@ -1268,8 +1268,8 @@
     },
     {
       "path": "ui/boxedwine/ui-bridge-runtime.js",
-      "bytes": 23843,
-      "sha256": "1f2e5d37d6af31ac1c46c55c624c2bc8fec861c26f7b55b07410f0489af68c94"
+      "bytes": 23980,
+      "sha256": "b3fbe565d5832389f87363435ca3cc0b0f9a99316fbd443ac9e96d7479a5e968"
     },
     {
       "path": "ui/boxedwine/viewport-runtime.js",
@@ -1403,8 +1403,8 @@
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-v16.js",
-      "bytes": 26042,
-      "sha256": "8f7bfc4152dad20d5cfee2ac03ba31f85ebefd2e5111672bc51c70432b6cc95d"
+      "bytes": 26568,
+      "sha256": "61a10202c96029046a8bac7e1a68bd63baa20787837767f8ac7827c6d3a8b4bf"
     },
     {
       "path": "v16-bridge.dll",
@@ -1442,5 +1442,5 @@
       "sha256": "6af30e6eb347eb484d623871e1627fffdc82df0f94d72c5ebb138f4958ecfdaa"
     }
   ],
-  "workerSha256": "fe9fa6e7ddfd9a92776d41209bb807e9a1d7446c27eae6d0fa5c3ebdfdb5cc61"
+  "workerSha256": "7e7bf71d126b472a29cb81e21735d21d7e136fba559421b4924548f6c0829b96"
 }

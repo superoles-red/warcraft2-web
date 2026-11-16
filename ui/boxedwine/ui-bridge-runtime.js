@@ -52,6 +52,7 @@
   const readUiRects=packetReader('wc2-ui-rects.bin',bytes=>global.WarcraftNativeUiRects.parse(bytes));
   const readHud=packetReader('wc2-hud-foreground.bin',bytes=>global.WarcraftHudForeground.parse(bytes));
   const readCursor=packetReader('wc2-cursor.bin',bytes=>global.WarcraftCursorV15.parse(bytes));
+  const readViewState=packetReader('wc2-view-state.bin',bytes=>global.WarcraftViewStateV16.parse(bytes));
   function nativeUiRects() {
     if(!guestReady()||!global.WarcraftNativeUiRects)return null;
     try {
@@ -284,7 +285,7 @@
     viewState:()=>{
       const reader=coherentFrames?global.WarcraftViewStateV16:global.WarcraftViewStateV15;
       if(!guestReady()||!reader)return null;
-      try{return reader.parse(readPacket('wc2-view-state.bin'));}
+      try{return coherentFrames?readViewState():reader.parse(readPacket('wc2-view-state.bin'));}
       catch(_){return null;}
     },
     bootstrapBackground:()=>{

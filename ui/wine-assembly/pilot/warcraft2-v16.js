@@ -324,12 +324,20 @@
       hold('menu');
       if (window.matchMedia('(pointer: coarse)').matches || window.WarcraftAudioLifecycle?.isAppleMobile(navigator)) {
         wrap(wine, '_scheduleStep', schedule => function(step, delay = 0) {
-          // The idle title polls even when there is no native work. Use the
-          // host's interruptible timer there and keep normal scheduling as
-          // soon as any transition, native menu or match takes over.
-          const idleTitle = !document.hidden && frame.dataset.warcraftMode === 'title' &&
-            !('warcraftTransition' in frame.dataset);
-          return schedule.call(this, step, idleTitle && delay === 0 ? 4 : delay);
+          if (delay !== 0 || this._frozen || document.hidden || 'warcraftTransition' in frame.dataset) {
+            return schedule.call(this, step, delay);
+          }
+          const mode = frame.dataset.warcraftMode;
+          const lastInput = renderer._recentMessageWakeAt;
+          if (renderer.inputQueue?.length || (lastInput && performance.now() - lastInput < 120)) {
+            return schedule.call(this, step, 0);
+          }
+          // Leave space between the guest's immediate polls. The native clock,
+          // simulation cadence and redundant draw filter still run as before.
+          // Renderer input wakes the timer, and camera motion keeps its normal scheduling.
+          const idleMenu = mode === 'title' || (presented === 'map' && mode === 'dialog');
+          const settledWorld = presented === 'map' && mode === 'world' && window.WarcraftFullMap.cameraSettled;
+          return schedule.call(this, step, idleMenu ? 4 : settledWorld ? 2 : 0);
         });
       }
       let actionEscape = false;
