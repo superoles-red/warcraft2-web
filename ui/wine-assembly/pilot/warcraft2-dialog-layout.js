@@ -11,9 +11,7 @@
   // Original rez\snd_dlg.bin and rez\filefltr.bin. These are local,
   // inclusive native footer controls decoded to half-open source rectangles.
   const NATIVE_FOOTERS = new Map([
-    [SOUND_OPTIONS, {w:256, h:288, cancel:[12,256], accept:[138,256], body:256,
-      compactBody:[[0,120],[140,174]], checkbox:[12,144,240,22],
-      blank:[0,208,256,48], compactBlank:[0,174,256,48], footer:64}],
+    [SOUND_OPTIONS, {w:256, h:288, cancel:[12,256], accept:[138,256]}],
   ]);
   const SCENARIO_FILTERS = [
     {id:2, label:[8,38,120,20], control:[138,36,204,22]},
@@ -301,29 +299,22 @@
   const SOUND_ROWS = [
     {kind:'slider',source:[32,40,212,20],label:[12,24,232,14],help:[32,60,214,8]},
     {kind:'slider',source:[32,88,212,20],label:[12,72,232,14],help:[32,108,214,8]},
-    {kind:'speech',source:[12,144,240,22]},
   ];
   const SOUND_ART = [
     ['volume-track','volume-thumb'], ['volume-track-human','volume-thumb-human'],
   ];
 
-  function soundRows({left,top,width,scale,height,landscape,match=false}) {
-    const inset=12*scale,gap=8*scale;
-    const splitChecks=landscape&&match, fullWidth=width-2*inset;
-    const checkWidth=splitChecks?(fullWidth-gap)/2:fullWidth;
+  function soundRows({left,top,width,scale,height}) {
+    const x=left+12*scale,w=width-24*scale;
     const slot=height+32*scale;
     const controls=SOUND_ROWS.map((row,i)=>{
-      const x=left+inset,y=top+i*slot;
-      const slider=row.kind==='slider';
-      const trackY=slider?y+16*scale:y;
-      const labelBox={x,y,w:Math.min(fullWidth,232*scale),h:14*scale};
-      return {...row,target:{x,y:trackY,w:slider?fullWidth:checkWidth,h:height},labelBox,
-        helpBox:{x,y:trackY+height,w:fullWidth,h:8*scale},scale};
+      const y=top+i*slot,trackY=y+16*scale;
+      const labelBox={x,y,w:Math.min(w,232*scale),h:14*scale};
+      return {...row,target:{x,y:trackY,w,h:height},labelBox,
+        helpBox:{x,y:trackY+height,w,h:8*scale},scale};
     });
-    const speech=controls.at(-1).target;
-    const bottom=speech.y+height;
-    return {controls,bottom, fog:match?{x:splitChecks?speech.x+checkWidth+gap:speech.x,
-      y:splitChecks?speech.y:bottom+gap,w:checkWidth,h:height}:null};
+    const last=controls.at(-1).helpBox;
+    return {controls,bottom:last.y+last.h};
   }
 
   function volumeDragAxis(drag,x,y) {
@@ -341,22 +332,7 @@
       {x:t.x+end*(t.w-endWidth*scale),y:t.y,w:endWidth*scale,h:t.h});
   }
 
-  function paintSoundControl(context,image,{kind,source:s,target:t,scale}) {
-    if(kind==='speech') {
-      const size=Math.min(t.h,44*scale);
-      const {pixels:{data}}=controlPixels(image,{x:s.x,y:s.y,w:17,h:20});
-      // Both factions use the same bright cross at (4,14), even in RGB565.
-      // The face at (10,12) remains blue for Humans with either check state.
-      const faction=data[4*(12*17+10)+2]>data[4*(12*17+10)]?'human':'orc';
-      const marked=data[4*(14*17+4)]>=240;
-      const icon=artwork(faction+'-checkbox'+(marked?'-checked':''));
-      if(icon.naturalWidth)context.drawImage(icon,t.x,t.y+(t.h-size)/2,size*17/20,size);
-      else context.drawImage(image,s.x,s.y,17,20,t.x,t.y+(t.h-size)/2,size*17/20,size);
-      const width=Math.max(1,Math.min(160,Math.floor((t.w-size)/scale)));
-      paintControlInk(context,image,{x:s.x+24,y:s.y,w:width,h:s.h},{x:t.x+size*17/20+7*scale,
-        y:t.y+(t.h-s.h*scale)/2,w:width*scale,h:s.h*scale});
-      return;
-    }
+  function paintSoundControl(context,image,{source:s,target:t,scale}) {
     const {pixels:{data,width:w,height:h}}=controlPixels(image,s);
     let first=w,last=-1,red=0,blue=0;
     for(let y=2;y<h-2;y++)for(let x=14;x<w-14;x++){
@@ -573,58 +549,28 @@
     if (liveCancel?.type !== 2 || !(liveCancel.flags & 8) || !same(liveCancel.source, cancel) ||
         !liveAccept || ![1, 2].includes(liveAccept.type)) return null;
 
-    const speech = spec.checkbox && controls.get(4);
-    const compact = speech?.type === 4 && same(speech.source, area(...spec.checkbox)) &&
-      [...controls.values()].filter(item => item.type === 4).length === 1;
-    if(compact){
-      const {width,height}=chart;
-      const landscape=width>=height&&width>=520;
-      const buttonSize=menuButtonHeight(width,height);
-      const panelUnits=landscape?512:256;
-      const rowCount=4;
-      const scale=Math.min(chart.regions[0].target.w/256,(width-2*inset)/panelUnits,
-        (height-2*inset-rowCount*buttonSize)/130);
-      if(scale<=0)return null;
-      const panelW=panelUnits*scale,totalH=rowCount*buttonSize+130*scale;
-      const left=(width-panelW)/2,top=(height-totalH)/2;
-      const body=soundRows({left,top:top+30*scale,width:panelW,scale,height:buttonSize});
-      const heading={source:area(4,5,248,17),target:{x:(width-248*scale)/2,y:top+6*scale,w:248*scale,h:17*scale},
-        decoration:'control-ink'};
-      const fields=body.controls.map(({source,...row})=>({...row,source:area(...source),decoration:'sound-control'}));
-      const labels=body.controls.flatMap(row=>row.label?[{source:area(...row.label),target:row.labelBox,decoration:'control-ink'},
-        {source:area(...row.help),target:row.helpBox,decoration:'sound-ends'}]:[]);
-      const footerY=top+totalH-buttonSize-10*scale;
-      const button={source:accept,target:{x:left+16*scale,y:footerY,w:106*scale,h:buttonSize},decoration:'tall-button',accept:true};
-      const back={source:cancel,target:{x:left+panelW-buttonSize-16*scale,y:footerY,w:buttonSize,h:buttonSize},decoration:'back'};
-      const stone={source:area(0,174,256,48),target:{x:left,y:top,w:panelW,h:totalH},texture:true};
-      return {...chart,reflow:true,regions:[...fields,button,back],paintRegions:[stone,heading,...labels,...fields,button,back],
-        frame:{source:area(0,0,w,h),target:stone.target,scale}};
-    }
-    const bands = compact ? spec.compactBody : [[0,spec.body]];
-    const bodyHeight = bands.reduce((height,[start,end]) => height + end - start, 0);
-    const buttonSize=menuButtonHeight(chart.width,chart.height);
-    const scale = Math.min(chart.regions[0].target.w / w,(chart.height-inset*2)/(bodyHeight+spec.footer+4),
-      (chart.height-inset*2-buttonSize)/(bodyHeight+12));
-    const footerH = Math.max(spec.footer,buttonSize/scale+8);
-    const height = bodyHeight + footerH + 4;
-    if (scale <= 0) return null;
-    const left = (chart.width - w * scale) / 2, top = (chart.height - height * scale) / 2;
-    const target = (x, y, w, h) => ({x:left + x * scale, y:top + y * scale, w:w * scale, h:h * scale});
-    let yRow = 0;
-    const body = bands.map(([start,end]) => {
-      const height = end - start;
-      const row = {source:area(0,start,w,height), target:target(0,yRow,w,height)};
-      yRow += height;
-      return row;
-    });
-    const footer = {source:area(...(compact ? spec.compactBlank : spec.blank)),
-      target:target(0,bodyHeight,w,footerH), texture:spec.texture};
-    const rim = {source:area(0,h-4,w,4), target:target(0,height-4,w,4)};
-    const size = buttonSize/scale;
-    const button = {source:accept, target:target(16,bodyHeight + (footerH-size)/2,106,size),decoration:'tall-button',accept:true};
-    const back = {source:cancel, target:target(w-size-12,bodyHeight + (footerH-size)/2,size,size), decoration:'back'};
-    return {...chart, reflow:true, regions:[...body, button, back], paintRegions:[...body, footer, rim, button, back],
-      ...(front.handler === SOUND_OPTIONS ? {frame:{source:area(0,0,w,h),target:target(0,0,w,height),scale}} : {})};
+    const {width,height}=chart;
+    const landscape=width>=height&&width>=520;
+    const buttonSize=menuButtonHeight(width,height);
+    const panelUnits=landscape?512:256;
+    const rowCount=3,chromeHeight=106;
+    const scale=Math.min(chart.regions[0].target.w/256,(width-2*inset)/panelUnits,
+      (height-2*inset-rowCount*buttonSize)/chromeHeight);
+    if(scale<=0)return null;
+    const panelW=panelUnits*scale,totalH=rowCount*buttonSize+chromeHeight*scale;
+    const left=(width-panelW)/2,top=(height-totalH)/2;
+    const body=soundRows({left,top:top+30*scale,width:panelW,scale,height:buttonSize});
+    const heading={source:area(4,5,248,17),target:{x:(width-248*scale)/2,y:top+6*scale,w:248*scale,h:17*scale},
+      decoration:'control-ink'};
+    const fields=body.controls.map(({source,...row})=>({...row,source:area(...source),decoration:'sound-control'}));
+    const labels=body.controls.flatMap(row=>[{source:area(...row.label),target:row.labelBox,decoration:'control-ink'},
+      {source:area(...row.help),target:row.helpBox,decoration:'sound-ends'}]);
+    const footerY=top+totalH-buttonSize-10*scale;
+    const button={source:accept,target:{x:left+16*scale,y:footerY,w:106*scale,h:buttonSize},decoration:'tall-button',accept:true};
+    const back={source:cancel,target:{x:left+panelW-buttonSize-16*scale,y:footerY,w:buttonSize,h:buttonSize},decoration:'back'};
+    const stone={source:area(0,174,256,48),target:{x:left,y:top,w:panelW,h:totalH},texture:true};
+    return {...chart,reflow:true,regions:[...fields,button,back],paintRegions:[stone,heading,...labels,...fields,button,back],
+      frame:{source:area(0,0,w,h),target:stone.target,scale}};
   }
 
   function reflowScenario(chart, front, controls, inset, wine) {
@@ -772,7 +718,7 @@
     }
     const footer = NATIVE_FOOTERS.get(front.handler);
     if (footer && backImage?.naturalWidth) {
-      const buttons = readControls(wine, front, new Set(front.handler === SOUND_OPTIONS ? [1,2,4,13] : [1,2,13]));
+      const buttons = readControls(wine, front, new Set([1,2]));
       if (buttons) return reflowNativeFooter(chart, front, buttons, footer, inset) || chart;
     }
     return chart;

@@ -617,8 +617,7 @@
       }
       if (item.campaign && session) return showCampaign(item);
       if (item.soundOptions) {
-        const before = window.WarcraftAssemblyMenuPolicy?.requestSoundOptions(wine);
-        if (before) soundOptions = {before, opened:false};
+        if (window.WarcraftAssemblyMenuPolicy?.requestSoundOptions(wine)) soundOptions = {opened:false};
         return;
       }
       if (item.page || (item.label === 'Back' && parentPage[page])) {
@@ -833,7 +832,6 @@
         page = 'story';
       }
       if (soundOptions?.opened && scene.mode === 'title') {
-        window.WarcraftAssemblyMenuPolicy.persistSoundOptions(wine, soundOptions.before);
         soundOptions = null;
         page = 'options';
       }

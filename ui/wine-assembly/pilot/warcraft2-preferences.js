@@ -68,11 +68,11 @@
     entry.branch(0xe9, 0x441920);
     setCode(0x48f570, entry);
 
-    // Both hidden sound switches stay enabled. The original saved setting for
+    // Speech, order acknowledgments and building sounds stay enabled. The setting for
     // subtitles is cleared before the title and during each game start.
     function fixedSound(code) {
       code.emit(0x81,0x25); code.dword(0x4d6b50); code.dword(0xfffbffff);
-      code.emit(0x83,0x0d); code.dword(0x4d6b50); code.emit(0x06);
+      code.emit(0x83,0x0d); code.dword(0x4d6b50); code.emit(0x07);
     }
     const title = machineCode(0x48f590);
     fixedSound(title);
@@ -136,19 +136,30 @@
     setCode(0x48f6b0, back);
     redirect(0x441ad8, [0xe8,0x13,0x44,0xff,0xff], 0x48f6b0);
 
-    // Hide original control IDs 5, 6 and 8 on initialization and prevent
-    // their old accelerator paths from changing the audio/visibility flags.
-    const original = [0x56,0x8b,0x74,0x24,0x08];
-    const speech = machineCode(0x48f6a0);
-    speech.emit(...original);
-    speech.branch(0xe9, 0x4417c5);
-    setCode(0x48f6a0, speech);
+    // This handler belongs to the original Sound dialog's checkboxes.
+    // Hide all of them and ignore their accelerator callbacks.
     const filter = machineCode(0x48f680);
-    filter.emit(0x8b,0x44,0x24,0x04,0x66,0x83,0x78,0x20,0x04,0x74,0x0b,
-      0x80,0x60,0x18,0xf7,0x80,0x48,0x18,0x02,0x31,0xc0,0xc3);
-    filter.branch(0xe9, 0x48f6a0);
+    filter.emit(0x8b,0x44,0x24,0x04,0x80,0x60,0x18,0xf7,0x80,0x48,0x18,0x02,0x31,0xc0,0xc3);
     setCode(0x48f680, filter);
-    redirect(0x4417c0, original, 0x48f680, 0xe9);
+    redirect(0x4417c0, [0x56,0x8b,0x74,0x24,0x08], 0x48f680, 0xe9);
+
+    // Both Sound dialogs read the two sliders through this handler. On
+    // native OK, write the same Storm registry values that BNE reads on boot.
+    // Cancel continues through the original snapshot restoration.
+    const saveVolumes = machineCode(0x48f740);
+    saveVolumes.emit(0x83,0x3d); saveVolumes.dword(0x4ab8d0); saveVolumes.emit(0xfe);
+    const cancelVolumes = saveVolumes.skipIf(0x75);
+    for (const [name,volume] of [[0x4aa96c,0x4d6b48],[0x4aa970,0x4d6b44]]) {
+      saveVolumes.emit(0xff,0x35); saveVolumes.dword(volume);
+      saveVolumes.emit(0x6a,0x00,0x68); saveVolumes.dword(name);
+      saveVolumes.emit(0x68); saveVolumes.dword(0x49dc0c);
+      saveVolumes.branch(0xe8, 0x48cd1a); // Storm SRegSaveValue, stdcall.
+    }
+    cancelVolumes();
+    saveVolumes.emit(0xa1); saveVolumes.dword(0x4bdb94); saveVolumes.emit(0xc3);
+    setCode(0x48f740, saveVolumes);
+    redirect(0x441a2d, [0xa1,0x94,0xdb,0x4b,0x00], 0x48f740);
+
     if (window.WarcraftLanguage?.current?.() !== 'ru') {
       // 404B50 has finished resolving the localized Sound controls. Change
       // only the exact English label, leaving the Russian caption untouched.

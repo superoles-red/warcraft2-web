@@ -44,7 +44,6 @@
   // used by the checkpoint adapter have their own entry points.
   const fileDialogs = [[0x43c4b0, '83 ec 10 e8 b8 af 03 00 85 c0 75 71'],
     [0x43c960, 'e8 9b f4 ff ff 85 c0 74 42']];
-  const soundSwitches = Object.freeze({unitspeech:1, unitnoise:2, bldgnoise:4, dispmsgs:0x40000});
   const installed = new WeakMap();
   const controls = Object.freeze({
     single: Object.freeze({id: 1, x: 320, y: 254}),
@@ -389,32 +388,11 @@
 
   function requestSoundOptions(wine) {
     const counter = titleCounter(wine);
-    if (!counter || ![0, 600].includes(counter.getUint16(0, true))) return null;
+    if (!counter || ![0, 600].includes(counter.getUint16(0, true))) return false;
     const slot = nativeView(wine, deferredDialog, 4);
-    const settings = readSoundSettings(wine, counter);
-    if (!settings || slot?.getUint32(0, true) !== 0) return null;
+    if (slot?.getUint32(0, true) !== 0) return false;
     slot.setUint32(0, soundDialogEntry, true);
-    return settings;
-  }
-
-  function readSoundSettings(wine, counter) {
-    const pair = readVolumePair(wine, counter);
-    const flags = nativeView(wine, 0x4d6b50, 4)?.getUint32(0, true);
-    if (!pair || flags === undefined) return null;
-    return {sfx:pair.sound, music:pair.music,
-      ...Object.fromEntries(Object.entries(soundSwitches).map(([name, mask]) => [name, flags & mask]))};
-  }
-
-  function persistSoundOptions(wine, before) {
-    const counter = titleCounter(wine);
-    if (!counter || !before) return;
-    const settings = readSoundSettings(wine, counter);
-    if (!settings || !global.StorageImports?.setRegValue) return;
-    for (const [name, value] of Object.entries(settings)) {
-      // Original Cancel restores the original seven DWORDs, so it has
-      // nothing to persist. Write confirmed changes before a browser exit.
-      if (value !== before[name]) global.StorageImports.setRegValue(volumeKey, name, 4, value);
-    }
+    return true;
   }
 
   const validVolume = value => Number.isInteger(value) && value >= 0 && value <= 100;
@@ -455,7 +433,7 @@
     return true;
   }
 
-  const api = Object.freeze({install, requestDemo, demoPlaying, requestSoundOptions, persistSoundOptions,
+  const api = Object.freeze({install, requestDemo, demoPlaying, requestSoundOptions,
     controls, volume, effectVolume, setVolume, sliderAt, showObjectivesAtStart});
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WarcraftAssemblyMenuPolicy = api;

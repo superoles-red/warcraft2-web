@@ -214,10 +214,10 @@
       const objectiveFooter=245;
       const objectiveBody=Number.isInteger(objectivesBodyEnd)&&objectivesBodyEnd>=94&&
         objectivesBodyEnd<=objectiveFooter?objectivesBodyEnd:objectiveFooter;
-      const rows=objectives?objectiveControls.length+1:preferences?(widePreferences?5:6):
+      const rows=objectives?objectiveControls.length+1:preferences?5:
         compact?nativeControls.length+1:genericBands.length+Number(genericBack);
       const bodyHeight=objectives?objectiveBody+288-objectiveFooter-28*objectiveControls.length:
-        preferences?(widePreferences?152:176):
+        preferences?148:
         compact?headingHeight+warningHeight+(confirmationText?28:16)+rows*BUTTON_GAP:
         native?.union.height-genericBands.reduce((total,band)=>total+band.end-band.start,0)+(genericBack?PANEL_INSET:0);
       const scaleMargin=8*dialogPixelRatio;
@@ -256,11 +256,11 @@
         const {source}=native,t=unionTarget,{scale}=t;
         const height=buttonHeight*scale;
         const sound=soundLayout.soundRows({left:t.left,top:t.top+28*scale,width:t.width,
-          scale,height,landscape:widePreferences,match:true});
+          scale,height});
         const nativeRect=([x,y,w,h])=>freezeRect({left:source.left+x,top:source.top+y,width:w,height:h});
         const visualRect=({x,y,w,h})=>freezeRect({left:x,top:y,width:w,height:h});
         strips=sound.controls.map(row=>Object.freeze({...row,source:nativeRect(row.source),target:visualRect(row.target)}));
-        const fog=visualRect(sound.fog);
+        const fog=freezeRect({left:t.left+12*scale,top:sound.bottom+10*scale,width:t.width-24*scale,height});
         preferencesBody=Object.freeze({fog,speed:freezeRect({left:t.left+12*scale,
           top:fog.bottom+8*scale,width:t.width-24*scale,height:height+22*scale})});
       }
