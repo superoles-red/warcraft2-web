@@ -14,7 +14,7 @@
   const mobilePointer=global.matchMedia?.('(any-pointer: fine)');
   const cleanHud=['v13','v14','v15','v16'].includes(foregroundVersion),balancedHud=['v14','v15','v16'].includes(foregroundVersion);
   let camera,modalPresenter,cursorPresenter,lastScene=null,selectedCommand=null,animation=null,lastDialogToken=null;
-  let displayedEndRaster=null;
+  let displayedMenuRaster=null;
   let bootstrapPainter,nativeFramePainter,visibleFramePainter,lastMapEpoch=null,lastRenderedGeometry=null;
   let bootstrapCanvas,onPresented,onUnavailable,acceptsInput,modalBack,modalSlider;
   let bootstrapInUse=false,bootstrapPaletteKey=null;
@@ -27,7 +27,11 @@
   let portraitPress=null,objectivesWaitUntil=null;
   let listeners,insetObserver,insetProbes;
   let actionDialog, pendingConfirmation=null, modalFaction, purchaseTooltipMatches;
-  let unavailableCommands, placementUnaffordable, activeConstruction;
+  let unavailableCommands, placementUnaffordable, cancellationTarget;
+  // WUR3 checks these exact native descriptors and their callbacks before exporting isCancel.
+  const cancellationKinds=new Map([
+    [0x4a3818,'cancelBuilding'], [0x4a382c,'cancelUpgrade'], [0x4a3840,'cancelTraining'],
+  ]);
   // These exact BNE command wrappers share the original paid-production path.
   // Spell research, unit research and building upgrades validate their own costs.
   const paidActions=new Map([
@@ -243,20 +247,20 @@
       item.descriptorAddress===child?.descriptorAddress);
     if(!child?.commandPresent||!child.nativeVisible||!view?.usable||!view.selectionToken||!meta)return null;
     const confirmPurchase=actionDialog&&!child.isCancel&&!meta.isBuildingPlacement&&paidActions.get(meta.actionAddress);
-    // The original in-progress building action never serves training, upgrades or placement.
-    const confirmConstructionCancel=actionDialog&&child.isCancel&&meta.actionAddress===0x436190&&
-      child.descriptorAddress===0x4a3818;
+    const cancelKind=actionDialog&&child.isCancel?cancellationKinds.get(child.descriptorAddress):null;
+    const cancelTarget=cancelKind?cancellationTarget?.(view,cancelKind):null;
     return {key:[child.object,child.descriptor].join(':'),object:child.objectAddress,descriptor:child.descriptorAddress,
       contextToken:view.selectionToken,epoch:view.mapEpoch,nativeX:(child.native.left+child.native.right)/2,
       nativeY:(child.native.top+child.native.bottom)/2,visible:true,present:true,
       isCancel:child.isCancel===true,isBuildingPlacement:meta.isBuildingPlacement===true,
-      action:meta.actionAddress,param:meta.param,regionId,confirmPurchase,confirmConstructionCancel,
+      action:meta.actionAddress,param:meta.param,regionId,confirmPurchase,cancelKind,cancelTarget,
       unaffordable:!!((mask??unaffordableMask(view))&(1<<id))};
   }
   function matchingCommand(original,view=global.WarcraftUiBridge?.viewState?.(),ui,mask) {
     const live=readHudCommand(original.regionId,view,ui,mask);
-    return live&&(!original.confirmConstructionCancel||activeConstruction?.(view))&&
-      ['epoch','contextToken','object','descriptor','action','param'].every(key=>live[key]===original[key])?live:null;
+    return live&&(!original.cancelKind||live.cancelTarget!=null)&&
+      ['epoch','contextToken','object','descriptor','action','param','cancelTarget']
+        .every(key=>live[key]===original[key])?live:null;
   }
   function closeConfirmation(refocus=false) {
     if(!pendingConfirmation)return;
@@ -265,18 +269,18 @@
     delete frame.dataset.warcraftPurchase;
     if(refocus&&visible&&telemetry.mode==='world')input.focus({preventScroll:true});
   }
-  function confirmationContext(state, placement) {
-    return state?.inGame&&!state.dialogOpen&&(placement?state.buildingPending:!state.buildingPending&&!state.targetPending);
+  function confirmationContext(state) {
+    return state?.inGame&&!state.dialogOpen&&!state.buildingPending&&!state.targetPending;
   }
-  function canRequestConfirmation(state, placement) {
+  function canRequestAction(state) {
     return actionDialog&&!pendingConfirmation&&visible&&telemetry.mode==='world'&&
-      acceptsInput?.()!==false&&confirmationContext(state,placement)&&state.inputAllowed;
+      acceptsInput?.()!==false&&state?.inGame&&!state.dialogOpen&&state.inputAllowed;
   }
   function updateConfirmation({state,view,ui,foreground,missingResources}) {
     if(!pendingConfirmation)return;
-    const {command, placement}=pendingConfirmation;
+    const {command}=pendingConfirmation;
     const live=view?.usable&&ui?.usable&&matchingCommand(command,view,ui,missingResources);
-    if(!confirmationContext(state,placement)||view?.mapEpoch!==command.epoch||
+    if(!confirmationContext(state)||view?.mapEpoch!==command.epoch||
       (view?.usable&&ui?.usable&&!live)){
       closeConfirmation();
       return;
@@ -311,12 +315,12 @@
   }
   function requestHudPurchase(command,submit) {
     const bridge=global.WarcraftUiBridge,state=bridge.state();
-    if(!canRequestConfirmation(state,false))return;
+    if(!canRequestAction(state)||!confirmationContext(state))return;
     const live=matchingCommand(command);
     if(!live?.confirmPurchase||live.unaffordable)return;
     const faction=modalFaction?.();
     if(!faction)return;
-    pendingConfirmation={command,submit,statusReady:false,placement:false};
+    pendingConfirmation={command,submit,statusReady:false};
     actionDialog.show(command.confirmPurchase,faction);
     const region=chart.regions.find(item=>item.id===command.regionId)?.transform.painted;
     if(region){
@@ -335,37 +339,48 @@
     actionDialog.layer.hidden=false;
     actionDialog.cancel.focus({preventScroll:true});
   }
-  function constructionCancelCommand() {
-    const bridge=global.WarcraftUiBridge,state=bridge.state(),placement=state.buildingPending===true;
-    if(!canRequestConfirmation(state,placement))return null;
+  function cancellationCommand(original) {
+    const bridge=global.WarcraftUiBridge,state=bridge.state();
+    if(!canRequestAction(state))return null;
+    const placing=state.buildingPending===true;
+    if(!placing&&!confirmationContext(state))return null;
     const packet=bridge.uiRects(),view=bridge.viewState();
     const child=packet?.children?.find(item=>item.isCancel&&item.commandPresent&&item.nativeVisible);
-    const command=child&&readHudCommand('command-'+child.id,view,packet);
-    return command?.isCancel&&(placement||command.confirmConstructionCancel&&activeConstruction?.(view))
-      ? {command,placement}:null;
+    const command=original?matchingCommand(original,view,packet):child&&readHudCommand('command-'+child.id,view,packet);
+    if(!command?.isCancel)return null;
+    return (placing&&!command.cancelKind)||(!placing&&command.cancelKind&&command.cancelTarget!=null)
+      ? command:null;
   }
-  function canConfirmBuildCancellation() {return !!constructionCancelCommand();}
-  function requestBuildCancellation() {
-    const pending=constructionCancelCommand();
-    if(!pending)return false;
+  function canHandleActionCancellation() {return !!cancellationCommand();}
+  function submitCancellation(command) {
     const bridge=global.WarcraftUiBridge;
+    moveNative({x:command.nativeX,y:command.nativeY});
+    try {bridge.nativeButton(1,0,lastNative.x,lastNative.y);}
+    finally {bridge.nativeButton(0,0,lastNative.x,lastNative.y);}
+  }
+  function requestActionCancellation(original) {
+    const command=cancellationCommand(original);
+    if(!command)return false;
     camera.stop();
-    pendingConfirmation={...pending,statusReady:true,submit(live) {
-      moveNative({x:live.nativeX,y:live.nativeY});
-      bridge.nativeButton(1,0,lastNative.x,lastNative.y);
-      bridge.nativeButton(0,0,lastNative.x,lastNative.y);
-    }};
-    actionDialog.show('cancelBuilding',modalFaction()||'orc');
-    actionDialog.ok.disabled=false;
-    presentConfirmation();
+    if(!command.cancelKind){
+      global.WarcraftDuneControls?.cancel?.();
+      submitCancellation(command);
+    }else{
+      pendingConfirmation={command,statusReady:true,submit:submitCancellation};
+      actionDialog.show(command.cancelKind,modalFaction()||'orc');
+      actionDialog.ok.disabled=false;
+      presentConfirmation();
+    }
     return true;
   }
   function createActionDialog() {
     const text={
       en:{train:'Train this unit?',research:'Research this upgrade?',upgrade:'Upgrade this building?',
-        cancelBuilding:'Cancel construction?',buy:'Buy',ok:'OK',cancel:'Cancel'},
+        cancelBuilding:'Cancel construction?',cancelTraining:'Cancel training?',cancelUpgrade:'Cancel upgrade?',
+        buy:'Buy',ok:'OK',cancel:'Cancel'},
       ru:{train:'Обучить этого бойца?',research:'Изучить улучшение?',upgrade:'Улучшить здание?',
-        cancelBuilding:'Отменить строительство?',buy:'Купить',ok:'OK',cancel:'Отмена'},
+        cancelBuilding:'Отменить строительство?',cancelTraining:'Отменить обучение?',cancelUpgrade:'Отменить улучшение?',
+        buy:'Купить',ok:'OK',cancel:'Отмена'},
     };
     const current=global.WarcraftLanguage?.current()==='ru'?'ru':'en';
     const labels=text[current],font=global.WarcraftSessionText;
@@ -400,7 +415,7 @@
     ok.addEventListener('click',()=>{
       const pending=pendingConfirmation, state=global.WarcraftUiBridge.state();
       const valid=pending?.statusReady&&visible&&telemetry.mode==='world'&&acceptsInput?.()!==false&&state.inputAllowed&&
-        confirmationContext(state,pending.placement)&&matchingCommand(pending.command);
+        confirmationContext(state)&&matchingCommand(pending.command);
       if(valid?.unaffordable&&pending.command.confirmPurchase){
         ok.setAttribute('data-unaffordable','');
         ok.disabled=true;
@@ -412,7 +427,7 @@
     layer.addEventListener('contextmenu',event=>event.preventDefault());
     listen('keydown',event=>{
       if(!pendingConfirmation){
-        if(event.key==='Escape'&&!event.repeat&&requestBuildCancellation()){
+        if(event.key==='Escape'&&!event.repeat&&requestActionCancellation()){
           event.preventDefault();event.stopImmediatePropagation();
         }
         return;
@@ -438,7 +453,7 @@
         if(layer.getAttribute('aria-label')===labels[kind])title.replaceChildren(caption(labels[kind],atlas));
       }).catch(()=>{});
       icon.hidden=description.hidden=costs.hidden=true;
-      setCaption(ok,labels[kind==='cancelBuilding'?'ok':'buy']);
+      setCaption(ok,labels[kind.startsWith('cancel')?'ok':'buy']);
       ok.removeAttribute('data-unaffordable');
       ok.disabled=true;
     }};
@@ -543,30 +558,23 @@
     modalPresenter.captureBackground(canvas,{inGame:true,dialogOpen:false});
     modalBackgroundWidth=width;modalBackgroundHeight=height;modalBackgroundDpr=dpr;modalBackgroundInsets=hudInsets;
   }
-  function endMenuRows(packet, rect) {
+  function modalTransitionRows(packet, rect) {
     if(!packet?.usable||!rect||rect.right-rect.left!==255||rect.bottom-rect.top!==287||
         rect.right>=packet.screen.width||rect.bottom>=packet.screen.height)return null;
-    const columns=packet.screen.width;
-    // The first two strips are End buttons that become stone in Quit/Restart.
-    // The last two are stone until the Pause screen's bottom button is drawn.
-    // Sample opposite sides there so a cursor can't change both strips.
-    return [[24,60],[24,158],[24,196],[220,196]].map(([dx,dy])=>{
-      const from=(rect.top+dy)*columns+rect.left+dx;
+    // Each row is occupied by a button in Pause and by the dialog body in
+    // its confirmations. Use two separate rows so the cursor cannot pass
+    // this guard while the shared native buffer still shows the old menu.
+    return [60,158].map(dy=>{
+      const from=(rect.top+dy)*packet.screen.width+rect.left+24;
       return packet.indices.slice(from,from+12);
     });
   }
   function hasModalRaster(back, packet, view) {
-    if(!displayedEndRaster||packet?.sceneEpoch!==displayedEndRaster.epoch)return true;
+    if(!displayedMenuRaster||packet?.sceneEpoch!==displayedMenuRaster.epoch)return true;
     const next=back?.compact;
-    if(next!=='pause'&&next!=='confirmation')return true;
-    const rows=endMenuRows(packet,view?.modal?.rect);
-    if(!rows)return true;
-    const changed=i=>rows[i].some((value,j)=>value!==displayedEndRaster.rows[i][j]);
-    // Returning from End can reuse the same native dialog root before the
-    // locked primary receives the Pause pixels. Keep the coherent old screen.
-    if(next==='pause')return changed(2)&&changed(3);
-    displayedEndRaster.waitUntil??=performance.now()+300;
-    return performance.now()>=displayedEndRaster.waitUntil||(changed(0)&&changed(1));
+    if(next===displayedMenuRaster.mode||(next!=='pause'&&next!=='confirmation'))return true;
+    const rows=modalTransitionRows(packet,view?.modal?.rect);
+    return !rows||rows.every((row,i)=>row.some((value,j)=>value!==displayedMenuRaster.rows[i][j]));
   }
   function render(captureNative=true) {
     if(!installed)return;
@@ -596,12 +604,12 @@
     updateConfirmation(lastScene);
     if(coherentFrames){
       if(lastMapEpoch!==null&&!state?.ready){waitForNativeFrame();return;}
-      if(!state?.inGame){lastMapEpoch=null;modalPresenter.reset();camera.reset();lastRenderedGeometry=null;bootstrapInUse=false;bootstrapPaletteKey=null;cleanWorldReady=false;lastWorldPaint=frozenWorld=displayedEndRaster=null;}
+      if(!state?.inGame){lastMapEpoch=null;modalPresenter.reset();camera.reset();lastRenderedGeometry=null;bootstrapInUse=false;bootstrapPaletteKey=null;cleanWorldReady=false;lastWorldPaint=frozenWorld=displayedMenuRaster=null;}
       else if(!view?.mapEpoch){waitForNativeFrame();return;}
       else if(lastMapEpoch!==view.mapEpoch){
         lastMapEpoch=view.mapEpoch;modalPresenter.reset();camera.reset();bootstrapPainter.reset();selectedCommand=null;
         lastRenderedGeometry=null;chart=null;lastDialogToken=null;
-        bootstrapInUse=false;bootstrapPaletteKey=null;cleanWorldReady=false;lastWorldPaint=frozenWorld=displayedEndRaster=null;
+        bootstrapInUse=false;bootstrapPaletteKey=null;cleanWorldReady=false;lastWorldPaint=frozenWorld=displayedMenuRaster=null;
       }
       if(state?.inGame&&lastScene.packet?.usable&&lastScene.packet.sceneEpoch===view?.mapEpoch&&
         (!!lastScene.packet.dialogRoot!==!!state.dialogOpen||lastScene.packet.dialogRoot!==(view.dialogAddress||0))){
@@ -670,8 +678,9 @@
       const layout=modalPresenter.present(context,framePixels,modal);
       telemetry.mode='dialog';
       if(layout.mode==='modal'){
-        const rows=back?.compact==='end'&&endMenuRows(lastScene.packet,view?.modal?.rect);
-        displayedEndRaster=rows?{rows,epoch:lastScene.packet.sceneEpoch}:null;
+        const mode=back?.compact;
+        const rows=(mode==='pause'||mode==='confirmation')&&modalTransitionRows(lastScene.packet,view?.modal?.rect);
+        displayedMenuRaster=rows?{mode,rows,epoch:lastScene.packet.sceneEpoch}:null;
         onPresented?.('dialog',layout);
       }
       return;
@@ -687,7 +696,7 @@
     try {
       bootstrapInUse=false;bootstrapPaletteKey=null;
       lastDialogToken=objectivesWaitUntil=null;
-      displayedEndRaster=null;
+      displayedMenuRaster=null;
       const width=Math.max(1,Math.floor(container.clientWidth)),height=Math.max(1,Math.floor(container.clientHeight));
       const dpr=enhancedHud?Math.max(1,Math.min(3,global.devicePixelRatio||1)):1;
       const pixelWidth=Math.round(width*dpr),pixelHeight=Math.round(height*dpr);
@@ -928,12 +937,14 @@
       const drag=sliderDrag;
       if(event.pointerId!==drag?.id)return;
       sliderDrag=null;
-      if(event.type==='pointerup')moveSlider(event,drag);
-      if(held.delete(0))global.WarcraftUiBridge.nativeButton(0,0,lastNative.x,lastNative.y);
+      if(event.type==='pointerup')moveSlider(event,drag,true);
+      if(drag.started&&held.delete(0))global.WarcraftUiBridge.nativeButton(0,0,lastNative.x,lastNative.y);
       stop(event);
     }
-    function moveSlider(event,drag) {
+    function moveSlider(event,drag,released=false) {
       if(telemetry.mode!=='dialog'||drag.token!==lastDialogToken)return;
+      const axis=global.WarcraftAssemblyDialogLayout.volumeDragAxis(drag,event.clientX,event.clientY);
+      if(axis==='vertical'||(!axis&&!released))return;
       const rect=input.getBoundingClientRect(),layout=modalPresenter.layout,t=layout.target,s=layout.source;
       if(!t||!s||!rect.width)return;
       const px=(event.clientX-rect.left)*layout.width/rect.width;
@@ -942,6 +953,11 @@
       const x=row ? row.source.left+(px-row.target.left)*row.source.width/row.target.width :
         s.left+(px-t.left)/t.scale;
       moveNative({x:clamp(x,drag.slider.left,drag.slider.right),y:drag.slider.y});
+      if(!drag.started){
+        drag.started=true;
+        held.add(0);
+        global.WarcraftUiBridge.nativeButton(1,0,lastNative.x,lastNative.y);
+      }
     }
     const capture={capture:true,passive:false};
     listen('pointerdown',event=>{
@@ -955,11 +971,8 @@
       if(!slider)return;
       stop(event);
       input.focus({preventScroll:true});
-      sliderDrag={id:event.pointerId,token:lastDialogToken,slider};
+      sliderDrag={id:event.pointerId,token:lastDialogToken,slider,x:event.clientX,y:event.clientY};
       try{input.setPointerCapture(event.pointerId);}catch(_){}
-      moveSlider(event,sliderDrag);
-      held.add(0);
-      global.WarcraftUiBridge.nativeButton(1,0,lastNative.x,lastNative.y);
     },capture);
     listen('pointermove',event=>{
       if(event.pointerId!==sliderDrag?.id)return;
@@ -1115,7 +1128,7 @@
     purchaseTooltipMatches=host?.purchaseTooltipMatches;
     unavailableCommands=host?.unavailableCommands;
     placementUnaffordable=host?.placementUnaffordable;
-    activeConstruction=host?.activeConstruction;
+    cancellationTarget=host?.cancellationTarget;
     if(hostPresentation&&coherentFrames&&modalFaction&&purchaseTooltipMatches)actionDialog=createActionDialog();
     onPresented=host?.onPresented;
     onUnavailable=host?.onUnavailable;
@@ -1175,7 +1188,7 @@
             button.replaceChildren(ink);
           }).catch(console.error);
         }
-        cancel.addEventListener('click',requestBuildCancellation);
+        cancel.addEventListener('click',()=>requestActionCancellation());
         layer.append(buildConfirm,cancel);frame.append(layer);
         placement={layer,cancel};
       }else{
@@ -1256,9 +1269,9 @@
     placement=null;
     actionDialog?.layer.remove();
     actionDialog=modalFaction=purchaseTooltipMatches=null;
-    unavailableCommands=placementUnaffordable=activeConstruction=null;
+    unavailableCommands=placementUnaffordable=cancellationTarget=null;
     output=context=copier=buildConfirm=commandHighlight=null;
-    lastScene=lastNative=lastRenderedGeometry=lastDialogToken=selectedCommand=lastMapEpoch=displayedEndRaster=objectivesWaitUntil=null;
+    lastScene=lastNative=lastRenderedGeometry=lastDialogToken=selectedCommand=lastMapEpoch=displayedMenuRaster=objectivesWaitUntil=null;
     camera=modalPresenter=cursorPresenter=foregroundPainter=bootstrapPainter=nativeFramePainter=visibleFramePainter=bootstrapCanvas=null;
     minimapPainter=minimapBlack=null;
     onPresented=onUnavailable=acceptsInput=modalBack=modalSlider=modalTexture=infoButtons=infoFocus=objectivesBodyEnd=null;
@@ -1278,7 +1291,7 @@
   }
   global.WarcraftFullMap={install,installInputRouter,pointForGesture,consumePan,render,
     getHudCommand,getHudContextToken,selectHudCommand,requestHudPurchase,
-    canConfirmBuildCancellation,requestBuildCancellation,
+    canHandleActionCancellation,requestActionCancellation,
     beginPan(time,scale){if(coherentFrames&&global.WarcraftSmoothCamera.ahead)camera?.begin(time,scale);else camera?.begin();},
     panPixels(dx,dy,time){camera?.move(dx,dy,time);if(!coherentFrames)render(false);scheduleAnimation();},
     endPan(time){camera?.end(time);scheduleAnimation();},

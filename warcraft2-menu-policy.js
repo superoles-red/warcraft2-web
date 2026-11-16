@@ -124,6 +124,14 @@
     [0x435380, '68 a0 53 43 00 68 50 10 4a 00 e8 a1 98 ff ff 83 c4 08 c3'],
     [objectivesButtonSetup, 'e8 1f 82 ff ff 6a 68 68 2c 10 4a 00'],
     [0x42d6b0, '8b 44 24 04 6a fd 50 e8 14 54 fd ff'],
+    // Pause dispatch entries 4 (Help) and 6 (End Scenario), and the two
+    // confirmation callbacks' return paths to the original End Scenario.
+    [0x435640, 'c2 55 43 00 df 55 43 00 f2 55 43 00'],
+    [0x4357f7, 'e8 04 66 00 00 85 c0 0f 84 e1 00 00 00 a0 ce 49 4b 00'],
+    [0x435854, '68 70 5b 43 00 68 e8 10 4a 00 c7 05 14 4a 4b 00 80 59 43 00'],
+    [0x43589c, '8a d0 c7 05 14 4a 4b 00 60 55 43 00 fe ca'],
+    [0x4359b7, 'fe c8 68 70 5b 43 00 68 8c 10 4a 00'],
+    [0x435a12, 'fe c8 68 70 5b 43 00 68 8c 10 4a 00'],
     ...fileDialogs,
   ].map(([address, bytes]) => ({address, bytes: hex(bytes)}));
 
@@ -292,6 +300,14 @@
     memory.set(hex('80 3d d0 f4 48 00 00 90 74 05 e8 16 46 01 00'), mapped.get(startupTips));
     memory.set(objectivesButtonWrapper, objectivesButtonOffset);
     memory.set(hex('e8 4f a0 05 00'), mapped.get(objectivesButtonSetup));
+    // Enter the native Restart and Quit confirmations directly from Pause.
+    // Their Cancel callbacks reuse the original End-to-Pause constructor at
+    // 43589C, after decrementing the menu depth just as that path expects.
+    const dispatch = new DataView(memory.buffer, mapped.get(0x435640), 12);
+    dispatch.setUint32(0, 0x4357f7, true);
+    dispatch.setUint32(8, 0x435854, true);
+    memory.set(hex('e9 e0 fe ff ff'), mapped.get(0x4359b7));
+    memory.set(hex('e9 85 fe ff ff'), mapped.get(0x435a12));
     for (const [address] of fileDialogs) memory.set(hex('31 c0 c3'), mapped.get(address));
     memory[objectivesSettingOffset] = 1;
     try { memory[objectivesSettingOffset] = Number(global.localStorage?.getItem(objectivesPreferenceKey) !== '0'); }

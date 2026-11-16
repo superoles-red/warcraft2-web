@@ -8,9 +8,8 @@
   const originalVersion = 'Warcraft II BNE v2.02';
   const nativeButton = (y, label) => ({label, source: {x: 208, y, w: 224, h: 28}});
   const submenu = (label, page = label.toLowerCase()) => ({label, page, glyph: page});
-  const title = [{...nativeButton(240, 'Single Player Game'), action: 'single'}, submenu('Options')];
-  const single = [{...nativeButton(240, 'Campaign'), caption: 'campaign'},
-    {...nativeButton(312, 'Fast Scenario'), glyph: 'fast-scenario'}];
+  const title = [{label: 'Campaign', caption: 'campaign', destination: 254},
+    {label: 'Fast Scenario', glyph: 'fast-scenario', destination: 326}, submenu('Options')];
   const campaignIds = ['orc-tod', 'human-tod', 'orc-btdp', 'human-btdp'];
   const continueItem = {label:'Continue', caption:'continue', resume:true};
   const feedbackItem = {label:'Feedback', caption:'feedback', disabled:true};
@@ -36,9 +35,9 @@
   const parentPage = {options: 'title', story: 'options', language: 'options',
     'language-pack': 'language', 'language-download': 'language', 'language-delete': 'language-pack'};
   const sectionTitles = {
-    en: {single:'Single Player Game', campaign:'Campaign', options:'Options', story:'Story', language:'Language',
+    en: {campaign:'Campaign', options:'Options', story:'Story', language:'Language',
       'language-pack':'Russian', 'language-download':'Download Language', 'language-delete':'Delete Language'},
-    ru: {single:'Одиночная игра', campaign:'Кампания', options:'Настройки', story:'История', language:'Язык',
+    ru: {campaign:'Кампания', options:'Настройки', story:'История', language:'Язык',
       'language-pack':'Русский', 'language-download':'Скачать язык', 'language-delete':'Удалить язык'},
   };
   const localizedGlyphs = new Set(['options', 'fast-scenario', 'story', 'sound', 'language']);
@@ -171,7 +170,6 @@
   const OPTION_BUTTONS = [[1, 16, 40, 224], [2, 16, 74, 224], [3, 16, 108, 224], [-3, 16, 248, 224]];
   const END_BUTTONS = [[2, 16, 40, 224], [1, 16, 74, 224], [3, 16, 108, 224],
     [4, 16, 142, 224], [-3, 16, 248, 224]];
-  const modalAtlasInk = [247, 211, 171, 95];
   const factionInk = {
     human:[[252,248,240],[252,248,240],[156,156,156],[108,108,108]],
     orc:[[244,224,32],[208,192,28],[168,140,16],[92,48,0]],
@@ -183,21 +181,26 @@
       accept:load(faction + '-accept-button'), cancel:load(faction + '-cancel-back'),
     }]));
     const russian = language()?.current?.() === 'ru';
-    let confirmationLabels;
+    let modalLabels, confirmationCopy;
     const font = window.WarcraftSessionText;
     font?.load(russian ? 'ru' : 'en').then(atlas => {
-      function factionCaption(caption, palette) {
-        const label = font.ink(caption, atlas);
-        const context = label.getContext('2d'), image = context.getImageData(0,0,label.width,label.height);
-        for (let i=0; i<image.data.length; i+=4) {
-          const shade=modalAtlasInk.indexOf(image.data[i]);
-          if (shade>=0) image.data.set(palette[shade],i);
-        }
-        context.putImageData(image,0,0);
-        return label;
-      }
-      confirmationLabels = Object.fromEntries(Object.entries(factionInk).map(([faction, palette]) =>
-        [faction,factionCaption('OK', palette)]));
+      const factionCaption = (caption,palette) => font.recolor(font.ink(caption,atlas),palette);
+      modalLabels = Object.fromEntries(Object.entries(factionInk).map(([faction, palette]) =>
+        [faction,{ok:factionCaption('OK',palette),
+          restart:factionCaption(russian ? 'Начать заново' : 'Restart',palette),
+          quit:factionCaption(russian ? 'Выйти в меню' : 'Quit to Menu',palette)}]));
+      const plain = russian ? 'Вы уверены, что хотите' : 'Are you sure you want';
+      const restart = russian ? 'начать миссию заново?' : 'restart the scenario?';
+      const quit = russian ? 'главное меню?' : 'the main menu?';
+      const warning = russian ? ['Прогресс миссии будет','перезаписан.'] :
+        ['Mission progress will','be overwritten.'];
+      const neutral = line => factionCaption(line,factionInk.human);
+      const emphasis = line => factionCaption(line,factionInk.orc);
+      confirmationCopy = {
+        restart:{heading:[neutral(russian ? plain : plain+' to'),emphasis(restart)],
+          warning:warning.map(line => factionCaption(line,font.warningInk))},
+        quit:{heading:[neutral(plain),neutral(russian ? 'выйти в' : 'to quit to'),emphasis(quit)]},
+      };
     }).catch(console.error);
     const restartArt = Object.fromEntries(['human', 'orc'].map(faction => [faction, {
       button: load(faction + '-wide-button'),
@@ -266,7 +269,7 @@
       const art = restartArt[faction];
       const sourceOf = item => ({left: dialog.rect.left + item.left, top: dialog.rect.top + item.top,
         width:item.width, height:28});
-      const controls = (items, {skip, replace} = {}) => items
+      const controls = (items, {skip, replace, captions} = {}) => items
         .filter(item => item.id!==skip)
         .map(item => {
           const accept = item.id === -2 || (objectives && item.id === -3);
@@ -274,7 +277,8 @@
             ? window.WarcraftAssemblyDialogLayout.acceptArtwork(faction,item.width)
             : item.width===224?art.button:item.width===106?art.shortButton:null;
           return {id:item.id,source:sourceOf(item),blank,accept,
-            ...(item.id===replace?{button:art.button,label:art.label}:null)};
+            ...(item.id===replace||captions?.[item.id]
+              ? {button:art.button,label:captions?.[item.id]||art.label} : null)};
         });
 
       if (settings) {
@@ -292,10 +296,10 @@
       if (confirmation) {
         const accept = buttons.get(-2);
         const {accept:button, cancel} = confirmationArt[faction];
-        if (!confirmationLabels || !button.naturalWidth || !cancel.naturalWidth || buttons.size !== 2 ||
+        if (!confirmationCopy || !modalLabels || !button.naturalWidth || !cancel.naturalWidth || buttons.size !== 2 ||
             accept?.left !== 16 || accept.top !== 108 || accept.width !== 224) return waiting;
         return {...previous, image:cancel, compact:'confirmation', controls:[], confirmation:{ok:sourceOf(accept),
-          label:confirmationLabels[faction], button}};
+          label:modalLabels[faction].ok, button, ...confirmationCopy[continuation===0x4359f0?'restart':'quit']}};
       }
       const expected = pause ? PAUSE_BUTTONS : options ? OPTION_BUTTONS : END_BUTTONS;
       const firstId = buttons.has(2) ? 2 : 6;
@@ -309,8 +313,12 @@
         const items=[buttons.get(firstId),buttons.get(3)];
         return {...previous, compact:'end', controls:controls(items,{replace:firstId}), restartId:firstId};
       }
-      if (pause) return {compact:'pause', source:sourceOf(buttons.get(-3)), image:arrow,
-        controls:controls([3,5,6].map(id=>buttons.get(id)))};
+      if (pause) {
+        if (!modalLabels || !art.button.naturalWidth) return waiting;
+        const {restart,quit} = modalLabels[faction];
+        return {compact:'pause', source:sourceOf(buttons.get(-3)), image:arrow,
+          controls:controls([3,5,4,6].map(id=>buttons.get(id)),{captions:{4:restart,6:quit}})};
+      }
       return {...previous, compact:'two-actions', controls:controls([1,2,3].map(id=>buttons.get(id)))};
     };
   }
@@ -326,7 +334,7 @@
     const sessionPanel = session && sessionArt.create(frame);
     const sessionAtlases = new Map();
     const sessionCaptions = new Map();
-    let resume = null, resumeTimer = 0;
+    let resume = null, resumeTimer = 0, titleRoute = null;
     let scenarioPickerOpen = false, scenarioCloseTimer = 0;
     for (const locale of ['en', 'ru']) {
       window.WarcraftSessionText.load(locale).then(atlas => {
@@ -467,7 +475,7 @@
     function confirm(slot, start, back, continuing = false, ready) {
       const {text, slotLines} = sessionArt;
       const lines = slotLines(slot);
-      if (!continuing && session.store.read().slot) lines.push(text('replace'));
+      if (!continuing && session.store.read().slot) lines.push({text:text('replace'),warning:true});
       showSession({
         heading:text(continuing ? 'resume' : 'newGame'),
         lines,
@@ -543,6 +551,7 @@
 
     function handleFastDialog() {
       if (scenarioPickerOpen) closeSession();
+      clearTitleRoute();
       if (resume?.stage !== 'fast') return;
       const request = resume;
       request.stage = 'loading';
@@ -567,9 +576,40 @@
       return true;
     }
 
+    function clearTitleRoute() {
+      if (!titleRoute) return;
+      window.clearTimeout(titleRoute.timer);
+      titleRoute = null;
+    }
+
+    function beginTitleRoute(destination) {
+      clearTitleRoute();
+      titleRoute = {destination, sent:false, timer:window.setTimeout(() => {
+        clearTitleRoute();
+        repaint();
+      },3000)};
+    }
+
+    function bridgeSinglePlayer() {
+      if (resume) return;
+      if (!titleRoute) beginTitleRoute(362);
+      const route = titleRoute;
+      if (route.sent) return;
+      route.sent = true;
+      window.requestAnimationFrame(() => {
+        if (titleRoute !== route) return;
+        if (!activate(320,route.destination)) route.sent = false;
+      });
+    }
+
     function action(item) {
-      if (!active || pending || languageBusy || sessionPanel?.active) return;
+      if (!active || pending || titleRoute || resume || languageBusy || sessionPanel?.active) return;
       if (item.resume) return startResume();
+      if (item.destination) {
+        if (!activate(320,254)) return;
+        beginTitleRoute(item.destination);
+        return;
+      }
       if (item.files) return window.WarcraftFiles.open({session,showSession,back:closeSession});
       if (item.about) {
         const {intro,credits,community} = about[sessionArt.locale()];
@@ -603,7 +643,6 @@
       button.type = 'button';
       button.setAttribute('aria-label', item.caption === 'feedback' ? sessionArt.text('feedback') : item.label);
       button.toggleAttribute('data-warcraft-native-click', !!item.source && !item.campaign);
-      if (item.action) button.dataset.warcraftMenuAction = item.action;
       button.addEventListener('pointerdown', () => { pressed = item.label; repaint(); });
       for (const event of ['pointerup', 'pointerleave', 'pointercancel']) {
         button.addEventListener(event, () => { pressed = null; repaint(); });
@@ -625,7 +664,7 @@
         const {x, y, w, h} = box;
         Object.assign(buttons[i].style, {left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px`});
         const item = items[i], control = buttons[i];
-        control.disabled = pending || languageBusy || !!item.disabled ||
+        control.disabled = pending || !!titleRoute || !!resume || languageBusy || !!item.disabled ||
           !!(item.language === 'ru' && !language()?.available?.('ru'));
         control.toggleAttribute('data-warcraft-default', home && i === 0 ||
           !!preferredCampaign && item.campaign === preferredCampaign);
@@ -661,7 +700,8 @@
         const image = images['title-logo'];
         const ratio = image.naturalWidth/image.naturalHeight;
         const rows = count + (campaign ? .84 : 0);
-        const homeTop = height-safeBottom-gap-3*standardHeight-2*gap;
+        const homeRows = Math.max(3,count);
+        const homeTop = height-safeBottom-homeRows*(standardHeight+gap);
         const sectionTop = buttonBottom-messageRoom-rows*Math.min(standardHeight,count>4?40:44)-
           (count-1)*gap-sectionRoom;
         const logoBottom = hasHeading ? sectionTop : homeTop;
@@ -798,6 +838,8 @@
         page = 'options';
       }
       const campaign = scene.mode === 'campaign';
+      if (campaign || (scene.mode === 'title' && titleRoute?.destination === 362)) clearTitleRoute();
+      if (scene.mode === 'single') bridgeSinglePlayer();
       const originals = campaign ? scene.controls.filter(control => !control.text).sort((a, b) => a.y - b.y) : [];
       if (campaign && originals.length !== 5) { hide(); return false; }
       const campaignLabels = ['Orc: Tides of Darkness', 'Human: Tides of Darkness',
@@ -809,13 +851,12 @@
         ? [...optionPages.options, ...(window.WarcraftFiles ? [filesItem] : []), aboutItem] : optionPages[page];
       const items = campaign
         ? originals.slice(0, 4).map((source, i) => ({label: campaignLabels[i], source, campaign:campaignIds[i]}))
-        : scene.mode === 'single' ? (session ? single : [{...single[0],caption:null},single[1]]) :
-          languageMenu ? languagePage() : options || titleItems;
-      const home = scene.mode === 'title' && page === 'title';
+        : languageMenu ? languagePage() : options || titleItems;
+      const home = !campaign && page === 'title';
       const feedback = session && scene.mode === 'title' && page === 'options';
       advanceResume(scene.mode, originals);
       const sectionTitle = sectionTitles[sessionArt.locale()][scene.mode === 'title' ? page : scene.mode];
-      const hasBack = parentPage[page] || scene.mode === 'single' || campaign;
+      const hasBack = parentPage[page] || campaign;
       if (!images['orc-texture'].naturalWidth || !images['title-version-clean'].naturalWidth ||
           !images['title-button'].naturalWidth || !images['title-button-pressed'].naturalWidth ||
           (home && titleItems[0].resume &&
@@ -884,8 +925,7 @@
         drawButton(context,image,feedbackItem,feedbackBox,scale);
       }
       if (hasBack) {
-        controls.push({label: 'Back', source: parentPage[page] ? null :
-          campaign ? originals[4] : nativeButton(348, 'Back').source});
+        controls.push({label: 'Back', source: campaign ? originals[4] : null});
         boxes.push(back);
         const arrow = images[pressed === 'Back' ? 'menu-back-orc-pressed' : 'menu-back-orc'];
         drawImage(context, arrow, back);
@@ -921,6 +961,7 @@
     }
     return {paint, hide, confirmFast, handleFastDialog, showScenarioPicker,
       get blocking() { return layer.inert; }, get active() { return active; }, get presented() { return presented; }, destroy() {
+      clearTitleRoute();
       for (const [name, original] of keyHandlers) renderer[name] = original;
       clearPending();
       clearResume();

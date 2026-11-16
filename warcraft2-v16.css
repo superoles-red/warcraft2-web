@@ -30,7 +30,7 @@
 }
 .warcraft-menu-section-heading canvas,
 .warcraft-session-panel h2 img,
-.session-confirmation p:not([data-highlight]) img,
+.session-confirmation p:not([data-highlight], [data-warning]) img,
 .warcraft-purchase-panel h2 img {
   filter: grayscale(1) brightness(1.42);
 }

@@ -10,14 +10,20 @@
     en: {files:'Files', download:'Export Save', upload:'Import Save', code:'Source Code',
       github:'Open GitHub', private:'The GitHub repository requires access.',
       details:'Campaign progress and saved mission. Imported missions restart.',
-      confirm:'Import this save?', replace:'Campaign progress and the Continue slot on this device will be replaced.',
+      confirm:'Import this save?', replaceBoth:'Your campaign progress and current save will be overwritten.',
+      replaceProgress:'Your campaign progress will be overwritten.', replaceSave:'Your current save will be overwritten.',
+      removeSave:'Your current save will be deleted.',
+      replaceProgressRemoveSave:'Your campaign progress will be overwritten and your current save deleted.',
       progress:'Campaign progress only.', invalid:'This save file is invalid or incompatible.',
       imported:'Save imported.', storage:'The browser could not save these changes.',
       exportError:'The browser could not export the save.', unavailable:'This scenario cannot be transferred. Campaign progress is included.'},
     ru: {files:'Файлы', download:'Экспорт сохранения', upload:'Импорт сохранения', code:'Исходный код',
       github:'Открыть GitHub', private:'Для просмотра репозитория нужен доступ.',
       details:'Прогресс кампаний и выбранная миссия. Миссия начнётся заново.',
-      confirm:'Импортировать сохранение?', replace:'Прогресс кампаний и слот «Продолжить» на этом устройстве будут заменены.',
+      confirm:'Импортировать сохранение?', replaceBoth:'Прогресс кампаний и текущее сохранение будут перезаписаны.',
+      replaceProgress:'Прогресс кампаний будет перезаписан.', replaceSave:'Текущее сохранение будет перезаписано.',
+      removeSave:'Текущее сохранение будет удалено.',
+      replaceProgressRemoveSave:'Прогресс кампаний будет перезаписан. Текущее сохранение будет удалено.',
       progress:'Только прогресс кампаний.', invalid:'Файл сохранения повреждён или несовместим.',
       imported:'Сохранение импортировано.', storage:'Браузер не смог записать изменения.',
       exportError:'Браузер не смог экспортировать сохранение.', unavailable:'Этот сценарий нельзя перенести. Прогресс кампаний входит в файл.'},
@@ -168,8 +174,15 @@
         const payload = await readFile(await file.text(), stateAPI, portableFastSlot);
         if (!current || subpage !== 'files') return;
         const contents = payload.slot ? art.slotLines(payload.slot) : [label.progress];
+        const {completed,slot} = session.store.read();
+        const hasProgress = Object.values(completed).some(missions => missions.length > 0);
+        let warning;
+        if (!slot) warning = hasProgress && label.replaceProgress;
+        else if (payload.slot) warning = hasProgress ? label.replaceBoth : label.replaceSave;
+        else warning = hasProgress ? label.replaceProgressRemoveSave : label.removeSave;
+        if (warning) contents.push({text:warning, warning:true});
         subpage = 'confirm';
-        showSession({heading:label.confirm, lines:[...contents,label.replace], back:() => {
+        showSession({heading:label.confirm, lines:contents, back:() => {
           subpage = 'files';
           showFiles();
         }, accept:{title:label.upload, action:() => {

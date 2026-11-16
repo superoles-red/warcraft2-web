@@ -408,7 +408,7 @@
         previewBuilding:world=>dispatchBuildingTarget(world,false),
         confirmBuilding:world=>dispatchBuildingTarget(world,true),
         ...(transport&&coherentFrames?{
-          requestBuildCancellation:()=>global.WarcraftFullMap?.requestBuildCancellation(),
+          requestActionCancellation: command=>global.WarcraftFullMap?.requestActionCancellation(command),
         }:{}),
       }:{}),
       getHudCommand:(...args)=>global.WarcraftFullMap?.getHudCommand?.(...args),

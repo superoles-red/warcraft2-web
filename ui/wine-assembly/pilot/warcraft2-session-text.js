@@ -53,5 +53,18 @@
     return canvas;
   }
 
-  window.WarcraftSessionText = Object.freeze({load, ink});
+  const inkShades = [247, 211, 171, 95];
+  const warningInk = [[255,190,173],[245,124,99],[182,64,38],[101,31,18]];
+  function recolor(canvas, palette) {
+    const context = canvas.getContext('2d');
+    const image = context.getImageData(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < image.data.length; i += 4) {
+      const shade = inkShades.indexOf(image.data[i]);
+      if (shade >= 0) image.data.set(palette[shade], i);
+    }
+    context.putImageData(image, 0, 0);
+    return canvas;
+  }
+
+  window.WarcraftSessionText = Object.freeze({load, ink, recolor, warningInk});
 })();

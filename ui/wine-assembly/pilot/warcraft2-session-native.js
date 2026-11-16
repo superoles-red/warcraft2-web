@@ -463,21 +463,28 @@
       mailbox.setUint16(0, requested, true);
       return true;
     }
-    function finish(result, id) {
+    function settleResult(result, slot) {
+      const persist = result === 6 ? onVictory : onDefeat;
+      if (persist?.(slot) !== false) clearCheckpoint(slot);
+    }
+    function detachActive() {
       const slot = active;
-      running = false;
       active = null;
       nativeView(wine, autosaveRequest, 1)?.setUint8(0, 0);
-      if (!slot) return;
-      if (result === 5 || result === 6) clearCheckpoint();
-      if (result === 5 && slot.kind === 'fast') pendingFast = slot;
-      const campaignMatches = slot.kind === 'campaign' && encodeCampaign(slot) === id;
-      if (result === 6 && campaignMatches) onVictory?.(slot);
-      if (result === 7 && (slot.kind === 'fast' || campaignMatches)) {
-        if (onDefeat?.(slot) !== false) clearCheckpoint(slot);
-      }
+      return slot;
     }
-    function tick() {
+    function finish(result, id) {
+      running = false;
+      const slot = detachActive();
+      if (!slot) return;
+      if (result === 5) {
+        clearCheckpoint(slot);
+        if (slot.kind === 'fast') pendingFast = slot;
+      }
+      const campaignMatches = slot.kind === 'campaign' && encodeCampaign(slot) === id;
+      if ((result === 6 || result === 7) && (slot.kind === 'fast' || campaignMatches)) settleResult(result, slot);
+    }
+    function tick(outcomeResult) {
       commitCheckpoint();
       acknowledgeScenario();
       const event = nativeView(wine, finishedState, 4);
@@ -486,11 +493,15 @@
         const id = event.getUint16(2, true);
         event.setUint16(0, 0, true);
         finish(result, id);
-      } else if (active && offline() && word(gameState) === 3 && byte(inGame) === 0 &&
-          byte(matchEnding) === 1 && word(matchResult) === 7) {
-        // The defeated match sets its result before opening the native OK
-        // dialog. Clear the slot even if the player closes the app here.
-        finish(7, word(level));
+      } else if (active && offline() && word(gameState) === 3) {
+        if (outcomeResult === 6 && active.kind === 'fast') {
+          // BNE leaves the match running until its victory dialog is closed.
+          // Settle the slot now and wait for the original result to end the match.
+          settleResult(6, detachActive());
+        } else if (byte(inGame) === 0 && byte(matchEnding) === 1 && word(matchResult) === 7) {
+          // The native defeat prompt opens after BNE marks the match finished.
+          finish(7, word(level));
+        }
       }
       if (resuming && byte(continueRequest) === 3) {
         resuming = null;

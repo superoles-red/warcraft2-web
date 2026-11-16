@@ -309,21 +309,28 @@
 
   function soundRows({left,top,width,scale,height,landscape,match=false}) {
     const inset=12*scale,gap=8*scale;
-    const two=landscape;
-    const colWidth=two?(width-inset*2-gap)/2:width-inset*2;
+    const splitChecks=landscape&&match, fullWidth=width-2*inset;
+    const checkWidth=splitChecks?(fullWidth-gap)/2:fullWidth;
     const slot=height+32*scale;
     const controls=SOUND_ROWS.map((row,i)=>{
-      const column=two&&i<2?i:0;
-      const x=left+inset+column*(colWidth+gap);
-      const y=top+(two?Math.min(1,Math.floor(i/2))*slot:i*slot);
-      const trackY=row.kind==='slider'?y+16*scale:y;
-      const labelBox={x,y,w:Math.min(colWidth,232*scale),h:14*scale};
-      return {...row,target:{x,y:trackY,w:colWidth,h:height},labelBox,
-        helpBox:{x,y:trackY+height,w:colWidth,h:8*scale},scale};
+      const x=left+inset,y=top+i*slot;
+      const slider=row.kind==='slider';
+      const trackY=slider?y+16*scale:y;
+      const labelBox={x,y,w:Math.min(fullWidth,232*scale),h:14*scale};
+      return {...row,target:{x,y:trackY,w:slider?fullWidth:checkWidth,h:height},labelBox,
+        helpBox:{x,y:trackY+height,w:fullWidth,h:8*scale},scale};
     });
     const speech=controls.at(-1).target;
     const bottom=speech.y+height;
-    return {controls,bottom, fog:match?{x:two?speech.x+colWidth+gap:speech.x,y:two?speech.y:bottom+gap,w:colWidth,h:height}:null};
+    return {controls,bottom, fog:match?{x:splitChecks?speech.x+checkWidth+gap:speech.x,
+      y:splitChecks?speech.y:bottom+gap,w:checkWidth,h:height}:null};
+  }
+
+  function volumeDragAxis(drag,x,y) {
+    if (drag.axis) return drag.axis;
+    const dx=Math.abs(x-drag.x),dy=Math.abs(y-drag.y);
+    if(Math.max(dx,dy)>=5)drag.axis=dx>dy?'horizontal':'vertical';
+    return drag.axis;
   }
 
   function paintSoundEnds(context,image,s,t) {
@@ -359,16 +366,16 @@
       if(r<30&&g<62&&b>=54)blue++;
     }
     const [track,thumb]=SOUND_ART[Number(blue>red)].map(artwork);
+    const trackH=t.h*2/3, trackY=t.y+(t.h-trackH)/2;
     if(!track.naturalWidth||!thumb.naturalWidth||last-first>22||last<first){
-      const trackH=Math.min(t.h,19*scale);
-      context.drawImage(image,s.x,s.y,s.w,s.h,t.x,t.y+(t.h-trackH)/2,t.w,trackH);
+      context.drawImage(image,s.x,s.y,s.w,s.h,t.x,trackY,t.w,trackH);
       return;
     }
     const size=Math.min(27*scale,t.h), position=Math.max(0,Math.min(1,((first+last)/2-26)/156));
-    const rim=2,edge=rim*scale;
-    context.drawImage(track,0,0,track.naturalWidth,rim,t.x,t.y,t.w,edge);
-    context.drawImage(track,0,rim,track.naturalWidth,track.naturalHeight-rim*2,t.x,t.y+edge,t.w,t.h-edge*2);
-    context.drawImage(track,0,track.naturalHeight-rim,track.naturalWidth,rim,t.x,t.y+t.h-edge,t.w,edge);
+    const rim=2,edge=Math.min(rim*scale,trackH/3);
+    context.drawImage(track,0,0,track.naturalWidth,rim,t.x,trackY,t.w,edge);
+    context.drawImage(track,0,rim,track.naturalWidth,track.naturalHeight-rim*2,t.x,trackY+edge,t.w,trackH-edge*2);
+    context.drawImage(track,0,track.naturalHeight-rim,track.naturalWidth,rim,t.x,trackY+trackH-edge,t.w,edge);
     context.drawImage(thumb,t.x+(t.w-size)*position,t.y+(t.h-size)/2,size,size);
   }
 
@@ -574,13 +581,13 @@
       const landscape=width>=height&&width>=520;
       const buttonSize=menuButtonHeight(width,height);
       const panelUnits=landscape?512:256;
-      const rowCount=landscape?3:4;
+      const rowCount=4;
       const scale=Math.min(chart.regions[0].target.w/256,(width-2*inset)/panelUnits,
-        (height-2*inset-rowCount*buttonSize)/(landscape?98:130));
+        (height-2*inset-rowCount*buttonSize)/130);
       if(scale<=0)return null;
-      const panelW=panelUnits*scale,totalH=rowCount*buttonSize+(landscape?98:130)*scale;
+      const panelW=panelUnits*scale,totalH=rowCount*buttonSize+130*scale;
       const left=(width-panelW)/2,top=(height-totalH)/2;
-      const body=soundRows({left,top:top+30*scale,width:panelW,scale,height:buttonSize,landscape});
+      const body=soundRows({left,top:top+30*scale,width:panelW,scale,height:buttonSize});
       const heading={source:area(4,5,248,17),target:{x:(width-248*scale)/2,y:top+6*scale,w:248*scale,h:17*scale},
         decoration:'control-ink'};
       const fields=body.controls.map(({source,...row})=>({...row,source:area(...source),decoration:'sound-control'}));
@@ -773,7 +780,7 @@
 
   const isAdaptedHandler = handler => HELD_CONTROLS.has(handler);
   const api = Object.freeze({layout, wantsImmediatePress, isAdaptedHandler, paintTallButton, menuButtonHeight,
-    paintDropdown,paintCustomPopup,soundRows,paintSoundControl,paintSoundEnds,paintControlInk,acceptArtwork});
+    paintDropdown,paintCustomPopup,soundRows,volumeDragAxis,paintSoundControl,paintSoundEnds,paintControlInk,acceptArtwork});
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else global.WarcraftAssemblyDialogLayout = api;
 })(globalThis);

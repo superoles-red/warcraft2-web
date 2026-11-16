@@ -113,16 +113,24 @@
     return !!wallet && type >= 58 && lacksResources(read, wallet, 'build', type);
   }
 
-  function activeConstruction(wine, view) {
-    if (view?.count !== 1) return false;
+  function cancellationTarget(wine, view, kind) {
+    if (view?.count !== 1) return null;
     const read = guestReader(wine);
-    const building = read(view.selectedPointers[0], 0x2d);
+    const building = read(view.selectedPointers[0], 0x72);
     const player = read(0x4acb68, 1)?.getUint8(0);
-    if (!building || player === undefined || building.getUint8(0x2c) !== player) return false;
-    // Native construction cancellation checks the building type and rejects
-    // completed or removed objects before applying its original refund.
-    const typeFlags = read(0x4cf574 + building.getUint8(0x27) * 4, 1)?.getUint8(0);
-    return (typeFlags & 0x20) !== 0 && (building.getUint8(0x1e) & 0x87) === 0;
+    if (!building || player === undefined || building.getUint8(0x2c) !== player) return null;
+    const type = building.getUint8(0x27), flags = building.getUint8(0x1e);
+    if (kind === 'cancelBuilding') {
+      // The original refund accepts only a building that is still under construction.
+      const typeFlags = read(0x4cf574 + type * 4, 1)?.getUint8(0);
+      return (typeFlags & 0x20) && !(flags & 0x87) ? type : null;
+    }
+    const taskFlags = building.getUint8(0x1c), taskType = building.getUint8(0x6c);
+    // Native production shares the cancel callback. Its two descriptors use
+    // separate predicates for a queued unit and an upgrade/research.
+    if ((flags & 7) || (taskFlags & 0x30) !== 0x10 ||
+        (taskType === 0) !== (kind === 'cancelTraining')) return null;
+    return (taskType << 8) | building.getUint8(0x6d);
   }
 
   function infoButtons(view, layer) {
@@ -324,14 +332,14 @@
           return schedule.call(this, step, idleTitle && delay === 0 ? 4 : delay);
         });
       }
-      let placementEscape = false;
+      let actionEscape = false;
       for (const name of ['handleKeyDown', 'handleKeyPress']) {
         if (typeof renderer[name] !== 'function') continue;
         wrap(renderer, name, handle => function(...args) {
           if (name === 'handleKeyDown' && args[0] === 27 &&
-              (placementEscape || window.WarcraftFullMap?.canConfirmBuildCancellation?.())) {
-            placementEscape = true;
-            return; // The confirmation's own key listener handles this press.
+              (actionEscape || window.WarcraftFullMap?.canHandleActionCancellation?.())) {
+            actionEscape = true;
+            return; // The action layer owns this Escape press.
           }
           if (!demoPlaying() && !('warcraftTransition' in frame.dataset) &&
               !('warcraftPurchase' in frame.dataset)) return handle.apply(this, args);
@@ -340,8 +348,8 @@
       for (const name of ['handleMouseDown', 'handleMouseMove', 'handleMouseUp', 'handleKeyUp']) {
         if (typeof renderer[name] !== 'function') continue;
         wrap(renderer, name, handle => function(...args) {
-          if (name === 'handleKeyUp' && args[0] === 27 && placementEscape) {
-            placementEscape = false;
+          if (name === 'handleKeyUp' && args[0] === 27 && actionEscape) {
+            actionEscape = false;
             return;
           }
           if (!demoPlaying()) return handle.apply(this, args);
@@ -407,7 +415,7 @@
       purchaseTooltipMatches: command => purchaseTooltipMatches(wine, command),
       unavailableCommands: commands => unavailableCommands(wine, commands),
       placementUnaffordable: () => placementUnaffordable(wine),
-      activeConstruction: view => activeConstruction(wine, view),
+      cancellationTarget: (view, kind) => cancellationTarget(wine, view, kind),
       // BNE minimap terrain painter 42DBAC reads the current black pen for shroud.
       minimapBlack: () => guestReader(wine)(0x4d6582,1)?.getUint8(0),
       modalSlider: (layer, x, y) => window.WarcraftAssemblyMenuPolicy?.sliderAt(wine, layer, x, y),
@@ -431,8 +439,9 @@
         notifyMapFrame = callback;
         wrap(renderer, 'observePresentationPublication', observe => function(...args) {
           observe.apply(this, args);
-          wine.warcraftSession?.native?.tick();
-          if (!menu?.outcomeOpen) callback();
+          const outcomeResult = menu?.outcomeResult;
+          wine.warcraftSession?.native?.tick(outcomeResult);
+          if (!outcomeResult) callback();
           if (args[0]?.backend !== 'warcraft-map') menu?.onFrame(args[0]);
         });
       },

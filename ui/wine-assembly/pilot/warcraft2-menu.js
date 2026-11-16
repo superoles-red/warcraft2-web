@@ -71,9 +71,10 @@
     const source = area(x, 448, 106, 28);
     if (!button || button.getUint32(0x32, true) !== dialog.root ||
         button.getInt16(0x20, true) !== -2 || button.getUint16(0x22, true) !== 1 ||
-        !(button.getUint32(0x18, true) & 8) ||
         [4, 6, 8, 10].some((offset, i) => button.getInt16(offset, true) !== [x, 448, x + 105, 475][i])) return null;
-    // Preserve the whole table/illustration up to the separate action.
+    // Reserve the button's space before the native stats count finishes.
+    const visible = Boolean(button.getUint32(0x18, true) & 8);
+    if (isCredits && !visible) return null;
     const art = area(0, 0, ART.w, 446);
     const buttonHeight = global.WarcraftAssemblyDialogLayout.menuButtonHeight(width,height);
     const captionScale = Math.min(1.6,(width-16)/source.w,height*.15/28);
@@ -82,9 +83,10 @@
     const w = art.w * scale, h = art.h * scale;
     const top = (height - h - buttonHeight - 12) / 2;
     const control = {source, target: area((width - buttonWidth) / 2, top + h + 12, buttonWidth, buttonHeight),
-      decoration:'tall-button'};
-    return {width, height, mode: 'dialog', art: current.art, dialog, heldControls: [], regions: [control],
-      paintRegions: [{source: art, target: area((width - w) / 2, top, w, h)}, control]};
+      decoration:'tall-button', visible};
+    return {width, height, mode: 'dialog', art: current.art, dialog, control,
+      heldControls: !isCredits && visible ? [source] : [], regions: visible ? [control] : [],
+      paintRegions: [{source: art, target: area((width - w) / 2, top, w, h)}, ...(visible ? [control] : [])]};
   }
 
   function resultControls(wine, dialog) {
@@ -121,7 +123,7 @@
       target:area(x + gap*2,y + headHeight + gap,paneWidth - gap*4,buttonHeight)};
     // The browser edition uses the campaign slot, including after victory.
     // Omit the original manual "Save Game" action from the presentation.
-    return {width,height,mode:'dialog',art:ART,dialog,regions:[control],heldControls:[],
+    return {width,height,mode:'dialog',art:ART,dialog,regions:[control],heldControls:[source],
       outcomePanel:{source:area(dialog.x,dialog.y,dialog.w,56),
         target:area(x,y,paneWidth,paneHeight),headHeight}};
   }
@@ -201,11 +203,11 @@
       }
       y += rowGap * scale;
     }
-    const originalButton = base.regions[0];
+    const originalButton = base.control;
     const buttonWidth = originalButton.target.w;
     const control = {...originalButton,target:area(paneX + (panelWidth - buttonWidth) / 2,
       paneY + logicalHeight * scale + gap,buttonWidth,buttonHeight)};
-    return {...base,regions:[control],control,
+    return {...base,regions:control.visible ? [control] : [],control,
       statistics:{artwork,captions,dividers,panel:area(paneX,paneY,panelWidth,logicalHeight*scale),scale}};
   }
 
@@ -445,7 +447,7 @@
     let scene = null, chart = null, last = null, raf = 0, originX = 0, originY = 0;
     let backdrop = null, statsArt = null, borderColor = '#000';
     let activating = false, transitioning = false;
-    let scenarioDrag = null;
+    let scenarioDrag = null, volumeDrag = null;
     let scenarioPickerRoot = null;
     const authored = !!global.WarcraftAssemblyMenuNavigation;
     if (authored) frame.classList.add('warcraft-owns-presentation');
@@ -519,9 +521,16 @@
     }
 
     function waitForScene() {
+      const leavingResult = scene?.cinematic === 'outcome' || scene?.cinematic === 'stats';
+      if (leavingResult && chart && !dialogStillActive()) {
+        // Retire the button as soon as BNE consumes the click, even while
+        // the following native screen is still preparing its first frame.
+        context.fillStyle = borderColor;
+        context.fillRect(0, 0, chart.width, chart.height);
+        global.WarcraftAssemblyMenuNavigation.paintTexture(context, resultTexture(), chart.width, chart.height);
+      }
       chart = null;
-      transitioning = scene?.cinematic === 'outcome' || scene?.cinematic === 'stats' ||
-        !global.WarcraftUiBridge?.state()?.inGame;
+      transitioning = leavingResult || !global.WarcraftUiBridge?.state()?.inGame;
       navigation?.hide();
       onUnavailable?.();
     }
@@ -562,8 +571,8 @@
       context.fillStyle = 'rgba(245, 213, 139, .35)';
       for (const y of dividers) context.fillRect(panel.x + 5,y,panel.w - 10,Math.max(1,scale));
       for (const caption of captions) drawForeground(context,image,caption,art,scratch);
-      const {source,target} = layout.control;
-      drawTallButton(image,source,target,current);
+      const {source,target,visible} = layout.control;
+      if (visible) drawTallButton(image,source,target,current);
     }
 
     function dropdownCaption(text) {
@@ -685,13 +694,21 @@
       const params = {width: contentWidth, height: rect.height, art: dialogArt, scenes: current.scenes, wine,
         backImage: dialogBack, bottomInset: insets?.bottom,
         backTarget: dialogBack?.naturalWidth && global.WarcraftAssemblyMenuNavigation.backBox(contentWidth, rect.height)};
+      const isStats = authored && current.cinematic === 'stats';
       const bottomDialog = authored && bottomButtonLayout(wine,current,contentWidth,rect.height);
-      const statistics = current.cinematic === 'stats' && bottomDialog &&
+      const statistics = isStats && bottomDialog &&
         statsLayout(wine,bottomDialog,contentWidth,rect.height,insets?.bottom ?? 0);
       const resultArtwork = statistics && installBackdrop(wine,image,statsArt,statistics.dialog.root+0x0c);
       statsArt = resultArtwork || (statistics && statsArt) || null;
       const outcome = current.outcome && outcomeLayout(wine,current.outcome,contentWidth,rect.height,insets?.bottom ?? 0);
-      const nativeDialog = outcome || (resultArtwork && statistics) || bottomDialog ||
+      // Publish each result in its final layout from the first complete frame.
+      // The native statistics counter starts before its Continue button appears.
+      if ((current.outcome && !outcome) ||
+          (isStats && (statistics ? !resultArtwork : !bottomDialog?.control.visible))) {
+        waitForScene();
+        return;
+      }
+      const nativeDialog = outcome || statistics || bottomDialog ||
         (current.mode === 'menu' && global.WarcraftAssemblyDialogLayout?.layout(params));
       const briefingLayout = global.WarcraftAssemblyBriefingLayout;
       const briefing = current.mode === 'briefing' && briefingLayout?.layout(params);
@@ -873,6 +890,11 @@
       if (!dialogStillActive()) return this._mouseButtonsMask
         ? {x: originX + 640, y: originY + 480} : {outside: true};
       const point = menuPoint(x,y);
+      if (volumeDrag && volumeDrag.root === chart.dialog?.root) {
+        const {source:s,target:t} = volumeDrag.region;
+        const position = Math.max(0,Math.min(1,(point.x-t.x)/t.w));
+        return {x:originX+s.x+Math.round((s.w-1)*position), y:originY+s.y+Math.floor(s.h/2)};
+      }
       const popup = chart.regions[0];
       if (popup?.wideHeldInput && (this._mouseButtonsMask & 1)) {
         const {target} = popup;
@@ -925,13 +947,39 @@
       return originalImmediate?.call(this, x, y) ?? false;
     }
 
+    const originalMove = renderer.handleMouseMove;
     const originalDown = renderer.handleMouseDown;
     const originalUp = renderer.handleMouseUp;
     const originalKeyDown = renderer.handleKeyDown;
     function fastScene() {
       return chart?.dialog?.handler === fastSetup && dialogStillActive();
     }
+    function moveVolume(x,y,release=false) {
+      if (!chart || volumeDrag.root !== chart.dialog?.root || !dialogStillActive()) return false;
+      const point = menuPoint(x,y);
+      const axis = global.WarcraftAssemblyDialogLayout.volumeDragAxis(volumeDrag,point.x,point.y);
+      if (axis === 'vertical' || (!axis && !release)) return false;
+      if (!volumeDrag.started) {
+        originalMove.call(renderer,x,y);
+        originalDown.call(renderer,x,y,0);
+        volumeDrag.started = true;
+      }
+      return true;
+    }
+    function mouseMove(x,y,...args) {
+      if (!activating && volumeDrag && !moveVolume(x,y)) return;
+      return originalMove.call(this,x,y,...args);
+    }
     function mouseDown(x,y,button,...args) {
+      if (!activating && button === 0 && chart?.dialog && dialogStillActive()) {
+        const point = menuPoint(x,y);
+        const region = chart.regions.find(({kind,target:t}) => kind === 'slider' &&
+          point.x >= t.x && point.x < t.x+t.w && point.y >= t.y && point.y < t.y+t.h);
+        if (region) {
+          volumeDrag = {root:chart.dialog.root,region,x:point.x,y:point.y};
+          return;
+        }
+      }
       if (!activating && button === 0 && !chart?.scenarioPopup && chart?.scrollbar?.max && dialogStillActive() &&
           inScrollbar(menuPoint(x,y),chart.scrollbar)) {
         const bar = chart.scrollbar, size = scrollbarThumb(bar);
@@ -952,8 +1000,15 @@
       return originalDown.call(this,x,y,button,...args);
     }
     function mouseUp(x,y,button,...args) {
-      try { return originalUp.call(this,x,y,button,...args); }
-      finally { if (button === 0) scenarioDrag = null; }
+      try {
+        if (!activating && button === 0 && volumeDrag) {
+          if (moveVolume(x,y,true)) originalMove.call(this,x,y);
+          if (!volumeDrag.started) return;
+        }
+        return originalUp.call(this,x,y,button,...args);
+      } finally {
+        if (button === 0) scenarioDrag = volumeDrag = null;
+      }
     }
     function keyDown(key,...args) {
       if (key === 9 && chart?.outcomePanel) return;
@@ -969,6 +1024,7 @@
     renderer._unmapExclusiveInputPoint = unmap;
     if (authored) renderer.touchWantsImmediatePress = immediatePress;
     if (authored) {
+      renderer.handleMouseMove = mouseMove;
       renderer.handleMouseDown = mouseDown;
       renderer.handleMouseUp = mouseUp;
     }
@@ -978,7 +1034,11 @@
 
     return {
       get nativeTouch() { return authored && chart?.mode === 'dialog'; },
-      get outcomeOpen() { return authored && !!nativeOutcome(wine); },
+      get outcomeOpen() { return Boolean(this.outcomeResult); },
+      get outcomeResult() {
+        const handler = authored && nativeOutcome(wine)?.handler;
+        return handler === MISSION_VICTORY ? 6 : handler === MISSION_DEFEAT ? 7 : 0;
+      },
       onFrame(publication) {
         if (publication?.source) paint(publication.source);
         else if (!authored || !wine.running) hide();
@@ -1006,6 +1066,7 @@
         if (renderer._mapExclusiveInputPoint === map) renderer._mapExclusiveInputPoint = originalMap;
         if (renderer._unmapExclusiveInputPoint === unmap) renderer._unmapExclusiveInputPoint = originalUnmap;
         if (renderer.touchWantsImmediatePress === immediatePress) renderer.touchWantsImmediatePress = originalImmediate;
+        if (renderer.handleMouseMove === mouseMove) renderer.handleMouseMove = originalMove;
         if (renderer.handleMouseDown === mouseDown) renderer.handleMouseDown = originalDown;
         if (renderer.handleMouseUp === mouseUp) renderer.handleMouseUp = originalUp;
         if (renderer.handleKeyDown === keyDown) renderer.handleKeyDown = originalKeyDown;

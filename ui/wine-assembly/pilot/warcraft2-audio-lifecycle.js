@@ -1,9 +1,10 @@
-/* Keep the original Wine sound graph and restart its output after an interruption. */
+/* Recover Wine's sound output without restarting the original game. */
 (() => {
   'use strict';
   const CHECK_MS = 450;
   const RESUME_RETRY_MS = 250;
   const RESUME_TIMEOUT_MS = 1000;
+  const REPLACE_TIMEOUT_MS = 1500;
 
   function isAppleMobile(nav) {
     return /iPhone|iPad|iPod/.test(nav.userAgent) ||
@@ -24,12 +25,13 @@
     let context = null, pending = null, suspension = null, resumeTimeout = 0, check = 0;
     let needsSync = false, synced = false, nudged = false, leftPage = false, blurred = false;
     let restartPending = false, autoResumes = 0;
+    let replaceOnInput = false, replacement = null;
     const hidden = () => doc.hidden || leftPage;
     const blocked = () => hidden() || session?.state === 'interrupted';
     wine.pauseAudibleWhenHidden = true;
     wine.foregroundAudioBlocked = blocked;
     wine.holdsForegroundAudioCursor = () => !!(appleMobile && needsSync &&
-      (hidden() || pending || suspension));
+      (blocked() || pending || suspension));
 
     function visibleAgain() {
       blurred = false;
@@ -83,6 +85,8 @@
     }
 
     function interrupt() {
+      cancelReplacement();
+      allowReplacement();
       if (!needsSync || synced) markInterruption();
       if (hidden()) wine._maybePauseForHidden();
       suspendOutput(context);
@@ -94,7 +98,10 @@
         interrupt();
         return;
       }
-      if (context?.state === 'interrupted' && (!needsSync || synced)) markInterruption();
+      if (context?.state === 'interrupted') {
+        allowReplacement();
+        if (!needsSync || synced) markInterruption();
+      }
       if (needsSync) recover();
     }
 
@@ -102,6 +109,7 @@
       if (context === next) return;
       context?.removeEventListener('statechange', observe);
       context = next;
+      if (next && replacement && next !== replacement.old) needsSync = false;
       synced = false;
       autoResumes = 0;
       clearResume();
@@ -131,11 +139,43 @@
           needsSync = false;
           return;
         }
-        if (nudged || ac.state === 'closed') return;
+        if (nudged || ac.state === 'closed') {
+          allowReplacement();
+          return;
+        }
         nudged = true;
         synced = false;
         suspendOutput(ac);
       }, CHECK_MS);
+    }
+
+    function allowReplacement() {
+      const voices = wine.hostCtx?._voices;
+      if (appleMobile && voices?._replaceOutput && voices._outputProgress?.()) replaceOnInput = true;
+    }
+
+    function cancelReplacement() {
+      if (!replacement) return;
+      const {timer, abort} = replacement;
+      replacement = null;
+      page.clearTimeout(timer);
+      abort.abort();
+    }
+
+    function replaceOutput() {
+      if (replacement || !replaceOnInput || !context) return;
+      replaceOnInput = false;
+      const op = {old:context, abort:new AbortController()};
+      replacement = op;
+      op.timer = page.setTimeout(cancelReplacement, REPLACE_TIMEOUT_MS);
+      // A clock that advances and an acknowledging worklet cannot report a
+      // corrupt output queue below the graph. After a real interruption use
+      // the next trusted release to unlock a fresh device context once. The
+      // old output remains available if the new graph cannot be prepared.
+      const finish = () => { if (replacement === op) cancelReplacement(); };
+      try {
+        Promise.resolve(wine.hostCtx?._voices?._replaceOutput(op.old, op.abort.signal)).then(finish, finish);
+      } catch (_) { finish(); }
     }
 
     function recover(trusted = false) {
@@ -178,9 +218,10 @@
     }
 
     function gesture(event) {
-      if (!event.isTrusted || blocked() || !needsSync) return;
+      if (!event.isTrusted || blocked() || (!needsSync && !replaceOnInput)) return;
       blurred = false;
-      recover(true);
+      if (needsSync) recover(true);
+      replaceOutput();
     }
 
     doc.addEventListener('visibilitychange', () => hidden() ? interrupt() : visibleAgain(), options);
@@ -209,6 +250,7 @@
     bind(wine._audioCtx || null);
     return () => {
       listeners.abort();
+      cancelReplacement();
       bind(null);
       delete wine.pauseAudibleWhenHidden;
       delete wine.foregroundAudioBlocked;

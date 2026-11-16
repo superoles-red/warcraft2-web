@@ -57,7 +57,9 @@
       if (slot.kind === 'campaign') state.lastCampaign = slot.campaign;
       return write(state);
     }
-    function win({campaign, mission}) {
+    function win(value) {
+      if (value?.kind === 'fast') return clearSlot(value);
+      const {campaign, mission} = value ?? {};
       if (!validMission(campaign, mission)) return false;
       const state = read();
       if (state.slot?.kind !== 'campaign' || state.slot.campaign !== campaign || state.slot.mission !== mission) return false;
@@ -66,7 +68,7 @@
       state.slot = validMission(campaign, mission + 1) ? {kind:'campaign', campaign, mission:mission + 1} : null;
       return write(state);
     }
-    function lose(value) {
+    function clearSlot(value) {
       const slot = normalizeSlot(value);
       const state = read();
       if (!slot || JSON.stringify(state.slot) !== JSON.stringify(slot)) return false;
@@ -75,7 +77,7 @@
     function importProgress(state) {
       return write(normalize({...state, lastCampaign:read().lastCampaign}));
     }
-    return Object.freeze({read, canStart, start, win, lose, importProgress});
+    return Object.freeze({read, canStart, start, win, lose:clearSlot, importProgress});
   }
   const api = Object.freeze({create, campaigns, normalizeSlot});
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

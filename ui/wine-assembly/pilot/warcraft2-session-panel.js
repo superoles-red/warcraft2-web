@@ -3,14 +3,14 @@
   'use strict';
   const label = {
     en: {about:'About', files:'Files', feedback:'Feedback', campaign:'Campaign', continue:'Continue', replayDemo:'Replay Demo', start:'Start', newGame:'Start a new game?',
-      resume:'Continue the last session?', replace:'Your previous session will be replaced.',
+      resume:'Continue the last session?', replace:'Your current save will be overwritten.',
       selectScenario:'Select Scenario', mapSize:'Map size', anySize:'Any size', mapCategory:'Category',
       allCategories:'All categories', noScenarios:'No scenarios match these filters.',
       mapPreview:'Map preview', terrain:['Forest', 'Winter', 'Wasteland', 'Orc Swamps'],
       scenarioFailed:'Could not select this map.', ok:'OK', mission:'Mission', locked:'Locked', completed:'Completed', fast:'Fast Scenario', back:'Back',
       failed:'The game could not start. The previous session is still available.'},
     ru: {about:'Об игре', files:'Файлы', feedback:'Отзыв', campaign:'Кампания', continue:'Продолжить', replayDemo:'Демо', start:'Начать', newGame:'Начать новую игру?',
-      resume:'Продолжить игру?', replace:'Предыдущая игра будет заменена.',
+      resume:'Продолжить игру?', replace:'Текущее сохранение будет перезаписано.',
       selectScenario:'Выбор сценария', mapSize:'Размер карты', anySize:'Любой размер', mapCategory:'Категория',
       allCategories:'Все категории', noScenarios:'Нет сценариев с такими фильтрами.',
       mapPreview:'Миниатюра карты', terrain:['Лес', 'Зима', 'Пустоши', 'Орочьи топи'],
@@ -49,9 +49,11 @@
     return scenarioPreviews;
   }
 
-  function caption(text, atlas, width, alignLeft = false) {
+  function caption(text, atlas, width, alignLeft = false, warning = false) {
     const glyph = document.createElement('img');
-    const ink = window.WarcraftSessionText.ink(text,atlas,width,alignLeft);
+    const font = window.WarcraftSessionText;
+    const ink = font.ink(text,atlas,width,alignLeft);
+    if (warning) font.recolor(ink, font.warningInk);
     glyph.alt = '';
     glyph.draggable = false;
     glyph.width = ink.width;
@@ -130,7 +132,7 @@
       const current = locale();
       const atlas = await window.WarcraftSessionText.load(current);
       if (id !== token) return;
-      const print = (text,width,alignLeft) => caption(text,atlas,width,alignLeft);
+      const print = (text,width,alignLeft,warning) => caption(text,atlas,width,alignLeft,warning);
       const title = document.createElement('h2');
       title.setAttribute('aria-label',heading);
       title.append(print(heading, accept ? 272 : 235));
@@ -142,9 +144,11 @@
         if (!message) return;
         const block = document.createElement('p');
         block.setAttribute('aria-label',message);
-        block.toggleAttribute('data-highlight', typeof line === 'object');
+        const warning = line?.warning === true;
+        block.toggleAttribute('data-highlight', typeof line === 'object' && !warning);
+        block.toggleAttribute('data-warning', warning);
         const inkWidth = prose ? Math.max(190, Math.min(330, frame.clientWidth - 42)) : accept ? 254 : 225;
-        block.append(print(message,inkWidth,prose));
+        block.append(print(message,inkWidth,prose,warning));
         parent.append(block);
       }
       lines.forEach(line => printed(line,content));

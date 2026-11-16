@@ -1,5 +1,5 @@
 {
-  "version": "3f487f5201894acfb7802587",
+  "version": "bb2e162a451b55d78d42501a",
   "files": [
     {
       "path": "LICENSE.wine-assembly",
@@ -124,7 +124,7 @@
     {
       "path": "game.html",
       "bytes": 186501,
-      "sha256": "9b51144646ea254fdcd53e2b4a049a8e53436e0b410a8af16434db3802c5c77b"
+      "sha256": "023382d66374a003034a9237a25e7b80e8db5087ff44f2971b925631a583491b"
     },
     {
       "path": "host.js",
@@ -268,8 +268,8 @@
     },
     {
       "path": "lib/audio-worklet-host.js",
-      "bytes": 14691,
-      "sha256": "464a1d5ae968e7a72e8aa2e51533a0502c1c252131ae021aa2d1d11b0794e87a"
+      "bytes": 15801,
+      "sha256": "54c7b90856c4474721d8762757fe8a4e7eb0f0610da83bc3f1699bb1ead54ca5"
     },
     {
       "path": "lib/browser-input.js",
@@ -458,8 +458,8 @@
     },
     {
       "path": "lib/host-audio.js",
-      "bytes": 211743,
-      "sha256": "01a9c85d6c4e22ff52f4d0ed870266e3a47225c0faae2f21b15242f94742a669"
+      "bytes": 218666,
+      "sha256": "8cf6e0d590112c0f76c3e3791220af5d2b52437f00d8268a2fab12358ad82a75"
     },
     {
       "path": "lib/host-import-sigs.generated.json",
@@ -1253,13 +1253,13 @@
     },
     {
       "path": "ui/boxedwine/dune-controls.js",
-      "bytes": 37565,
-      "sha256": "3035dcec35c5828ca2db1ae28102772c057c2dbf7dbd21ba12edd888e538dbb2"
+      "bytes": 37543,
+      "sha256": "1d3e3ba5e22de49691f8c8a51ff114e50f52a0d0115b7aec36387181393a6199"
     },
     {
       "path": "ui/boxedwine/full-map-runtime.js",
-      "bytes": 74061,
-      "sha256": "300047e4fe5ce639debfaea916ed329e60ea30ffede50f3b3c701d02d16c8da9"
+      "bytes": 74609,
+      "sha256": "6eafc11963ff4832121829a40f905a69f68d2cda78bbdaf3d80cd30ece15d996"
     },
     {
       "path": "ui/boxedwine/input-fence.js",
@@ -1268,8 +1268,8 @@
     },
     {
       "path": "ui/boxedwine/ui-bridge-runtime.js",
-      "bytes": 23828,
-      "sha256": "3a3c933915d6a04e3b460c3e74c3d76e5df79a8246d8484904bd9ad535c76505"
+      "bytes": 23843,
+      "sha256": "1f2e5d37d6af31ac1c46c55c624c2bc8fec861c26f7b55b07410f0489af68c94"
     },
     {
       "path": "ui/boxedwine/viewport-runtime.js",
@@ -1303,8 +1303,8 @@
     },
     {
       "path": "ui/viewport/modal-presentation-v15.js",
-      "bytes": 32838,
-      "sha256": "9e85c9a9133014949e0873fd5e82f05979a95cb12901ea6d590d56891ad10763"
+      "bytes": 33858,
+      "sha256": "3a4efe151d3f4a7d9b166edadf8a0637d2f0ff1b4ecebeb3e640d2dda1ac0ea2"
     },
     {
       "path": "ui/viewport/native-frame-v16.js",
@@ -1333,8 +1333,8 @@
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-audio-lifecycle.js",
-      "bytes": 7974,
-      "sha256": "2d93a25ed9eff4af059b0493986a8a25b4b455f654b95b31c3e55ac95fab0299"
+      "bytes": 9568,
+      "sha256": "93a286d7d17f6b8fda735e5123becb5f8162b5a0f529f23809e3c8fe3a4d59fc"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-briefing-layout.js",
@@ -1348,13 +1348,13 @@
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-dialog-layout.js",
-      "bytes": 41668,
-      "sha256": "0c0b241f7094d9c31e854b38e4a97a011a55d66aec85498f39bfb20e46759dde"
+      "bytes": 41897,
+      "sha256": "e66669a075afca6834fc8d5b007fb7adf124484fb416bc0248c3d55e9228dc9b"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-files.js",
-      "bytes": 9204,
-      "sha256": "92c19107251b8ddb95d88cfee65b4599faf3cc56e88e40a442e3836005891a72"
+      "bytes": 10359,
+      "sha256": "6a053361fb329c89ebbf2df052cdf2703f55d39224133fe5348dc82c1572bbec"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-menu-click.js",
@@ -1363,13 +1363,13 @@
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-menu-navigation.js",
-      "bytes": 46071,
-      "sha256": "a1cd129cda90d096df73c279f005b80ab64b3ade2f3d45abbb377ed4e7d439f1"
+      "bytes": 47838,
+      "sha256": "02c8a74ef3f1e51fa19da61891190f39e5a4b790589d39f068100b05dac8e817"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-menu.js",
-      "bytes": 52255,
-      "sha256": "9d2a6c9d4a53116ffcca8885c6033937711bcd499e56fe669fd943ab1891acdc"
+      "bytes": 55296,
+      "sha256": "d74ccfad2afa7260dc66606953befc9047d047e6c0f753180acbd3d5aeb0d8be"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-preferences.js",
@@ -1383,43 +1383,43 @@
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-session-native.js",
-      "bytes": 26870,
-      "sha256": "56c00ca9c5c80b76510f91f89059bb80ea06ae59eb80b23327d1fce262a587be"
+      "bytes": 27261,
+      "sha256": "ce4de67af5a133d1b0a5902dea07ed8c5ef0a08d6cfa17353cce28bbcaf012f9"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-session-panel.js",
-      "bytes": 22470,
-      "sha256": "1a026323eaf5162171667039b36e04c52b13d2582daec312cdbd6a14b33414ef"
+      "bytes": 22716,
+      "sha256": "aa7cb0d0ef11d2aeedc32f0dc5527e5ebf5c22af5d834aa4644dab668dc5d618"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-session-text.js",
-      "bytes": 3353,
-      "sha256": "c7d99966177cc00e28c52fe91092cd075a908005f18e0189742976fee8789ef9"
+      "bytes": 3881,
+      "sha256": "aea383f7a5fa845ce1e691eb465b3653fa416f3f414e0723731e6c7f8482c7fc"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-session.js",
-      "bytes": 3738,
-      "sha256": "b6a9d5f565776f2a612a5c2e57eb76a5637a5db04555a6c0540603a63bf394ee"
+      "bytes": 3845,
+      "sha256": "5d4366fd3f23b04d2f17c587cb68ff5d33f93f93363726d2ab2a99fd33f3b81f"
     },
     {
       "path": "ui/wine-assembly/pilot/warcraft2-v16.js",
-      "bytes": 25558,
-      "sha256": "4b00f6fe9d4616eaad390e9cb7983195834c5f2756597321113fbe9d5b6292aa"
+      "bytes": 26042,
+      "sha256": "8f7bfc4152dad20d5cfee2ac03ba31f85ebefd2e5111672bc51c70432b6cc95d"
     },
     {
       "path": "v16-bridge.dll",
-      "bytes": 60416,
-      "sha256": "04ef61c4c0b8cbd3d15626e13351cc99d3d9391b70176297570ba430afe0b7d6"
+      "bytes": 61952,
+      "sha256": "4d28eb99097bb66e0d7e80a2dd3f94e38d60d206dbbee93e0e6c3e161f77d41b"
     },
     {
       "path": "v16-bridge.js",
       "bytes": 5027,
-      "sha256": "13e36c7e5a9c5aa99634123fd2ee4621f742d7dfe757a0dbe19c0f7c00179e26"
+      "sha256": "9d04de02b05c7d7fa765b766805d0a651a3e71950894d5eff9dd955b27f11f0b"
     },
     {
       "path": "v16-movie-pilot.dll",
-      "bytes": 63488,
-      "sha256": "ae06a025a1aa3d829a50fbec237dd1e164bbda6d1bc0970bdadb73808bbbfd63"
+      "bytes": 64000,
+      "sha256": "4f57fb1b6384f383edf2bb4c8551f82bdaa4b5e4c57227cbd00fe2db6e6059a4"
     },
     {
       "path": "warcraft2-compact-audio.js",
@@ -1428,13 +1428,13 @@
     },
     {
       "path": "warcraft2-menu-policy.js",
-      "bytes": 23479,
-      "sha256": "89fb1554061d66ce0ac7318f1b7843e74ab10f96ce09ae6d19bb735f1a82188b"
+      "bytes": 24517,
+      "sha256": "f3140db0cccc12d83d93033502fce11abc7436805b733d7d4b9b50f93b295457"
     },
     {
       "path": "warcraft2-v16.css",
-      "bytes": 21325,
-      "sha256": "09426552113ec9748579a110a2c8b83024877a59f0cf9d4061f7616762694b36"
+      "bytes": 21341,
+      "sha256": "7560bd755bf93ac7439a822f9a72f459e54e13468215700873d6c7a41b64d58e"
     },
     {
       "path": "warcraft2.js",
@@ -1442,5 +1442,5 @@
       "sha256": "6af30e6eb347eb484d623871e1627fffdc82df0f94d72c5ebb138f4958ecfdaa"
     }
   ],
-  "workerSha256": "672a3c93545ac557ac718102fc72974a37175a8eb5e955240e9690c0438f99ca"
+  "workerSha256": "3747898081d1a43f8fe2e00ffd052f5f30d62415cce3c97bf6015a9ec5f54fe2"
 }

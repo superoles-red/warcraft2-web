@@ -193,6 +193,10 @@
       })():contain(base,width,height),native=nativeLayers(packet,frame,expectedToken);
       const compact=back?.compact&&native?.source.width===256&&native?.source.height===288
         ? MENU_HEADINGS[back.compact] : 0;
+      const confirmationText=back?.confirmation;
+      const heightOf=lines=>lines.reduce((height,line)=>height+line.height+3,0);
+      const headingHeight=confirmationText ? heightOf(confirmationText.heading) : compact;
+      const warningHeight=confirmationText?.warning ? 6+heightOf(confirmationText.warning) : 0;
       const objectives=native?.layers.length===1&&native.layers[0].handlerAddress===0x4353a0&&
         native.source.width===256&&native.source.height===288;
       const soundLayout=global.WarcraftAssemblyDialogLayout;
@@ -210,11 +214,11 @@
       const objectiveFooter=245;
       const objectiveBody=Number.isInteger(objectivesBodyEnd)&&objectivesBodyEnd>=94&&
         objectivesBodyEnd<=objectiveFooter?objectivesBodyEnd:objectiveFooter;
-      const rows=objectives?objectiveControls.length+1:preferences?(widePreferences?4:6):
+      const rows=objectives?objectiveControls.length+1:preferences?(widePreferences?5:6):
         compact?nativeControls.length+1:genericBands.length+Number(genericBack);
       const bodyHeight=objectives?objectiveBody+288-objectiveFooter-28*objectiveControls.length:
-        preferences?(widePreferences?134:176):
-        compact?compact+16+rows*BUTTON_GAP:
+        preferences?(widePreferences?152:176):
+        compact?headingHeight+warningHeight+(confirmationText?28:16)+rows*BUTTON_GAP:
         native?.union.height-genericBands.reduce((total,band)=>total+band.end-band.start,0)+(genericBack?PANEL_INSET:0);
       const scaleMargin=8*dialogPixelRatio;
       const classicMax=dialogPixelRatio&&native?.source.width===256&&native.source.height<=288
@@ -226,7 +230,7 @@
       // button height separately. Very crowded generic dialogs may need to fit.
       const fixedHeight=(rows||back?.source)&&dialogPixelRatio&&menuButtonHeight
         ? Math.min(menuButtonHeight(width/dialogPixelRatio,height/dialogPixelRatio)*dialogPixelRatio,
-          availableHeight*.74/Math.max(1,rows)) : 0;
+          availableHeight*(widePreferences ? .60 : .74)/Math.max(1,rows)) : 0;
       const fitScale=native?Math.min(maxScale,classicMax,(width-left-right)/sourceWidth,
         (availableHeight-rows*fixedHeight)/(bodyHeight+(fixedHeight?0:rows*BUTTON_HEIGHT))):0;
       const buttonHeight=fixedHeight&&positive(fitScale)?fixedHeight/fitScale:BUTTON_HEIGHT;
@@ -318,7 +322,8 @@
       let backControl=null,okControl=null,restart=null,confirmation=null;
       if(ready&&compact&&back?.confirmation){
         const t=unionTarget,scale=t.scale;
-        confirmation={ok:{source:freezeRect(back.confirmation.ok),
+        confirmation={headingTop:t.top+12*scale,warningTop:t.top+(18+headingHeight)*scale,
+          ok:{source:freezeRect(back.confirmation.ok),
           target:freezeRect({left:t.left+PANEL_INSET*scale,top:t.bottom-(PANEL_INSET+buttonHeight)*scale,
             width:106*scale,height:buttonHeight*scale,scale})}};
       }
@@ -381,6 +386,7 @@
               rows.paintSoundControl(context,frame,{...layer,source:paintRect(s),target:paintRect(t)});
               continue;
             }
+            if(p.confirmation&&s.top===p.source.top)continue;
             if(continuous&&rows?.paintControlInk){
               // A resized classic panel shares one stone texture. Blit just
               // the native heading/body lettering, without old stone strips.
@@ -412,7 +418,17 @@
           }
           for(const action of p.actions)paintAction(context,frame,action);
           if(p.confirmation){
-            const {button,label}=options.back.confirmation;
+            const {button,label,heading,warning}=options.back.confirmation;
+            const t=p.unionTarget,scale=t.scale;
+            const paintLines=(lines,y)=>{
+              for(const line of lines){
+                const w=Math.min(t.width-24*scale,line.width*scale),h=line.height*scale;
+                context.drawImage(line,t.left+(t.width-w)/2,y,w,h);
+                y+=h+3*scale;
+              }
+            };
+            paintLines(heading,p.confirmation.headingTop);
+            if(warning)paintLines(warning,p.confirmation.warningTop);
             paintAction(context,frame,{...p.confirmation.ok,button,label,confirmation:true});
           }
           if(p.objectivesStone&&!continuous){
